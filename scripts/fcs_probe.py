@@ -112,14 +112,28 @@ def spillover(keywords):
         raw = keywords.get(key)
         if not raw:
             continue
-        head = raw.split(",")
+        head = [h.strip() for h in raw.split(",")]
         n = _int(head[0]) if head else None
-        return {
-            "keyword": key,
-            "detectors": [h.strip() for h in head[1 : 1 + n]] if n else [],
-            "size": n,
-        }
+        if not n:
+            return {"keyword": key, "detectors": [], "size": None, "matrix": []}
+        detectors = head[1 : 1 + n]
+        flat = head[1 + n : 1 + n + n * n]
+        matrix = []
+        for row in range(n):
+            values = flat[row * n : (row + 1) * n]
+            if len(values) != n:
+                matrix = []  # incomplete; report the names but not a half matrix
+                break
+            matrix.append([_float(v) for v in values])
+        return {"keyword": key, "detectors": detectors, "size": n, "matrix": matrix}
     return None
+
+
+def _float(text):
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def summarise(keywords):

@@ -197,6 +197,20 @@ def process(path, args):
     if args.out:
         os.makedirs(args.out, exist_ok=True)
         stem = os.path.splitext(os.path.basename(path))[0]
+
+        # The values in the CSV are uncompensated. Spectral spillover between detectors
+        # is large enough here to dominate a channel, so the matrix travels with them --
+        # a target table without it cannot be corrected later.
+        comp = fcs_probe.spillover(keywords)
+        if comp and comp["matrix"]:
+            comp_path = os.path.join(args.out, stem + ".spillover.csv")
+            with open(comp_path, "w") as fh:
+                fh.write("," + ",".join(comp["detectors"]) + "\n")
+                for name, row in zip(comp["detectors"], comp["matrix"]):
+                    fh.write(name + "," + ",".join(repr(v) for v in row) + "\n")
+            print("  wrote %s -- %dx%d spillover matrix" % (comp_path, comp["size"], comp["size"]))
+        elif comp:
+            print("  note: $SPILLOVER present but its matrix could not be parsed")
         out_path = os.path.join(args.out, stem + ".csv")
         write_csv(out_path, header, rows)
         print("  wrote %s -- %d rows x %d columns (%s)"

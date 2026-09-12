@@ -307,10 +307,11 @@ other way.
 
 Three things this table says that the single-file read did not:
 
-**1. Replicate 1 is not brightfield-only.** `1S`, `1P` and `1SP` carry the same four
-stains as everything else. "Replicate" here means a repeat of the same stained panel, not
-a different panel — so all nine acquisitions are usable, and the held-out-replicate split
-has three groups rather than two.
+**1. Replicate 1 is not brightfield-only** — but it is not a stained replicate either.
+See the correction below: the panel *metadata* is identical across all nine because it is
+the operator's instrument configuration, which carries over to every tube. It says nothing
+about what was actually in the tube. The measured values say `1*` got DAPI and nothing
+else.
 
 **2. The voltages are identical across all nine.** That removes the gain confound at the
 detector level, which §4 of [approach.md](approach.md) flagged as a reason the
@@ -333,9 +334,95 @@ is not, everything trained here describes imaged events only. `make_targets.py
 --compare-imaged` reports each channel's median for imaged against unimaged events, which
 answers it directly.
 
+### Correction, from the values themselves: replicate 1 is the unstained control
+
+Reproduce with `python analysis/explore_targets.py data/targets`.
+
+Median intensity, by acquisition, uncompensated:
+
+| well | n | DAPI | ACRV1 | LDHC/AKAP4 | CD45 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `1S` | 30,000 | 2,192 | **371** | **570** | **86** |
+| `2S` | 30,000 | 2,200 | 8,341 | 18,218 | 131 |
+| `3S` | 30,000 | 2,208 | 8,463 | 19,756 | 140 |
+| `1P` | 30,000 | 13,023 | **705** | **1,760** | **1,594** |
+| `2P` | 30,000 | 12,984 | 11,112 | 33,702 | 52,991 |
+| `3P` | 30,000 | 12,763 | 7,522 | 9,380 | 38,614 |
+| `1SP` | 30,000 | 6,932 | **644** | **1,161** | **754** |
+| `2SP` | 42,874 | 2,611 | 11,732 | 21,604 | 256 |
+| `3SP` | 30,000 | 1,783 | 10,942 | 14,840 | 151 |
+
+As a fold-change over the replicate-1 acquisition of the same well type:
+
+| well | DAPI | ACRV1 | LDHC | CD45 |
+| --- | ---: | ---: | ---: | ---: |
+| `2S` | **1.0x** | 22.5x | 32.0x | 1.5x |
+| `3S` | **1.0x** | 22.8x | 34.7x | 1.6x |
+| `2P` | **1.0x** | 15.8x | 19.1x | 33.2x |
+| `3P` | **1.0x** | 10.7x | 5.3x | 24.2x |
+
+**DAPI is identical across replicates; everything else is 5–35x up in replicates 2 and 3.**
+Replicate 1 was stained with DAPI only. So:
+
+- **There are two stained replicates, not three.** Usable paired training events:
+  **192,874** (`2*` and `3*`). Replicate 1's 90,000 are an unstained control — which is
+  worth having, not a loss: it is the autofluorescence floor, per well type, measured on
+  90,000 events, and it is what the fold-change table above is computed against.
+- **Held-out-replicate has exactly two groups.** Train on 2, test on 3, or the reverse.
+  There is no third fold.
+
+**DAPI reports real biology, which is the best evidence the values mean what we think.**
+Sperm nuclei are haploid and protamine-condensed; PBMC nuclei are diploid. Measured ratio
+`1P`/`1S` = 5.9x, and DNA content alone separates the two wells at **AUC 0.993** — in the
+*unstained* replicate, so that is the dye, not the antibody panel.
+
+### The spillover is severe enough to invalidate a channel
+
+Spearman correlation with CD45, within an acquisition:
+
+| well | ACRV1~CD45 | LDHC~CD45 |
+| --- | ---: | ---: |
+| `1P` (unstained) | 0.727 | 0.022 |
+| `2P` | **0.974** | 0.467 |
+| `3P` | **0.980** | 0.313 |
+
+In a PBMC well, ACRV1 is almost a monotone function of CD45. PBMCs have no acrosome, so
+that channel is not reporting ACRV1 there — it is reporting PE spilling into the
+PerCP-eF710 detector, plus whatever non-specific antibody binding the Fc receptors on
+monocytes contribute. `1P`'s 0.727 with no antibody at all sets the autofluorescence
+baseline: brighter cells are brighter everywhere.
+
+**Consequence: compensate before using any target.** `make_targets.py` now writes the
+instrument's `$SPILLOVER` matrix alongside each table as `<name>.spillover.csv`, because
+an uncompensated target table cannot be corrected after the fact. And the PBMC negative
+control proposed in [approach.md](approach.md) §5 only means anything post-compensation —
+on raw values, predicted ACRV1 on a PBMC is *supposed* to be non-zero.
+
+### The two stained replicates disagree, and one channel disagrees in direction
+
+AUC for separating the PBMC well from the sperm well on one channel alone. For a sperm
+marker, below 0.5 is the biologically correct direction:
+
+| replicate | DAPI | ACRV1 | LDHC | CD45 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 (unstained) | 0.993 | 0.854 | 0.889 | 0.990 |
+| 2 | 0.994 | 0.689 | **0.732** | 0.997 |
+| 3 | 0.994 | 0.428 | **0.179** | 0.997 |
+
+CD45 and DAPI are rock solid in both. But **LDHC/AKAP4 reverses**: in replicate 3 sperm
+carry more than PBMCs (correct), in replicate 2 PBMCs carry more (not). `2P`'s LDHC median
+is 3.6x `3P`'s. Something went wrong with that channel in replicate 2 — over-staining,
+non-specific binding, or a wash step — and it is a reason to treat replicate 3 as the
+cleaner of the two until compensation says otherwise.
+
+This is also the clearest possible argument for the held-out-replicate split: two
+acquisitions of the same panel, same voltages, an hour apart, disagree by 3.6x on one
+channel and reverse its sign. A random event-level split would never surface that.
+
 ### This also unblocks the sibling project
 
-`YL1-A` carries CD45-PE, **in all nine acquisitions including replicate 1**.
+`YL1-A` carries CD45-PE — but **only in replicates 2 and 3**, which is the correction
+above. `sperm_pbmc` works on replicate 1, and replicate 1 has no CD45 antibody.
 
 `sperm_pbmc` exists to tell a curled sperm from a PBMC in brightfield. It works on
 replicate 1, and its task brief states that replicate 1 is brightfield-only and that the
@@ -344,10 +431,18 @@ scope. **Both halves of that are wrong.** Replicate 1 was stained with the same 
 2 and 3; the fluorescence was simply exported to the `.acs` rather than into the image
 files, and nobody had opened the `.acs`.
 
-So for the exact 30,000 events per well that project is already working on, CD45 is a
-**free per-event label for round-cell-vs-sperm** — no curation, no reviewer agreement
-ceiling, no `indeterminate` bin forced by brightfield ambiguity. Its multi-reviewer
-labeling app may be largely unnecessary.
+What replicate 1 *does* have is DAPI, on exactly the 30,000 events per well that project
+is already working on. **DNA content separates its PBMC well from its sperm well at AUC
+0.993** — sperm nuclei are haploid and condensed, PBMC nuclei are diploid, and the medians
+differ 5.9-fold. That is a free per-event quantity, joined by filename, with no curation
+and no reviewer agreement ceiling.
+
+It is not the same thing as a CD45 label: DAPI measures DNA content, so it separates
+*sperm from round cells* but will not by itself distinguish a leukocyte from an immature
+germ cell, and the `indeterminate` bin that project created for round events with no
+visible tail is exactly where the two overlap. Still, an AUC-0.993 free signal on the
+events already being labelled by hand is worth knowing about, and replicates 2 and 3 do
+carry real CD45 for a subset of the same question.
 
 That is worth telling that project. It does not change the work here.
 

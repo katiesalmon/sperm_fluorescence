@@ -32,14 +32,21 @@ def data_offsets(data, keywords):
         except ValueError:
             start = end = 0
 
-    for key, setter in (("$BEGINDATA", "start"), ("$ENDDATA", "end")):
-        raw = keywords.get(key, "").strip()
-        if raw.isdigit():
-            value = int(raw)
-            if setter == "start" and (start == 0 or value):
-                start = value
-            elif setter == "end" and (end == 0 or value):
-                end = value
+    kw_start = keywords.get("$BEGINDATA", "").strip()
+    kw_end = keywords.get("$ENDDATA", "").strip()
+    kw_start = int(kw_start) if kw_start.isdigit() else 0
+    kw_end = int(kw_end) if kw_end.isdigit() else 0
+
+    # The HEADER is authoritative where it fits. Fall back to the keywords when it is
+    # zeroed, and say so when the two disagree rather than silently trusting one -- a
+    # wrong offset does not raise, it just decodes the wrong bytes into plausible floats.
+    if start <= 0 or end <= start:
+        start, end = kw_start, kw_end
+    elif kw_start and kw_end and (kw_start, kw_end) != (start, end):
+        raise Unsupported(
+            "HEADER says the DATA segment is %d..%d but $BEGINDATA/$ENDDATA say %d..%d; "
+            "refusing to guess" % (start, end, kw_start, kw_end)
+        )
 
     if start <= 0 or end <= start:
         raise Unsupported("could not locate the DATA segment (start=%s end=%s)" % (start, end))
