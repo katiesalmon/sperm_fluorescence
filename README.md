@@ -23,17 +23,20 @@ The survey has been run (2026-09-12). It found all six marker zips to be **flat,
 1**, which rules out both of the layouts the approach doc had costed. Full numbers in
 [docs/task_brief.md](docs/task_brief.md).
 
-So the open question is now *where the fluorescence actually is*, and there are two
-candidates. Next step is to settle it:
+`check_channels.py` then decoded 96 events and found `R == G == B` on every pixel with
+alpha constant — **brightfield in a four-channel container, no marker signal at all**.
+
+The cytometry data turned out to be alongside, not inside: nine `.acs` archives in the run
+folder, one per acquisition. An ACS is a zip holding FCS data, and the FCS is the target
+variable. Next step reads it without moving 34 GB of archive:
 
 ```bash
-python scripts/check_channels.py <images-dir> --classes 2S 2P 3S 3P --events 24
+python scripts/inspect_acs.py <run-folder> --extract-fcs fcs_out
 ```
 
-Decodes pixels — no install needed, it carries its own LZW decoder — and reports whether
-the RGBA channels hold distinct images or are the same grayscale frame three times over,
-as in replicate 1. If they are duplicates, the markers are not in `Images\` at all and
-the Attune's per-event FCS export should be a sibling of it in the run folder.
+That prints `$TOT`, the acquisition keywords, and the `$PnN` → `$PnS` table mapping each
+detector (`VL1-A`, `BL1-A`, …) to the antigen on it — then writes out the FCS members
+alone, a few MB, to copy back.
 
 ## Then
 
@@ -81,6 +84,7 @@ sample is reproducible, and a sample can be regenerated rather than passed aroun
 | `scripts/inspect_zip.py` | Read-only survey — entry counts, event grouping, TIFF structure, FCS parameter table |
 | `scripts/make_sample.py` | Deterministic random sample of N **events** per class into one small zip |
 | `scripts/check_sample.py` | Verify a sample zip against its manifest, confirm no event lost a channel, and unpack |
+| `scripts/inspect_acs.py` | Read the FCS inside an `.acs` archive in place, and extract just the FCS. Standard library |
 | `scripts/check_channels.py` | Decode pixels and report whether the RGBA channels carry distinct images. Standard library |
 | `scripts/tiff_read.py` | TIFF LZW decoder, so the above needs no install on the server. Standard library |
 | `scripts/make_fixture.py` | Fake CytPix-shaped zips in all three candidate layouts, to exercise the above without the real data |

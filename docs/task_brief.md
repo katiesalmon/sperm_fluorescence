@@ -182,15 +182,45 @@ span and density per zip, so re-running it gives the exact number to check again
 This is Branch B of [approach.md](approach.md), and it appears to be the data model the
 instrument was always going to produce.
 
+### The cytometry data: nine .acs archives in the run folder
+
+| Archive | Size | Matching image zip |
+| --- | --- | --- |
+| `..._1P.acs` | 3.82 GB | 2.75 GB |
+| `..._1S.acs` | 3.80 GB | 2.35 GB |
+| `..._1SP.acs` | 3.88 GB | 2.60 GB |
+| `..._2P.acs` | 3.83 GB | 2.77 GB |
+| `..._2S.acs` | 3.80 GB | 2.34 GB |
+| `..._2SP.acs` | **5.46 GB** | 3.55 GB |
+| `..._3P.acs` | 3.81 GB | 2.77 GB |
+| `..._3S.acs` | 3.80 GB | 2.34 GB |
+| `..._3SP.acs` | 3.80 GB | 2.42 GB |
+
+An **ACS** (Archival Cytometry Standard) file is a zip container holding FCS data files
+alongside a table of contents, and often the images they were acquired with. Two things
+line up:
+
+- Every archive is **larger than its image zip**, by roughly the same margin — consistent
+  with "the images, plus the cytometry data, plus overhead".
+- `2SP` is the outlier in both: 5.46 GB against 3.8 GB, matching its 42,874 events
+  against everyone else's 30,000. The two exports agree about which acquisition is
+  bigger, which is a good sign they describe the same runs.
+
+**Do not copy these to a laptop.** Nine archives at ~34 GB, where the part we need — the
+FCS — is a few MB. `scripts/inspect_acs.py` reads the TEXT segment in place (decompressing
+only the head of the member, so listing is fast even on a multi-gigabyte archive) and
+extracts the FCS members alone.
+
+Note on transfer: dragging these through a Remote Desktop redirected folder produced
+**sparse placeholder files** — correct logical size, zero bytes on disk, every byte zero.
+`inspect_acs.py` detects that case and says so rather than reporting a corrupt archive.
+
 ### Open questions, revised
 
-1. **Where is the fluorescence?** Not in `Images\`. An Attune writes per-event detector
-   measurements as FCS, and that export should be a sibling of `Images\` in the run
-   folder `Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\`, or in a separate tree under
-   `Z:\Blair_Main\2026\`. **Finding it is the one thing blocking the project.** If it
-   does not exist, this is an acquisition question, not a modeling one — the markers were
-   run, so the measurements existed at the instrument; the question is whether anyone
-   exported them.
+1. ~~**Where is the fluorescence?**~~ **Found.** Nine `.acs` archives sit in the run
+   folder `Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\`, one per acquisition,
+   named to match the image zips
+   (`260709_Blair_Sperm_Cytpix_260709_Cytpix_3S.acs`). See below.
 2. **Why does `2SP` have 42,874 events when every other zip has exactly 30,000?** 30,000
    is a round number and looks like a collection cap; 42,874 does not. Either that
    acquisition was configured differently or the export was assembled differently.
@@ -211,6 +241,9 @@ instrument was always going to produce.
 - [x] Tooling rehearsed against fixtures in all three candidate layouts
 - [x] Marker zips surveyed on the server — see above
 - [x] RGBA channels checked — grayscale in an RGBA container; **no fluorescence in these zips**
-- [ ] **Locate the FCS export for this run** — the one thing blocking everything else
+- [x] Located the cytometry export — nine `.acs` archives in the run folder
+- [ ] **Read the FCS inside them** (`scripts/inspect_acs.py`): `$TOT`, and the `$PnN` → `$PnS`
+      detector-to-antigen mapping — next step
+- [ ] Confirm the join: image filenames are event indices into the FCS record
 - [ ] Working sample built and pulled back to the laptop
 - [ ] Approach chosen (see [approach.md](approach.md))
