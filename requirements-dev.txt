@@ -1,0 +1,8 @@
+# Exploration and modeling. Not needed on the server for sampling or surveying.
+-r requirements.txt
+matplotlib
+jupyterlab
+
+# Add a deep-learning stack only once docs/approach.md has settled on one -- the
+# choice depends on what the survey says the data is, and pinning it early would
+# commit the repo to a decision it has not made yet.

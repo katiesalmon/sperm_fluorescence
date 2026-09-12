@@ -1,0 +1,28 @@
+# Image data never goes in git.
+data/*
+!data/README.md
+*.zip
+*.tif
+*.tiff
+*.fcs
+
+# Survey/manifest output is small but machine-specific; commit deliberately if wanted.
+survey_*.json
+analysis/out/
+
+# Site-specific path to the export zips. Per machine, never committed.
+images_path.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

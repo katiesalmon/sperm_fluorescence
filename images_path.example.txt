@@ -1,0 +1,18 @@
+# Where the CytPix export zips live on THIS machine.
+#
+# Copy this file to  images_path.txt  (same folder) and put the real path on a line
+# of its own. images_path.txt is untracked, so each machine keeps its own location and
+# nothing site-specific ends up in the repo.
+#
+# One line. Lines starting with # are ignored. Surrounding quotes are fine.
+#
+# On Windows write it with Notepad, or:
+#     Set-Content -Path images_path.txt -Value '<the path>' -Encoding utf8
+# Avoid `echo <path> > images_path.txt` in PowerShell -- that writes UTF-16 and
+# prefixes the path with a byte-order mark.
+#
+# On the imaging server, something like:
+# Z:\<share>\<year>\<run-folder>\Images
+#
+# On a laptop working from a sample instead:
+# data/samples/sample_2S_2P_2SP_seed0

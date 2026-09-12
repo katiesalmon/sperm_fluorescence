@@ -1,0 +1,15 @@
+# What the analysis layer imports.
+#
+# NOT needed by anything under scripts/ -- the survey and the sampler are standard
+# library only, deliberately, so they run on the imaging server without an install.
+# See docs/server-setup.md.
+
+numpy
+scipy
+pandas
+scikit-image
+scikit-learn
+tifffile
+imagecodecs   # required: the replicate-1 TIFs are LZW, which tifffile cannot decode alone
+Pillow
+fcsparser     # only if the marker signal turns out to be a cytometer measurement
