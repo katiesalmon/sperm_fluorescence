@@ -79,6 +79,7 @@ sample is reproducible, and a sample can be regenerated rather than passed aroun
 | --- | --- |
 | `docs/task_brief.md` | The task, the marker biology, the data inventory, and the open questions the survey must answer |
 | `docs/approach.md` | **The research**: prior art, what performance to expect per marker, the two branches, evaluation design, and the sequence to run |
+| `docs/results.md` | **Measured results**, newest first — currently the morphology baseline and what it implies |
 | `docs/sampling.md` | How to survey the exports and build a working subset |
 | `docs/server-setup.md` | What has to be installed where (short answer: nothing, for sampling) |
 | `scripts/inspect_zip.py` | Read-only survey — entry counts, event grouping, TIFF structure, FCS parameter table |
@@ -92,7 +93,8 @@ sample is reproducible, and a sample can be regenerated rather than passed aroun
 | `scripts/cytpix_zips.py` | Shared helpers: locating zips, grouping files into events, channel tokens |
 | `scripts/tiff_probe.py` | TIFF header reader — pages, dtype, channels, descriptions. Standard library |
 | `scripts/fcs_probe.py` | FCS TEXT-segment reader — the `$PnN` → `$PnS` detector-to-antigen map. Standard library |
-| `analysis/` | Analysis layer (needs `requirements.txt`). Empty until there is a sample to analyse |
+| `analysis/explore_targets.py` | Characterise the marker measurements: which tubes were stained, spillover, replicate disagreement |
+| `analysis/feature_baseline.py` | Predict each marker from the instrument's morphology columns, held out by replicate |
 | `data/samples/` | Unpacked sample images — **gitignored** |
 | `notebooks/` | Exploration notebooks |
 
