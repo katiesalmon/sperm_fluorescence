@@ -163,6 +163,9 @@ def process(path, args):
     if flag_idx is not None:
         print("  events with an image: %d of %d (%.1f%%)" % (imaged, n, 100.0 * imaged / n))
 
+    if args.compare_imaged and flag_idx is not None:
+        compare_imaged(values, par, n, parameters, stained, flag_idx)
+
     if args.verify_images:
         if archive_images is None:
             print("  --verify-images needs the .acs, not a bare .fcs")
@@ -201,6 +204,43 @@ def process(path, args):
     print()
 
 
+def compare_imaged(values, par, n, parameters, stained, flag_idx):
+    """Is the imaged subset representative of the events that were not imaged?
+
+    The camera images only what it can keep up with -- between 7% and 33% of events
+    depending on the run's event rate. If that selection is random with respect to the
+    cell, the imaged events are a fair sample and population claims carry over. If it is
+    not, everything trained here describes imaged events only, which is a real limit on
+    what the work can claim and is worth knowing before rather than after.
+    """
+    watched = [(r["n"] - 1, r["label"] or r["name"]) for r in stained]
+    for name in ("FSC-A", "SSC-A", "AreaSquareMicrons"):
+        idx = fcs_data.column_index(parameters, name)
+        if idx is not None:
+            watched.append((idx, name))
+
+    print("  -- imaged vs not imaged --")
+    print("    %-26s %12s %12s %8s" % ("", "imaged", "not imaged", "ratio"))
+    for idx, label in watched:
+        on, off = [], []
+        for i in range(n):
+            base = i * par
+            (on if values[base + flag_idx] else off).append(values[base + idx])
+        if not on or not off:
+            continue
+        m_on = _median(on)
+        m_off = _median(off)
+        ratio = (m_on / m_off) if m_off else float("nan")
+        flag = "  <-- differs" if m_off and (ratio > 1.3 or ratio < 0.77) else ""
+        print("    %-26s %12.1f %12.1f %8.2f%s" % (label[:26], m_on, m_off, ratio, flag))
+
+
+def _median(xs):
+    xs = sorted(xs)
+    mid = len(xs) // 2
+    return xs[mid] if len(xs) % 2 else 0.5 * (xs[mid - 1] + xs[mid])
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source", nargs="+", help="An .acs or .fcs file, several, or a directory holding them")
@@ -211,6 +251,8 @@ def main(argv=None):
                     help="Omit the instrument's own morphology and intensity measurements")
     ap.add_argument("--all-events", action="store_true",
                     help="Keep every event, not only those with an image")
+    ap.add_argument("--compare-imaged", action="store_true",
+                    help="Report whether imaged events differ from unimaged ones, per channel")
     ap.add_argument("--verify-images", action="store_true",
                     help="Check that image filenames match event ids (needs the .acs)")
     ap.add_argument("--max-events", type=int, default=None, help="Stop after this many events")

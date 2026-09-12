@@ -203,15 +203,12 @@ channels at inference — relevant if replicates 2 and 3 turn out not to carry i
 channel sets. [Cell-DINO](https://journals.plos.org/ploscompbiol/article?id=10.1371%2Fjournal.pcbi.1013828)
 (2025) does the DINOv2 equivalent for fluorescent cell images.
 
-**But I would not start here.** Pretraining buys label efficiency, and in this task the
-labels are free — every event in the marker replicates is a training pair, so there may
-be ~90,000 pairs per replicate. Pretraining is the right move when paired data is scarce;
-we should find out whether it is scarce before spending a GPU-week on it. Two conditions
-would change that:
-
-- the survey shows far fewer paired events than expected, or the pairing is unreliable; or
-- the supervised baseline plateaus and we want a representation that saw all 180,000
-  replicate-1 events, not just the paired ones.
+**Settled 2026-09-12: do not start here.** Pretraining buys label efficiency, and the
+archives hold **282,874 paired image-and-measurement events** across nine acquisitions —
+every imaged event is a training pair, and all nine carry the same four stains. Paired
+data is not scarce, so the argument for pretraining as a label-efficiency move is gone.
+One condition would bring it back: the supervised baseline plateaus and we want a
+representation trained on more than the imaged subset.
 
 There is also a *cheap* version worth doing regardless: pretrain the U-Net encoder as a
 plain brightfield autoencoder or masked autoencoder on replicate 1, then fine-tune for

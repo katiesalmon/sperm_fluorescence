@@ -12,13 +12,16 @@ antigen marker channel:
 | `BL1-A` | `LDHC_AKAP4-AF488-A` | **LDHC *and* AKAP4, pooled on one fluor** | principal piece of the flagellum | the tail |
 | `YL1-A` | `CD45-PE-A` | **CD45** — pan-leukocyte | leukocyte surface; absent from sperm | round cell vs sperm |
 
-Read off the actual panel in `3S.fcs` (2026-09-12), and it differs from the brief this
-project started with in three ways:
+Read off the FCS in all nine archives (2026-09-12). **Every one of the nine carries the
+identical panel at identical detector voltages** — the same four labels, the same 59
+parameters, BL1 300 / BL2 425 / YL1 375 / VL1 250 throughout. It differs from the brief
+this project started with in three ways:
 
-- **Tomm20 is not in this replicate's panel.** Nothing labelled Tomm20 appears on any of
-  the 15 fluorescence detectors; `RL1-A`, where a far-red mitochondrial stain would sit,
-  carries no operator label at all. Either it is in replicate 2's panel, or it was not
-  run. **Unresolved until the other eight archives are read.**
+- **Tomm20 is not in the experiment.** Not in one replicate — in none of the nine.
+  `RL1-A`, where a far-red mitochondrial stain would sit, carries no operator label in any
+  archive. Either it was not run on 2026-07-09 or it belongs to a different session.
+  **This needs an answer from whoever planned the panel; it is not recoverable from the
+  data.**
 - **`BL1-A` is a two-antigen cocktail**, LDHC and AKAP4 together on AF488. Both are
   principal-piece proteins, so as a *compartment* readout it is coherent — but it cannot
   be resolved into "LDHC signal" and "AKAP4 signal", and the write-up has to call it a
@@ -282,17 +285,71 @@ replicates before treating `2*` → `3*` as a clean held-out split** — if the 
 differ, the targets are not on a common scale and the split measures gain as well as
 generalisation.
 
+### All nine acquisitions
+
+| Run order ($BTIM) | Acquisition | Events ($TOT) | Images | % imaged |
+| --- | --- | ---: | ---: | ---: |
+| 10:52:55 | `2S` | 90,864 | 30,000 | 33.0% |
+| 10:56:27 | `3S` | 101,510 | 30,000 | 29.6% |
+| 11:01:00 | `1P` | 203,357 | 30,000 | 14.8% |
+| 11:07:49 | `2P` | 225,413 | 30,000 | 13.3% |
+| 11:18:03 | `3P` | 181,608 | 30,000 | 16.5% |
+| 11:28:25 | `1SP` | 408,650 | 30,000 | 7.3% |
+| 11:36:53 | `2SP` | 223,294 | **42,874** | 19.2% |
+| 11:48:45 | `3SP` | 106,667 | 30,000 | 28.1% |
+| 11:52:12 | `1S` | 101,800 | 30,000 | 29.5% |
+| | **total** | **1,643,163** | **282,874** | 17.2% |
+
+**282,874 paired image-and-measurement events.** There is no label scarcity in this
+project at all, which settles §6 of [approach.md](approach.md): self-supervised
+pretraining is not needed for label efficiency, and would have to justify itself some
+other way.
+
+Three things this table says that the single-file read did not:
+
+**1. Replicate 1 is not brightfield-only.** `1S`, `1P` and `1SP` carry the same four
+stains as everything else. "Replicate" here means a repeat of the same stained panel, not
+a different panel — so all nine acquisitions are usable, and the held-out-replicate split
+has three groups rather than two.
+
+**2. The voltages are identical across all nine.** That removes the gain confound at the
+detector level, which §4 of [approach.md](approach.md) flagged as a reason the
+train-on-2 / test-on-3 split might measure something other than generalisation. It does
+**not** make the acquisitions equivalent — the background noise floors still differ by
+well (measured: `P` sd ~15 against `S` sd ~9), the samples were stained and washed at
+different times, and the event rates differ four-fold across the session. Held-out
+replicate remains the right split; it is just no longer confounded with gain.
+
+**3. Run order is not replicate order.** The session goes `2S`, `3S`, `1P`, `2P`, `3P`,
+`1SP`, `2SP`, `3SP`, `1S` — an hour end to end, with `1S` last and `2S` first. Replicate
+number is therefore not a proxy for time, which is good: a replicate split is not secretly
+a time split. But `1S` and `2S` are an hour apart on the same instrument, so within-day
+drift is the batch effect to watch, not gain.
+
+**A sampling bias to check, not assume.** The imaged fraction ranges from 7.3% (`1SP`) to
+33.0% (`2S`), tracking event rate — the camera images what it can keep up with. If that
+selection is random with respect to the cell, the imaged events are a fair sample. If it
+is not, everything trained here describes imaged events only. `make_targets.py
+--compare-imaged` reports each channel's median for imaged against unimaged events, which
+answers it directly.
+
 ### This also unblocks the sibling project
 
-`YL1-A` carries CD45-PE. `sperm_pbmc` exists to tell a curled sperm from a PBMC in
-brightfield, and its task brief says the fluorescent replicates are "the intended
-independent confirmation of the brightfield calls", deferred as out of scope. CD45 is that
-confirmation, and it is stronger than deferred confirmation: for the ~30,000 imaged events
-per marker acquisition, **it is a free per-event label for round-cell-vs-sperm** — no
-curation, no reviewer agreement ceiling.
+`YL1-A` carries CD45-PE, **in all nine acquisitions including replicate 1**.
 
-That is worth telling that project. It does not change the work here, but it means the
-manual labeling effort there may be largely unnecessary for the marker replicates.
+`sperm_pbmc` exists to tell a curled sperm from a PBMC in brightfield. It works on
+replicate 1, and its task brief states that replicate 1 is brightfield-only and that the
+fluorescent replicates are "the intended independent confirmation", deferred as out of
+scope. **Both halves of that are wrong.** Replicate 1 was stained with the same panel as
+2 and 3; the fluorescence was simply exported to the `.acs` rather than into the image
+files, and nobody had opened the `.acs`.
+
+So for the exact 30,000 events per well that project is already working on, CD45 is a
+**free per-event label for round-cell-vs-sperm** — no curation, no reviewer agreement
+ceiling, no `indeterminate` bin forced by brightfield ambiguity. Its multi-reviewer
+labeling app may be largely unnecessary.
+
+That is worth telling that project. It does not change the work here.
 
 ### Open questions, revised
 
@@ -321,9 +378,10 @@ manual labeling effort there may be largely unnecessary for the marker replicate
 - [x] Marker zips surveyed on the server — see above
 - [x] RGBA channels checked — grayscale in an RGBA container; **no fluorescence in these zips**
 - [x] Located the cytometry export — nine `.acs` archives in the run folder
-- [x] Read the FCS in `3S.acs` — 101,510 events, 59 parameters, panel recorded above
-- [ ] **Read the other eight archives** — is Tomm20 in replicate 2? do the voltages match?
-- [ ] Confirm the join on real data (`make_targets.py --verify-images`)
+- [x] Read the FCS in all nine archives — identical panel, identical voltages, 282,874 paired events
+- [x] Tomm20 question resolved as far as the data can: **it is not in this experiment**
+- [ ] **Ask the lab about Tomm20** — was it run, and if so where?
+- [ ] Build the target tables (`make_targets.py --verify-images --compare-imaged`)
 - [ ] Open `masks.zip` and see what the instrument's segmentation gives us
 - [ ] Decide how to compensate before the targets are used
 - [ ] Working sample built and pulled back to the laptop
