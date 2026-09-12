@@ -104,6 +104,51 @@ with its full frame count, so a truncated copy fails loudly here rather than sho
 later as a quietly wrong training pair. Files land in
 `data/samples/<sample-name>/<CLASS>/...`, which is gitignored.
 
+## The fast path: one bundle straight from the .acs
+
+Everything above predates finding that the `.acs` archives hold **both** the images and
+the FCS the targets come from. When you want a working subset, cut it from those in one
+pass instead — the pairing is then guaranteed by construction rather than re-joined later,
+and it is a single file to copy.
+
+```bash
+python scripts/make_bundle.py <run-folder> --per-class 200 --out bundle_seed0.zip
+```
+
+```
+bundle_seed0.zip
+  MANIFEST.json
+  2S/targets.csv          one row per drawn event
+  2S/spillover.csv        the acquisition's compensation matrix
+  2S/images/<event>.tif   the matching image, named by event id
+```
+
+Three modes, in increasing cost:
+
+| Command | What you get | Cost |
+| --- | --- | --- |
+| `--per-class 0` | The compensation matrices and the panel, nothing else | Seconds. Reads only the FCS TEXT segment; the event data never comes off the share |
+| `--per-class 200 --no-images` | Also a 200-row target sample per acquisition | Reads the FCS event data (~370 MB across nine) |
+| `--per-class 200` | Also the 200 matching images per acquisition | Adds ~113 KB per image — 200 x 9 is roughly 200 MB |
+
+`--per-class 0` is the one to reach for when you only need the spillover matrices, which
+is the usual case once the full target tables are already local.
+
+Then check it after the copy:
+
+```bash
+python scripts/make_bundle.py --verify bundle_seed0.zip
+```
+
+That re-checks what the draw guaranteed: every drawn event has both a target row and an
+image. Events are drawn from the **intersection** of "has a row flagged as imaged" and
+"has an image member", so a half-pair cannot be drawn in the first place.
+
+Why this is faster than `make_targets.py` over the whole run: that formats ~283,000 CSV
+rows, which is most of its runtime. This formats only the rows it keeps.
+
+---
+
 ## 5. Getting it onto the laptop
 
 Same as `sperm_pbmc`: the scripts are written here, run on the server, and the resulting

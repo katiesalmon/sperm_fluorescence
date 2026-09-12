@@ -84,6 +84,7 @@ sample is reproducible, and a sample can be regenerated rather than passed aroun
 | `scripts/inspect_zip.py` | Read-only survey — entry counts, event grouping, TIFF structure, FCS parameter table |
 | `scripts/make_sample.py` | Deterministic random sample of N **events** per class into one small zip |
 | `scripts/check_sample.py` | Verify a sample zip against its manifest, confirm no event lost a channel, and unpack |
+| `scripts/make_bundle.py` | **The fast path**: one small zip of matched images + targets + compensation matrices, cut straight from the `.acs` |
 | `scripts/inspect_acs.py` | Read the FCS inside an `.acs` archive in place, and extract just the FCS. Standard library |
 | `scripts/check_channels.py` | Decode pixels and report whether the RGBA channels carry distinct images. Standard library |
 | `scripts/tiff_read.py` | TIFF LZW decoder, so the above needs no install on the server. Standard library |
