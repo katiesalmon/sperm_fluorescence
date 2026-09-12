@@ -21,8 +21,13 @@ TAGS = {
     259: "Compression",
     262: "PhotometricInterpretation",
     270: "ImageDescription",
+    273: "StripOffsets",
     277: "SamplesPerPixel",
+    278: "RowsPerStrip",
+    279: "StripByteCounts",
+    284: "PlanarConfiguration",
     285: "PageName",
+    317: "Predictor",
     339: "SampleFormat",
 }
 
@@ -155,7 +160,23 @@ def _describe(fields):
     for key in ("PageName", "ImageDescription"):
         if fields.get(key):
             page[key.lower()] = fields[key]
+
+    # Strip layout, kept out of the printed summary but needed to actually decode.
+    page["_strips"] = {
+        "offsets": _as_list(fields.get("StripOffsets")),
+        "byte_counts": _as_list(fields.get("StripByteCounts")),
+        "rows_per_strip": fields.get("RowsPerStrip") or page.get("height"),
+        "predictor": fields.get("Predictor", 1),
+        "planar": fields.get("PlanarConfiguration", 1),
+        "compression_code": fields.get("Compression"),
+    }
     return page
+
+
+def _as_list(value):
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
 
 
 def dtype_of(page):

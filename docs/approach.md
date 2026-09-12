@@ -1,9 +1,9 @@
 # Approach
 
 What the problem actually is, what the literature says to expect from it, and the
-sequence I would run. Written **before** the server survey, so the one genuine branch
-point — whether the marker signal is an image or a number — is left open and both
-branches are costed. Everything else below is the same either way.
+sequence I would run. Written before the server survey; §3 has since been
+updated with what the survey found. Everything outside §3 — the prior art, the per-marker
+expectations, the confound, the evaluation design — is unchanged by it.
 
 Nothing here is a commitment. It is the argument the first experiments should test.
 
@@ -72,8 +72,24 @@ reporting four mediocre ones.
 
 ## 3. The branch point: is the target an image or a number?
 
-The survey decides this (see [task_brief.md](task_brief.md), open question 1). The two
-branches are different problems and it is worth being explicit about both.
+> **Updated 2026-09-12, after the survey.** Neither branch as stated. All six marker zips
+> are flat, one 248 × 248 uint8 RGBA LZW TIF per event, no sidecars — structurally
+> identical to replicate 1. The markers are not separate files, not extra pages, and there
+> is no FCS or CSV in these zips. Two possibilities remain, and they lead to *different*
+> branches below:
+>
+> - **The RGBA channels carry the markers.** Then this is Branch A, with the twist that
+>   four samples per pixel cannot hold brightfield plus four markers — so each replicate
+>   would carry a subset, and `2*` vs `3*` would be different panels rather than repeats.
+>   That would also remove the held-out-replicate split, which §4 leans on heavily.
+>   `scripts/check_channels.py` answers this directly.
+> - **The fluorescence is exported separately**, outside `Images\`, as the Attune's own
+>   per-event FCS. Then this is Branch B, joined on event id. The file-size arithmetic in
+>   [task_brief.md](task_brief.md) favours this one.
+>
+> Read the two branches below with that in mind; the recommendations in each are unchanged.
+
+The two branches are different problems and it is worth being explicit about both.
 
 ### Branch A — paired marker *images* (image → image)
 
@@ -205,7 +221,8 @@ absorbed into it.
 
 | # | Step | Decision it produces |
 | --- | --- | --- |
-| 1 | **Survey the marker zips** (`inspect_zip.py --structure --peek-metadata`) | Branch A or B; channel identities; bit depth |
+| 0 | ~~**Survey the marker zips**~~ — done 2026-09-12 | Ruled out both branches as stated; see [task_brief.md](task_brief.md) |
+| 1 | **Check the RGBA channels** (`check_channels.py`) and **list the run folder** | Branch A or B; where the fluorescence actually is |
 | 2 | **Sample ~300 events/class, pull to the laptop, look at them** | Are the channels registered? Is the signal where the biology says it should be? If ACRV1 does not sit on the acrosome in the raw data, stop — that is an imaging problem, not a modeling one |
 | 3 | **Feature baseline + background-only control** on the sample | The floor, and how much is trivially available. Cheap, no GPU, runs on the laptop |
 | 4 | **DAPI only, single U-Net, replicate-held-out** | Does the pipeline work at all? DAPI is the easiest channel; if it fails, nothing downstream is worth running |

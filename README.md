@@ -16,19 +16,24 @@ straight sperm / curled sperm / PBMC. Two findings from it constrain this projec
 carried forward in the task brief — the acquisitions are separable by background noise
 alone, and the single-population wells are impure.
 
-## The one thing to do first
+## Where this is up to
 
-Survey the zips on the server. Everything downstream — how to sample, what the model even
-is — depends on what it reports.
+The survey has been run (2026-09-12). It found all six marker zips to be **flat, one
+248 × 248 uint8 RGBA LZW TIF per event, no sidecars — structurally identical to replicate
+1**, which rules out both of the layouts the approach doc had costed. Full numbers in
+[docs/task_brief.md](docs/task_brief.md).
+
+So the open question is now *where the fluorescence actually is*, and there are two
+candidates. Next step is to settle it:
 
 ```bash
-python scripts/inspect_zip.py <images-dir> --classes 2S 2P 2SP 3S 3P 3SP --structure --peek-metadata --json survey_marker.json
+python scripts/check_channels.py <images-dir> --classes 2S 2P 3S 3P --events 24
 ```
 
-It answers, without decompressing a single pixel: is an event one file or five, are the
-markers images at all or per-event cytometer intensities, which channel is which, and what
-bit depth. If there is an FCS sidecar it prints the detector-to-antigen table (`VL1-A` →
-`DAPI`), which is the hardest thing to guess and the most expensive thing to guess wrong.
+Decodes pixels — no install needed, it carries its own LZW decoder — and reports whether
+the RGBA channels hold distinct images or are the same grayscale frame three times over,
+as in replicate 1. If they are duplicates, the markers are not in `Images\` at all and
+the Attune's per-event FCS export should be a sibling of it in the run folder.
 
 ## Then
 
@@ -76,6 +81,8 @@ sample is reproducible, and a sample can be regenerated rather than passed aroun
 | `scripts/inspect_zip.py` | Read-only survey — entry counts, event grouping, TIFF structure, FCS parameter table |
 | `scripts/make_sample.py` | Deterministic random sample of N **events** per class into one small zip |
 | `scripts/check_sample.py` | Verify a sample zip against its manifest, confirm no event lost a channel, and unpack |
+| `scripts/check_channels.py` | Decode pixels and report whether the RGBA channels carry distinct images. Standard library |
+| `scripts/tiff_read.py` | TIFF LZW decoder, so the above needs no install on the server. Standard library |
 | `scripts/make_fixture.py` | Fake CytPix-shaped zips in all three candidate layouts, to exercise the above without the real data |
 | `scripts/cytpix_zips.py` | Shared helpers: locating zips, grouping files into events, channel tokens |
 | `scripts/tiff_probe.py` | TIFF header reader — pages, dtype, channels, descriptions. Standard library |

@@ -103,36 +103,69 @@ should be several times larger. Either the marker channels are not stored as ima
 these zips, or they compress far better than brightfield, or the event count differs.
 The survey settles it; do not assume.
 
-## Open questions the survey must answer
+## What the survey found (2026-09-12)
 
-Run `scripts/inspect_zip.py` on the server before deciding anything below it.
+`inspect_zip.py --structure --peek-metadata` over all six marker zips, from
+`Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\Images\`:
 
-1. **Is the marker signal an image at all?** The CytPix images brightfield; an Attune's
-   fluorescence detection is by PMT. The marker signal may be a *per-event intensity* in
-   an FCS sidecar rather than a picture. `--peek-metadata` parses the FCS TEXT segment
-   and prints the `$PnN` → `$PnS` table, which maps detector (`VL1-A`) to antigen
-   (`DAPI`) — the single most useful thing the survey can return.
-2. **If images: one file per channel, or one multi-channel file?** `--structure` reads
-   the TIFF headers (no pixels) and reports pages, samples-per-pixel and any
-   `ImageDescription`, which is where OME-TIFF and ImageJ record channel names.
-3. **Which channel is which?** Four markers plus brightfield is five channels. Ordering
-   has to come from the file itself — a name, a page description, or the FCS table —
-   never from an assumption about channel order.
-4. **What bit depth?** Replicate 1 was uint8. Fluorescence intensity spanning four
-   decades in uint8 would be badly quantised, and if it is uint16 the loading path
-   differs from `sperm_pbmc`'s.
-5. **Is the event count still 30,000 per zip, and do 2* and 3* image the same events?**
-   They are separate acquisitions of separate aliquots, so almost certainly not — but if
-   event ids collide between replicates, a naive split would leak.
-6. **Are the frames registered to each other?** For a per-channel layout, whether the
-   marker frame is pixel-aligned with the brightfield frame decides whether the task is
-   image-to-image at all, or whether it collapses to predicting summary intensities.
+| | `2S` | `2P` | `2SP` | `3S` | `3P` | `3SP` |
+| --- | --- | --- | --- | --- | --- | --- |
+| Events | 30,000 | 30,000 | **42,874** | 30,000 | 30,000 | 30,000 |
+| Files per event | 1 | 1 | 1 | 1 | 1 | 1 |
+| Mean file size | 78.0 KB | 92.2 KB | 82.7 KB | 78.0 KB | 92.2 KB | 80.7 KB |
+| Sidecars | 0 | 0 | 0 | 0 | 0 | 0 |
+
+Every zip: **flat, one `<event-id>.tif` per event, 248 × 248, 1 page, spp=4, uint8, LZW,
+no `ImageDescription`, no sidecar of any kind.**
+
+**That is structurally identical to replicate 1.** Both candidate branches in
+[approach.md](approach.md) are ruled out as stated: the markers are not separate files,
+not extra pages, and there is no FCS or CSV in these zips to join against.
+
+Three things follow from the numbers themselves:
+
+1. **The RGBA container is the only place left in these files for marker signal.** If
+   replicate 1's `R == G == B, alpha constant` no longer holds in `2*` / `3*`, the
+   fluorescence is in those channels. `scripts/check_channels.py` decodes pixels and
+   settles it with no install.
+2. **The file sizes argue it is not.** A 248 × 248 LZW TIF holding grayscale replicated
+   across RGBA with constant alpha measures ~83 KB on synthetic cell-like content; three
+   independent channels plus alpha measures ~175 KB, four independent ~197 KB. The real
+   files are 78–92 KB. They carry roughly *one* channel's worth of entropy. This is
+   indirect but quantitative, and it points at these zips being brightfield only.
+3. **`S` files (78 KB) are consistently smaller than `P` files (92 KB), in both
+   replicates.** That is `sperm_pbmc` Finding 1 showing up in file sizes: the PBMC wells
+   have a higher background noise floor (σ 10.7 vs 5.5), noise does not compress, so the
+   files are bigger. File size is tracking acquisition noise, not cell content — a
+   reminder of how strongly the acquisition confound is present in this data.
+
+### Open questions, revised
+
+1. **Where is the fluorescence?** If the RGBA channels are duplicates, the marker signal
+   is not in `Images\` at all. The obvious place to look is the run folder one level up,
+   `Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\` — an Attune writes its per-event
+   detector measurements as FCS, and that export would be a sibling of `Images\`, not
+   inside it. **Listing that directory is the next decisive step.**
+2. **Why does `2SP` have 42,874 events when every other zip has exactly 30,000?** 30,000
+   is a round number and looks like a collection cap; 42,874 does not. Either that
+   acquisition was configured differently or the export was assembled differently.
+3. **What is the 5,656-byte file in `2SP`?** Every other file in every zip is 73–105 KB.
+   A 5.7 KB LZW frame at this size is nearly blank. Worth decoding before it lands in a
+   training set — and `--max-member-bytes` will not catch it, since that guard is for
+   files that are too *large*.
+4. **Do `2*` and `3*` reuse event ids?** Filenames are bare integers (`10.tif`,
+   `100002.tif`), so ids certainly collide across zips. Any index built for training has
+   to be keyed on (class, event-id), never the id alone.
+5. **Are the replicates the same panel?** Still open, and it now matters more: if the
+   fluorescence lives in a separate FCS export, the detector-to-antigen mapping comes
+   from that file's `$PnN` / `$PnS` keywords, and it may differ between replicates.
 
 ## Status
 
 - [x] Repo + event-aware sampling tools scaffolded
 - [x] Tooling rehearsed against fixtures in all three candidate layouts
-- [ ] Marker zips surveyed on the server — **next step**
-- [ ] Sampling parameters chosen from the survey
+- [x] Marker zips surveyed on the server — see above
+- [ ] **RGBA channels checked for distinct signal** (`scripts/check_channels.py`) — next step
+- [ ] **Run folder listed** to find the fluorescence export, if it is not in the images
 - [ ] Working sample built and pulled back to the laptop
-- [ ] Approach chosen (see [approach.md](approach.md) for the decision tree)
+- [ ] Approach chosen (see [approach.md](approach.md))
