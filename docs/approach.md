@@ -78,16 +78,19 @@ reporting four mediocre ones.
 > is no FCS or CSV in these zips. Two possibilities remain, and they lead to *different*
 > branches below:
 >
-> - **The RGBA channels carry the markers.** Then this is Branch A, with the twist that
->   four samples per pixel cannot hold brightfield plus four markers — so each replicate
->   would carry a subset, and `2*` vs `3*` would be different panels rather than repeats.
->   That would also remove the held-out-replicate split, which §4 leans on heavily.
->   `scripts/check_channels.py` answers this directly.
-> - **The fluorescence is exported separately**, outside `Images\`, as the Attune's own
->   per-event FCS. Then this is Branch B, joined on event id. The file-size arithmetic in
->   [task_brief.md](task_brief.md) favours this one.
+> **Resolved the same day: Branch B.** `check_channels.py` decoded 96 events across
+> `2S`/`2P`/`3S`/`3P` and found `R == G == B` on every pixel with alpha constant — the
+> images are brightfield in a four-channel container, carrying no marker signal at all.
+> The event ids are sparse integers running past 100,000 for 30,000 images, which is the
+> signature of images being a ~30% subset of a larger per-event record, keyed by event
+> index. So the target is a **per-event intensity in the Attune's FCS export, joined to
+> the image by filename** — and that export has yet to be located.
 >
-> Read the two branches below with that in mind; the recommendations in each are unchanged.
+> **Read §3 Branch B below as the live plan, and Branch A as history.** Two consequences
+> worth carrying forward: the spatial evaluation in §5 item 2 is unavailable, so the
+> occlusion tests in Branch B take its place as the main evidence that a model learned
+> anatomy; and §4's held-out-replicate split survives intact, because `2*` and `3*` really
+> are repeats rather than different panels.
 
 The two branches are different problems and it is worth being explicit about both.
 
@@ -222,7 +225,8 @@ absorbed into it.
 | # | Step | Decision it produces |
 | --- | --- | --- |
 | 0 | ~~**Survey the marker zips**~~ — done 2026-09-12 | Ruled out both branches as stated; see [task_brief.md](task_brief.md) |
-| 1 | **Check the RGBA channels** (`check_channels.py`) and **list the run folder** | Branch A or B; where the fluorescence actually is |
+| 0 | ~~**Check the RGBA channels**~~ — done 2026-09-12 | Brightfield only; Branch B confirmed |
+| 1 | **Locate the FCS export** for this run, and check `$TOT` >= the max image id | Whether the project has a target variable at all |
 | 2 | **Sample ~300 events/class, pull to the laptop, look at them** | Are the channels registered? Is the signal where the biology says it should be? If ACRV1 does not sit on the acrosome in the raw data, stop — that is an imaging problem, not a modeling one |
 | 3 | **Feature baseline + background-only control** on the sample | The floor, and how much is trivially available. Cheap, no GPU, runs on the laptop |
 | 4 | **DAPI only, single U-Net, replicate-held-out** | Does the pipeline work at all? DAPI is the easiest channel; if it fails, nothing downstream is worth running |

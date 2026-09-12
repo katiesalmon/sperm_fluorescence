@@ -140,12 +140,47 @@ def survey_zip(path, tree_depth, examples, structure, peek_metadata, channel_reg
                 "mean": int(sum(sizes) / len(sizes)),
             }
         if images:
-            result["grouping"] = grouping_summary(group_events(images, channel_regex), channel_regex)
+            events = group_events(images, channel_regex)
+            result["grouping"] = grouping_summary(events, channel_regex)
+            ids = event_id_stats(events)
+            if ids:
+                result["event_ids"] = ids
         if structure:
             result["structure"] = probe_structures(zf, images, structure)
         if peek_metadata and sidecars:
             result["metadata_peek"] = probe_metadata(zf, sidecars)
         return result
+
+
+def event_id_stats(events):
+    """If event keys are bare integers, describe the id range.
+
+    The CytPix images only a fraction of the events a run records -- the camera cannot
+    keep up with the detectors -- and names each image by its event index. So a sparse
+    integer id range is the signature of "these images are a subset of a larger event
+    record", and max(id) is a lower bound on how many events that record holds. That
+    number is how we recognise the right FCS when we find it.
+    """
+    ids = []
+    for key in events:
+        leaf = key.rsplit("/", 1)[-1]
+        if leaf.isdigit():
+            ids.append(int(leaf))
+    if len(ids) < len(events) * 0.9:
+        return None  # not integer-named; nothing to say
+
+    ids.sort()
+    span = ids[-1] - ids[0] + 1
+    gaps = [ids[i + 1] - ids[i] for i in range(len(ids) - 1)]
+    return {
+        "count": len(ids),
+        "min": ids[0],
+        "max": ids[-1],
+        "span": span,
+        "density": len(ids) / float(span),
+        "largest_gap": max(gaps) if gaps else 0,
+        "median_gap": sorted(gaps)[len(gaps) // 2] if gaps else 0,
+    }
 
 
 def print_survey(cls, s):
@@ -178,6 +213,21 @@ def print_survey(cls, s):
         print("  channel signatures:")
         for signature, n in g["channel_signatures"].items():
             print("    %-48s %d events" % (signature[:48], n))
+
+    if "event_ids" in s:
+        e = s["event_ids"]
+        print("\n  -- event ids --")
+        print(
+            "  %d images numbered %d..%d  (span %d, density %.1f%%)"
+            % (e["count"], e["min"], e["max"], e["span"], 100 * e["density"])
+        )
+        print("  gap between consecutive ids: median %d, largest %d" % (e["median_gap"], e["largest_gap"]))
+        if e["density"] < 0.9:
+            print(
+                "  => these images are a SUBSET of a larger event record; the full run\n"
+                "     holds at least %d events. An FCS for this run should report $TOT >= %d."
+                % (e["max"], e["max"])
+            )
 
     if "structure" in s:
         st = s["structure"]

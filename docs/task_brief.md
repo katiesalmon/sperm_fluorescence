@@ -139,13 +139,58 @@ Three things follow from the numbers themselves:
    files are bigger. File size is tracking acquisition noise, not cell content — a
    reminder of how strongly the acquisition confound is present in this data.
 
+### Settled: these zips are brightfield only
+
+`check_channels.py` over `2S`, `2P`, `3S`, `3P`, 24 events each (96 decoded in total):
+
+```
+R  mean 149.16   G  mean 149.16   B  mean 149.16   A  mean 255.00  sd 0.00
+worst pixel difference: R-G=0  R-B=0  G-B=0
+=> GRAYSCALE IN AN RGBA CONTAINER -- R == G == B on every pixel, alpha constant.
+```
+
+Identical verdict in all four. **R == G == B on every pixel of every event decoded, and
+alpha is a constant 255.** The marker replicates carry no fluorescence in their image
+files; they are 8-bit brightfield in a four-channel container, exactly like replicate 1.
+The file-size arithmetic above was right.
+
+So the marker signal, if it was recorded at all, is in a separate export.
+
+Incidentally the per-image standard deviations confirm the acquisition confound from a
+third direction: `2P` sd 15.20 and `3P` sd 14.76 against `2S` sd 8.73 and `3S` sd 9.00.
+The PBMC wells are noisier in both replicates, which is what drove the file sizes, and is
+`sperm_pbmc` Finding 1 again. Per-image mean also swings widely within a single zip
+(`3P` ranges 113.9–168.9), so per-image normalisation is not optional.
+
+### The event ids say where to look
+
+The images are named with bare integers — `10.tif`, `100002.tif` — and they are **sparse**:
+`2S` holds 30,000 images but ids run past 100,002, and there are gaps throughout.
+
+That is the signature of a camera that cannot keep up with the detectors. A CytPix records
+every event electronically and images only a fraction of them, naming each image by its
+event index in the full record. Which means:
+
+- the images are a **subset** of a larger per-event record, roughly 30% of it;
+- **the image filename is the join key** to that record;
+- an FCS for this run should report `$TOT` of at least ~100,000, not 30,000.
+
+That last point is a test, not just a description: it is how we will know we have found
+the *right* FCS rather than a different export. `inspect_zip.py` now reports the id range,
+span and density per zip, so re-running it gives the exact number to check against.
+
+This is Branch B of [approach.md](approach.md), and it appears to be the data model the
+instrument was always going to produce.
+
 ### Open questions, revised
 
-1. **Where is the fluorescence?** If the RGBA channels are duplicates, the marker signal
-   is not in `Images\` at all. The obvious place to look is the run folder one level up,
-   `Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\` — an Attune writes its per-event
-   detector measurements as FCS, and that export would be a sibling of `Images\`, not
-   inside it. **Listing that directory is the next decisive step.**
+1. **Where is the fluorescence?** Not in `Images\`. An Attune writes per-event detector
+   measurements as FCS, and that export should be a sibling of `Images\` in the run
+   folder `Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\`, or in a separate tree under
+   `Z:\Blair_Main\2026\`. **Finding it is the one thing blocking the project.** If it
+   does not exist, this is an acquisition question, not a modeling one — the markers were
+   run, so the measurements existed at the instrument; the question is whether anyone
+   exported them.
 2. **Why does `2SP` have 42,874 events when every other zip has exactly 30,000?** 30,000
    is a round number and looks like a collection cap; 42,874 does not. Either that
    acquisition was configured differently or the export was assembled differently.
@@ -165,7 +210,7 @@ Three things follow from the numbers themselves:
 - [x] Repo + event-aware sampling tools scaffolded
 - [x] Tooling rehearsed against fixtures in all three candidate layouts
 - [x] Marker zips surveyed on the server — see above
-- [ ] **RGBA channels checked for distinct signal** (`scripts/check_channels.py`) — next step
-- [ ] **Run folder listed** to find the fluorescence export, if it is not in the images
+- [x] RGBA channels checked — grayscale in an RGBA container; **no fluorescence in these zips**
+- [ ] **Locate the FCS export for this run** — the one thing blocking everything else
 - [ ] Working sample built and pulled back to the laptop
 - [ ] Approach chosen (see [approach.md](approach.md))
