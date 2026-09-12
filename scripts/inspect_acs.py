@@ -93,6 +93,15 @@ def inspect(path, max_fcs, quiet):
                     % (kind, by_kind[kind], human_bytes(bytes_by_kind[kind]))
                 )
 
+        # The non-image entries are few and worth naming: the TOC, and whatever the
+        # "other" bucket turns out to hold -- an analysis or compensation file would
+        # matter to how the exported values should be read.
+        named = [i for i in infos if categorise(i.filename) in ("metadata", "other")]
+        if named:
+            print("  non-image, non-FCS entries:")
+            for info in sorted(named, key=lambda i: -i.file_size)[:10]:
+                print("    %-56s %s" % (info.filename[:56], human_bytes(info.file_size)))
+
         fcs_members = [i for i in infos if categorise(i.filename) == "fcs"]
         if not fcs_members:
             print("\n  no .fcs member found")
@@ -114,10 +123,39 @@ def inspect(path, max_fcs, quiet):
             for key in ("$CYT", "$DATE", "$BTIM", "$SRC", "$FIL"):
                 if keywords.get(key):
                     print("     %-8s %s" % (key, keywords[key]))
+
+            images_here = by_kind["image"]
+            total = keywords.get("$TOT")
+            if total and total.isdigit() and images_here:
+                ratio = 100.0 * images_here / int(total)
+                print(
+                    "     images in this archive: %d of %s events (%.1f%%) -- %s"
+                    % (
+                        images_here,
+                        total,
+                        ratio,
+                        "the images are a subset; filename should be the event index"
+                        if ratio < 95
+                        else "one image per event",
+                    )
+                )
+
+            comp = fcs_probe.spillover(keywords)
+            if comp:
+                print(
+                    "     %s: %sx%s matrix over %s"
+                    % (comp["keyword"], comp["size"], comp["size"], ", ".join(comp["detectors"]))
+                )
+            else:
+                print("     no spillover matrix in TEXT -- values are likely uncompensated")
+
             print("     parameters:")
+            print("       %-4s %-14s %-22s %-10s %s" % ("", "detector", "label ($PnS)", "range", "voltage"))
             for row in params:
-                label = row["label"] or ""
-                print("       P%-3d %-14s %s" % (row["n"], row["name"], label))
+                print(
+                    "       P%-3d %-14s %-22s %-10s %s"
+                    % (row["n"], row["name"], row["label"] or "", row["range"], row["voltage"])
+                )
             print()
         if len(fcs_members) > max_fcs:
             print("  ... and %d more FCS members" % (len(fcs_members) - max_fcs))

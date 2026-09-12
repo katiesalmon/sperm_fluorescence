@@ -8,7 +8,12 @@ mapping -- detector to antigen -- is the first thing we need and the hardest to 
 Only the HEADER and TEXT segments are read. The event data is left alone.
 """
 
-DEFAULT_MAX_KEYWORDS = 400
+# A guard against a malformed segment, not a budget. The TEXT segment is bounded by the
+# header offsets, so it cannot grow without limit -- and capping it low is a real hazard:
+# writers emit keywords alphabetically, so $P1B ... $P99V all sort *before* $PAR and
+# $TOT. A cap of a few hundred truncates mid-parameter-block and silently loses the two
+# keywords that matter most. Hitting this limit is reported, never absorbed.
+DEFAULT_MAX_KEYWORDS = 100000
 
 
 def read_text_segment(data, max_keywords=DEFAULT_MAX_KEYWORDS):
@@ -43,26 +48,36 @@ def read_text_segment(data, max_keywords=DEFAULT_MAX_KEYWORDS):
     fields = [f.replace(b"\x00ESC\x00", delimiter) for f in fields]
 
     keywords = {"$FCSVERSION": version}
+    truncated = False
     for i in range(0, len(fields) - 1, 2):
         key = fields[i].decode("utf-8", "replace").strip()
         if not key:
             continue
         keywords[key.upper()] = fields[i + 1].decode("utf-8", "replace").strip()
         if len(keywords) >= max_keywords:
+            truncated = True
             break
+    if truncated:
+        keywords["$TRUNCATED"] = "yes -- stopped at %d keywords" % max_keywords
     return keywords
 
 
 def parameters(keywords):
-    """The per-parameter table: [{'n', 'name' ($PnN), 'label' ($PnS), 'range' ($PnR)}, ...].
+    """The per-parameter table, one row per detector.
 
     $PnN is the detector (VL1-A, BL2-H); $PnS is whatever the operator typed when setting
-    up the run, which is where an antigen name like ACRV1 would appear.
+    up the run, which is where an antigen name like ACRV1 would appear. $PnV is the PMT
+    voltage -- the acquisition gain, which is worth reading directly: if it differs
+    between replicates, the fluorescence targets are not on a common scale and the
+    held-out-replicate evaluation has to account for it.
     """
-    try:
-        count = int(keywords.get("$PAR", "0"))
-    except ValueError:
+    count = _int(keywords.get("$PAR"))
+    if count is None:
+        # $PAR missing (or truncated away) -- fall back to counting $PnN keywords.
         count = 0
+        while "$P%dN" % (count + 1) in keywords:
+            count += 1
+
     rows = []
     for n in range(1, count + 1):
         rows.append(
@@ -71,15 +86,49 @@ def parameters(keywords):
                 "name": keywords.get("$P%dN" % n, ""),
                 "label": keywords.get("$P%dS" % n, ""),
                 "range": keywords.get("$P%dR" % n, ""),
+                "voltage": keywords.get("$P%dV" % n, ""),
+                "gain": keywords.get("$P%dG" % n, ""),
             }
         )
     return rows
 
 
+def _int(text):
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def spillover(keywords):
+    """Describe the compensation matrix, if the file carries one.
+
+    Spectral spillover between detectors puts correlated signal into channels that should
+    be independent. A per-marker model would learn that correlation and we would read it
+    as biology, so whether the exported values are compensated is a question to settle
+    before training, not after.
+    """
+    for key in ("$SPILLOVER", "SPILL", "$COMP"):
+        raw = keywords.get(key)
+        if not raw:
+            continue
+        head = raw.split(",")
+        n = _int(head[0]) if head else None
+        return {
+            "keyword": key,
+            "detectors": [h.strip() for h in head[1 : 1 + n]] if n else [],
+            "size": n,
+        }
+    return None
+
+
 def summarise(keywords):
     """One line: version, event count, parameter count."""
-    return "%s  $TOT=%s events  $PAR=%s parameters" % (
+    line = "%s  $TOT=%s events  $PAR=%s parameters" % (
         keywords.get("$FCSVERSION", "?"),
         keywords.get("$TOT", "?"),
         keywords.get("$PAR", "?"),
     )
+    if keywords.get("$TRUNCATED"):
+        line += "   [TEXT PARSE TRUNCATED: %s]" % keywords["$TRUNCATED"]
+    return line
