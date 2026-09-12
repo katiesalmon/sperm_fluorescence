@@ -5,12 +5,27 @@
 Given the raw (brightfield) CytPix event image, predict the fluorescence signal in each
 antigen marker channel:
 
-| Marker | Antigen | Where it sits in a sperm cell | What a brightfield image can plausibly see |
-| --- | --- | --- | --- |
-| **DAPI** | DNA | nucleus — i.e. the head | the head: the largest, highest-contrast structure in the frame |
-| **ACRV1** | intra-acrosomal protein SP-10 | acrosome — the cap over the anterior head | the acrosomal cap margin; a subtle intensity step within the head |
-| **LDHC** | testis-specific lactate dehydrogenase C | principal piece of the flagellum, weaker in midpiece and head | the tail |
-| **Tomm20** | mitochondrial outer-membrane import receptor | midpiece — the mitochondrial sheath | the thickened segment immediately behind the head |
+| Detector | Label as recorded ($PnS) | Antigen | Where it sits | Brightfield correlate |
+| --- | --- | --- | --- | --- |
+| `VL1-A` | `DAPI-A` | DNA | nucleus — the head | the head: largest, highest-contrast structure |
+| `BL2-A` | `ACRV-1-PerCP-ef710-A` | ACRV1 / SP-10 | acrosome — cap over the anterior head | a subtle intensity step within the head |
+| `BL1-A` | `LDHC_AKAP4-AF488-A` | **LDHC *and* AKAP4, pooled on one fluor** | principal piece of the flagellum | the tail |
+| `YL1-A` | `CD45-PE-A` | **CD45** — pan-leukocyte | leukocyte surface; absent from sperm | round cell vs sperm |
+
+Read off the actual panel in `3S.fcs` (2026-09-12), and it differs from the brief this
+project started with in three ways:
+
+- **Tomm20 is not in this replicate's panel.** Nothing labelled Tomm20 appears on any of
+  the 15 fluorescence detectors; `RL1-A`, where a far-red mitochondrial stain would sit,
+  carries no operator label at all. Either it is in replicate 2's panel, or it was not
+  run. **Unresolved until the other eight archives are read.**
+- **`BL1-A` is a two-antigen cocktail**, LDHC and AKAP4 together on AF488. Both are
+  principal-piece proteins, so as a *compartment* readout it is coherent — but it cannot
+  be resolved into "LDHC signal" and "AKAP4 signal", and the write-up has to call it a
+  flagellar-marker channel rather than an LDHC channel.
+- **CD45 is in the panel and was not in the brief.** It is the pan-leukocyte marker, i.e.
+  a direct fluorescent label for exactly the round-cell-vs-sperm call that `sperm_pbmc`
+  spent its curation effort on. See below.
 
 One model per marker, as four separate heads or four separate models — that decision
 belongs in [approach.md](approach.md), not here.
@@ -215,6 +230,70 @@ Note on transfer: dragging these through a Remote Desktop redirected folder prod
 **sparse placeholder files** — correct logical size, zero bytes on disk, every byte zero.
 `inspect_acs.py` detects that case and says so rather than reporting a corrupt archive.
 
+### What the FCS holds (`3S.acs`, read 2026-09-12)
+
+```
+FCS3.1   $TOT=101510 events   $PAR=59 parameters
+$CYT     0A48664 Attune CytPix Flow Cytometer (Lasers: BRV6Y)
+$DATE    09-Jul-2026   $BTIM 10:56:27
+images in this archive: 30000 of 101510 events (29.6%)
+$SPILLOVER: 15x15 over BL1-A BL2-A YL1-A YL2-A YL3-A RL1-A RL2-A RL3-A
+            VL1-A VL2-A VL3-A VL4-A VL5-A VL6-A ImageFlag
+```
+
+**The subset prediction was right.** 30,000 images against 101,510 recorded events —
+29.6%. `ImageFlag` (P23) is the per-event boolean saying which ones were imaged, and
+`Event` (P1) is the id. `make_targets.py --verify-images` tests the join directly by
+comparing image filenames against event ids.
+
+Four things in here change the plan, in descending order of importance.
+
+**1. The instrument already computed the morphology features.** Parameters 24–59 are not
+detectors; they are per-event measurements the CytPix derived from the image:
+
+| Group | Parameters |
+| --- | --- |
+| Intensity | Max, Min, Total, Average, StandardDeviation, CV, Skewness, Kurtosis, Entropy, and normalised variants |
+| Shape | NumPixels, AreaSquareMicrons, PerimeterMicrons, Major/MinorDiameterMicrons, MinorMajorRatioPercent, EccentricityPercent, CircularityPercent, PseudoDiameterMicrons, GyrationRadiusWeighted |
+| Texture | Maximum / Contrast / Entropy / AngularSecondMoment CoOccurrence (Haralick) |
+| Quality | ParticleCount, ObjectCount, ClumpIndexMax, IsOnBorder, IsProcessable, IsProcessed, ConfidenceScore |
+
+That is the feature baseline from step 3 of [approach.md](approach.md), for free, with no
+image processing at all — and it is computed identically across every acquisition, so it
+cannot drift the way a hand-rolled segmentation can. It does **not** remove the need for
+the background-only control: these features are computed from the same images whose noise
+floor differs by well, so they can encode acquisition just as readily.
+
+**2. There are segmentation masks.** `F8C04D37-....masks.zip`, 71 MB, one archive member
+alongside the images. If those are per-event object masks, the segmentation step is done,
+and the masked-input requirement from `sperm_pbmc` Finding 1 becomes trivial to satisfy.
+Worth opening before writing any segmentation code.
+
+**3. The values are uncompensated, and the matrix is 15 × 15.** Four stains across four
+lasers will spill into each other — PerCP-eF710 and PE overlap substantially. A per-marker
+model trained on raw `-A` values would learn the spillover and we would read it as
+biology. Compensation has to be applied before the targets are used, using the matrix in
+`$SPILLOVER`. (Note the matrix includes `ImageFlag` as a row/column, which is an artefact
+of how it was written, not a real detector.)
+
+**4. Detector voltages are recorded per parameter.** `3S`: BL1 300, BL2 425, YL1 375,
+VL1 250. These are the acquisition gain, stated numerically. **Compare them across
+replicates before treating `2*` → `3*` as a clean held-out split** — if the voltages
+differ, the targets are not on a common scale and the split measures gain as well as
+generalisation.
+
+### This also unblocks the sibling project
+
+`YL1-A` carries CD45-PE. `sperm_pbmc` exists to tell a curled sperm from a PBMC in
+brightfield, and its task brief says the fluorescent replicates are "the intended
+independent confirmation of the brightfield calls", deferred as out of scope. CD45 is that
+confirmation, and it is stronger than deferred confirmation: for the ~30,000 imaged events
+per marker acquisition, **it is a free per-event label for round-cell-vs-sperm** — no
+curation, no reviewer agreement ceiling.
+
+That is worth telling that project. It does not change the work here, but it means the
+manual labeling effort there may be largely unnecessary for the marker replicates.
+
 ### Open questions, revised
 
 1. ~~**Where is the fluorescence?**~~ **Found.** Nine `.acs` archives sit in the run
@@ -242,8 +321,10 @@ Note on transfer: dragging these through a Remote Desktop redirected folder prod
 - [x] Marker zips surveyed on the server — see above
 - [x] RGBA channels checked — grayscale in an RGBA container; **no fluorescence in these zips**
 - [x] Located the cytometry export — nine `.acs` archives in the run folder
-- [ ] **Read the FCS inside them** (`scripts/inspect_acs.py`): `$TOT`, and the `$PnN` → `$PnS`
-      detector-to-antigen mapping — next step
-- [ ] Confirm the join: image filenames are event indices into the FCS record
+- [x] Read the FCS in `3S.acs` — 101,510 events, 59 parameters, panel recorded above
+- [ ] **Read the other eight archives** — is Tomm20 in replicate 2? do the voltages match?
+- [ ] Confirm the join on real data (`make_targets.py --verify-images`)
+- [ ] Open `masks.zip` and see what the instrument's segmentation gives us
+- [ ] Decide how to compensate before the targets are used
 - [ ] Working sample built and pulled back to the laptop
 - [ ] Approach chosen (see [approach.md](approach.md))
