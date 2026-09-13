@@ -19,8 +19,8 @@ out to be is in [task_brief.md](task_brief.md).
 
 Decoded pixel values run ~145-1011 with 686 distinct levels pooled, so the sensor is
 ~10-bit and the `.acs` preserves it. The `Images\` export throws away about two bits.
-**Source images from the `.acs`.** `scripts/tiff_read.py` now decodes both widths, verified
-byte-for-byte against PIL on the real archives.
+**Source images from the `.acs`.** A standard-library decoder for both widths was written and verified byte-for-byte
+against PIL on the real archives; it has since been removed as unused (git history).
 
 ### The instrument ships its segmentation
 

@@ -31,7 +31,7 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fcs_probe  # noqa: E402
-from cytpix_zips import IMAGE_EXTS, human_bytes, run  # noqa: E402
+from cytpix import IMAGE_EXTS, human_bytes, run  # noqa: E402
 
 FCS_EXTS = {".fcs"}
 # Enough to reach the end of any reasonable TEXT segment without decompressing the events.

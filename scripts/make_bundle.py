@@ -54,7 +54,7 @@ import io  # noqa: E402
 import fcs_data  # noqa: E402
 import fcs_probe  # noqa: E402
 import tiff_probe  # noqa: E402
-from cytpix_zips import IMAGE_EXTS, class_of, human_bytes, open_zip, run  # noqa: E402
+from cytpix import IMAGE_EXTS, class_of, human_bytes, open_zip, run  # noqa: E402
 from make_targets import (  # noqa: E402
     ALWAYS,
     MORPHOLOGY,

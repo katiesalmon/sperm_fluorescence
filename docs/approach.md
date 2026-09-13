@@ -78,7 +78,7 @@ reporting four mediocre ones.
 > is no FCS or CSV in these zips. Two possibilities remain, and they lead to *different*
 > branches below:
 >
-> **Resolved the same day: Branch B.** `check_channels.py` decoded 96 events across
+> **Resolved the same day: Branch B.** `check_channels.py` (since removed) decoded 96 events across
 > `2S`/`2P`/`3S`/`3P` and found `R == G == B` on every pixel with alpha constant — the
 > images are brightfield in a four-channel container, carrying no marker signal at all.
 > The event ids are sparse integers running past 100,000 for 30,000 images, which is the

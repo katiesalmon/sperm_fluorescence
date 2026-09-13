@@ -5,9 +5,11 @@ data/*
 *.tif
 *.tiff
 *.fcs
+*.acs
 
-# Survey/manifest output is small but machine-specific; commit deliberately if wanted.
+# Survey output is small but machine-specific; commit deliberately if wanted.
 survey_*.json
+bundle_*.zip
 analysis/out/
 
 # Site-specific path to the export zips. Per machine, never committed.

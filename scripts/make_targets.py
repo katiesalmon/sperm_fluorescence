@@ -32,7 +32,7 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fcs_data  # noqa: E402
 import fcs_probe  # noqa: E402
-from cytpix_zips import IMAGE_EXTS, human_bytes, run  # noqa: E402
+from cytpix import IMAGE_EXTS, human_bytes, run  # noqa: E402
 
 # Columns worth having by default: the join key, the image flag, every detector the
 # operator actually labelled, and the instrument's own morphology measurements -- which

@@ -123,7 +123,7 @@ The survey settles it; do not assume.
 
 ## What the survey found (2026-09-12)
 
-`inspect_zip.py --structure --peek-metadata` over all six marker zips, from
+`inspect_zip.py --structure --peek-metadata` (since removed; see git history) over all six marker zips, from
 `Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\Images\`:
 
 | | `2S` | `2P` | `2SP` | `3S` | `3P` | `3SP` |
@@ -144,8 +144,8 @@ Three things follow from the numbers themselves:
 
 1. **The RGBA container is the only place left in these files for marker signal.** If
    replicate 1's `R == G == B, alpha constant` no longer holds in `2*` / `3*`, the
-   fluorescence is in those channels. `scripts/check_channels.py` decodes pixels and
-   settles it with no install.
+   fluorescence is in those channels. `check_channels.py` (since removed) decoded pixels and settled it
+   (since removed; see git history).
 2. **The file sizes argue it is not.** A 248 × 248 LZW TIF holding grayscale replicated
    across RGBA with constant alpha measures ~83 KB on synthetic cell-like content; three
    independent channels plus alpha measures ~175 KB, four independent ~197 KB. The real
@@ -159,7 +159,7 @@ Three things follow from the numbers themselves:
 
 ### Settled: these zips are brightfield only
 
-`check_channels.py` over `2S`, `2P`, `3S`, `3P`, 24 events each (96 decoded in total):
+`check_channels.py` (since removed) over `2S`, `2P`, `3S`, `3P`, 24 events each:
 
 ```
 R  mean 149.16   G  mean 149.16   B  mean 149.16   A  mean 255.00  sd 0.00
@@ -194,8 +194,7 @@ event index in the full record. Which means:
 - an FCS for this run should report `$TOT` of at least ~100,000, not 30,000.
 
 That last point is a test, not just a description: it is how we will know we have found
-the *right* FCS rather than a different export. `inspect_zip.py` now reports the id range,
-span and density per zip, so re-running it gives the exact number to check against.
+the *right* FCS rather than a different export. That number is reported by `inspect_acs.py`.
 
 This is Branch B of [approach.md](approach.md), and it appears to be the data model the
 instrument was always going to produce.

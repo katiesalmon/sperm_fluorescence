@@ -20,14 +20,14 @@ So: to answer "what is in these zips" and "give me 300 events", a bare Python is
 From the cloned repo folder on the server:
 
 ```powershell
-py -3 scripts\inspect_zip.py <images-dir> --classes 2S 2P 2SP 3S 3P 3SP --structure --peek-metadata --json survey_marker.json
+py -3 scripts\inspect_acs.py <run-folder>
 ```
 
 ```powershell
-py -3 scripts\make_sample.py <images-dir> --classes 2S 2P 2SP --per-class 300 --out sample_rep2_seed0.zip
+py -3 scripts\make_bundle.py <run-folder> --per-class 200 --out bundle_seed0.zip
 ```
 
-Then copy `sample_rep2_seed0.zip` back to the laptop.
+Then copy `bundle_seed0.zip` back to the laptop.
 
 Optionally point the tooling at the data once per machine, the same way `sperm_pbmc` does:
 

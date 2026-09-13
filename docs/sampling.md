@@ -1,201 +1,136 @@
-# Sampling the marker exports
+# Getting data off the server
 
-How to see what is in the marker-replicate zips and pull a small working subset onto a
-laptop. Everything under `scripts/` is **standard library Python 3.8+** — no environment
-setup, which is the point: the survey has to run on the imaging server, where installing
-packages is a whole conversation.
+Everything under `scripts/` is **standard library Python 3.8+** — no environment setup.
+That constraint exists so the survey and the sampler can be run by whoever has access to
+the data, rather than whoever can get packages installed on the imaging server.
 
-`<images-dir>` is the directory holding the nine CytPix export zips. The scripts accept
-either that directory — they resolve class tokens from the filenames — or individual zip
-paths. Substitute `py -3` for `python` if `python` is not on PATH.
+`<run-folder>` below is the directory holding the nine `.acs` archives:
+
+```
+Z:\Blair_Main\2026\260709_Blair_Sperm_Cytpix\
+```
+
+Substitute `py -3` for `python` if `python` is not on PATH.
 
 ---
 
-## 1. Survey the zips — do this first
+## Everything is in the .acs
+
+This is the thing to know. Each archive is a plain zip holding, for one acquisition:
+
+| Member | What it is |
+| --- | --- |
+| `<n>.tif` x 30,000 | The event images — **248 x 248 uint16, single channel, uncompressed** |
+| `<name>.fcs` | Every recorded event, ~100-400k of them, 59 parameters each |
+| `<uuid>.masks.zip` | One JSON per event: the instrument's segmentation |
+| `Toc1.xml` | Archive table of contents |
+
+**Use this, not the `Images\*.zip` export.** That export holds the same events
+downconverted to 8-bit in an RGBA container, throws away about two bits of the sensor's
+~10-bit range, and carries no measurements or masks. The tooling for reading it has been
+removed; it is in git history if it is ever needed.
+
+The images are a **subset** of the recorded events — between 7% and 33% depending on the
+acquisition's event rate, because the camera cannot keep up with the detectors. Each image
+is named by its event index, which is the join key into the FCS.
+
+---
+
+## 1. Survey an archive
 
 ```bash
-python scripts/inspect_zip.py <images-dir> --classes 2S 2P 2SP 3S 3P 3SP --structure --peek-metadata --json survey_marker.json
+py -3 scripts\inspect_acs.py <run-folder>
 ```
 
-Reads the zip index, the TIFF *headers* of a dozen files per zip, and the head of each
-sidecar. No pixels are decoded, so this is seconds per file even on a 3.5 GB zip.
+Prints, per archive: the member breakdown, `$TOT`, the acquisition keywords, the
+detector-to-antigen table (`$PnN` → `$PnS`) with PMT voltages, the spillover matrix size,
+and what fraction of events were imaged. Reads only the FCS TEXT segment, so it is fast
+even on a 5 GB archive.
 
-It answers the open questions in [task_brief.md](task_brief.md), and three parts of the
-output matter more than the rest:
-
-- **`-- events --`** — how many events, how many files each, and the channel signature.
-  `files per event: {5: 30000}` with signature `ACRV1+BF+DAPI+LDHC+Tomm20` means one file
-  per channel. `{1: 30000}` with signature `(none)` means the channels are inside the
-  file, or are not images at all.
-- **`-- image structure --`** — pages, samples-per-pixel, dtype, compression, and any
-  `ImageDescription` / `PageName`. A 5-page TIF is a multi-channel event; `spp=4 uint8`
-  is the RGBA-grayscale container replicate 1 used.
-- **the FCS parameter table**, if there is an FCS sidecar. `--peek-metadata` parses its
-  TEXT segment and prints `$PnN` (detector, e.g. `VL1-A`) against `$PnS` (whatever the
-  operator typed, e.g. `DAPI`). That mapping is the hardest thing to guess and the most
-  expensive thing to guess wrong.
-
-**Do not skip to step 2.** The right `--per-class` depends on how many files an event is.
-
-## 2. Dry-run the sample
+## 2. Cut a bundle to work on locally
 
 ```bash
-python scripts/make_sample.py <images-dir> --classes 2S 2P 2SP --per-class 300 --dry-run
-```
-
-Reports what would be drawn, the channel signature it grouped on, and the projected
-payload. Writes nothing. Check the "channels per event" line matches what the survey
-showed before going further.
-
-If the auto-detection got the grouping wrong — the printed signature is `(none)` when you
-know there are per-channel files, or the event count is 5× what it should be — override
-it:
-
-```bash
-python scripts/make_sample.py <images-dir> --channel-regex '(?P<event>.+?)_(?P<channel>DAPI|ACRV1|LDHC|Tomm20|BF)\.tif$' --dry-run
-```
-
-Every image entry must match the pattern, or it fails loudly rather than dropping events.
-
-## 3. Build the sample
-
-```bash
-python scripts/make_sample.py <images-dir> --classes 2S 2P 2SP --per-class 300 --out sample_rep2_seed0.zip
-```
-
-Output layout:
-
-```
-sample_rep2_seed0.zip
-  MANIFEST.json
-  2S/<original path inside the source zip>
-  2P/...
-  2SP/...
-```
-
-Worth knowing:
-
-- **The draw is over events, not files.** An event travels with all of its channels or
-  not at all — a sample holding an event's DAPI frame but not its brightfield frame
-  teaches nothing. This is the main difference from the `sperm_pbmc` sampler.
-- **Only events with the modal channel signature are eligible** by default. That quietly
-  excludes half-written events and stray non-event files (contact sheets, mosaics)
-  instead of letting them into the sample. `--allow-partial-events` turns it off; the
-  counts of what was excluded are always printed.
-- **The draw is seeded** (`--seed`, default `0`) and seeded *per class*, so re-running
-  gives the same events, and changing which classes you pass does not reshuffle the ones
-  you kept.
-- **Sidecars are copied by default** (`--no-metadata` to stop it). An FCS covering the
-  whole run is a few MB and may be the label source — worth carrying even though the
-  sample is 300 events.
-- **Entries over 8 MB exclude their whole event** (`--max-member-bytes`).
-- **`MANIFEST.json`** records the source zips, the seed, the channel signature, the drawn
-  event keys, and every member with its CRC. Keep the filename, which encodes the classes
-  and seed.
-
-## 4. Verify and unpack
-
-```bash
-python scripts/check_sample.py sample_rep2_seed0.zip --extract-to data/samples
-```
-
-CRC-checks every member against the manifest **and** confirms every drawn event arrived
-with its full frame count, so a truncated copy fails loudly here rather than showing up
-later as a quietly wrong training pair. Files land in
-`data/samples/<sample-name>/<CLASS>/...`, which is gitignored.
-
-## The fast path: one bundle straight from the .acs
-
-Everything above predates finding that the `.acs` archives hold **both** the images and
-the FCS the targets come from. When you want a working subset, cut it from those in one
-pass instead — the pairing is then guaranteed by construction rather than re-joined later,
-and it is a single file to copy.
-
-```bash
-python scripts/make_bundle.py <run-folder> --per-class 200 --out bundle_seed0.zip
+py -3 scripts\make_bundle.py <run-folder> --per-class 200 --out bundle_seed0.zip
 ```
 
 ```
 bundle_seed0.zip
   MANIFEST.json
-  2S/targets.csv          one row per drawn event
-  2S/spillover.csv        the acquisition's compensation matrix
-  2S/images/<event>.tif   the matching image, named by event id
+  2S/targets.csv           one row per drawn event
+  2S/spillover.csv         that acquisition's compensation matrix
+  2S/images/<event>.tif    the matching image
+  2S/masks/<event>.json    the instrument's segmentation for that event
+  2P/ ... 3SP/
 ```
 
 Three modes, in increasing cost:
 
 | Command | What you get | Cost |
 | --- | --- | --- |
-| `--per-class 0` | The compensation matrices and the panel, nothing else | Seconds. Reads only the FCS TEXT segment; the event data never comes off the share |
+| `--per-class 0` | Compensation matrices and the panel only | Seconds — reads only the FCS TEXT segment |
 | `--per-class 200 --no-images` | Also a 200-row target sample per acquisition | Reads the FCS event data (~370 MB across nine) |
-| `--per-class 200` | Also the 200 matching images per acquisition | Adds ~113 KB per image — 200 x 9 is roughly 200 MB |
+| `--per-class 200` | Also the matching images and masks | Adds ~120 KB per image; 200 x 9 is roughly 220 MB |
 
-`--per-class 0` is the one to reach for when you only need the spillover matrices, which
-is the usual case once the full target tables are already local.
+Worth knowing:
 
-Then check it after the copy:
+- **Events are drawn from the intersection** of "has a row flagged as imaged" and "has an
+  image member", so a half-pair cannot be drawn. The pairing is guaranteed by
+  construction rather than re-joined afterwards.
+- **The draw is seeded** (`--seed`, default `0`) and seeded per acquisition, so re-running
+  gives the same events and changing `--classes` does not reshuffle the ones you kept.
+- **Every detector in `$SPILLOVER` is kept**, not just the four labelled ones.
+  Compensation is a change of basis across all of them, so a table holding only the
+  stained channels cannot be compensated afterwards. `--stained-only` overrides this and
+  is almost always the wrong choice.
+- **`MANIFEST.json`** records the seed, the drawn event ids, the column list, the panel
+  with voltages, and the image format.
+
+## 3. Verify after the copy
 
 ```bash
-python scripts/make_bundle.py --verify bundle_seed0.zip
+python3 scripts/make_bundle.py --verify bundle_seed0.zip
 ```
 
-That re-checks what the draw guaranteed: every drawn event has both a target row and an
-image. Events are drawn from the **intersection** of "has a row flagged as imaged" and
-"has an image member", so a half-pair cannot be drawn in the first place.
+Re-checks that every drawn event still has a target row, an image and a mask. **Do this
+before trusting a transfer** — a zip's index lives at the end of the file, so a partial
+copy is not a slightly-short bundle, it is an unopenable one.
 
-Why this is faster than `make_targets.py` over the whole run: that formats ~283,000 CSV
-rows, which is most of its runtime. This formats only the rows it keeps.
+## 4. The full measurement table, when a sample is not enough
+
+`make_bundle.py` draws from imaged events only. To export every recorded event —
+including the ~70% with no image, for characterising the population:
+
+```bash
+py -3 scripts\make_targets.py <run-folder> --all-events --out targets
+```
 
 ---
 
-## 5. Getting it onto the laptop
+## Transfer
 
-Same as `sperm_pbmc`: the scripts are written here, run on the server, and the resulting
-sample zip is copied back by hand. A 300-event, 5-channel sample is on the order of
-100–400 MB — small enough to move over a share or a stick.
+There is no network path from the laptop to the share, so files are copied by hand
+through the Remote Desktop session.
 
-Then on the laptop:
-
-```bash
-python scripts/check_sample.py sample_rep2_seed0.zip --extract-to data/samples
-```
+**Dragging a file into an application window does not copy it.** macOS Remote Desktop
+creates a sparse placeholder with the right logical size and zero bytes of content; the
+file looks present and is empty. Copy into a Finder window and let it finish, then check:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+du -h <file>
 ```
 
-The venv is only needed for the analysis layer. Verification and unpacking need nothing.
-
----
-
-## Rehearsing without the real data
-
-`scripts/make_fixture.py` writes fake zips with the same naming and shape, in each of the
-three layouts the export might use, so the whole sequence can be run anywhere:
-
-```bash
-python3 scripts/make_fixture.py /tmp/fixture/Images --layout per-channel && python3 scripts/inspect_zip.py /tmp/fixture/Images --classes 2S 2P 2SP --structure --peek-metadata && python3 scripts/make_sample.py /tmp/fixture/Images --classes 2S 2P 2SP --per-class 20 --out /tmp/sample.zip --force && python3 scripts/check_sample.py /tmp/sample.zip
-```
-
-`--layout multipage` puts the channels inside one TIF; `--layout single` gives one
-brightfield TIF per event plus an `events.csv` and a valid `run.fcs` carrying a
-detector-to-marker table — the shape if the marker signal is a cytometer measurement
-rather than an image. The images are noise with a real TIFF header: useful for checking
-the plumbing, useless for anything else.
+If that disagrees with `ls -l`, the copy is incomplete.
 
 ---
 
 ## Rules of thumb
 
-- **No image data in git.** `data/` is gitignored in full; `.gitignore` also blocks
-  `*.zip`, `*.tif`, `*.tiff` and `*.fcs` anywhere in the tree as a backstop.
+- **No data in git.** `data/` is gitignored in full; `.gitignore` also blocks `*.zip`,
+  `*.tif`, `*.tiff`, `*.acs` and `*.fcs` anywhere in the tree as a backstop.
 - **Samples are described by their manifest,** not by memory. A result on a sample should
-  always be traceable back to the seed and event list that produced it.
-- **Regenerating beats copying.** Need different events? Re-run with a new `--seed` or a
-  larger `--per-class` rather than hand-picking files.
-- **Take the data root as an argument.** Code written against `data/samples/...` should
-  run unchanged against a full extract.
-- **Never assume channel order.** It comes from a filename, a page description, or the
-  FCS table — never from position. Getting ACRV1 and Tomm20 the wrong way round would
-  produce a model that trains fine and means nothing.
+  be traceable back to the seed and event list that produced it.
+- **Regenerating beats copying.** Need different events? Re-run with a new `--seed`.
+- **Take the data root as an argument** rather than hardcoding a path, so the same code
+  runs over a bundle or a full archive unchanged.
+- **Never assume channel order.** It comes from the FCS `$PnN`/`$PnS` table. Getting ACRV1
+  and CD45 the wrong way round would train fine and mean nothing.
