@@ -6,6 +6,73 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## What is actually inside an .acs, and what it changes
+
+*2026-09-13 · `analysis/explore_masks.py`, `scripts/inspect_acs.py`, on a local copy of `3SP.acs`*
+
+### The images are 16-bit, and the `Images\` export is a downconversion
+
+| | `Images\*.zip` | inside the `.acs` |
+| --- | --- | --- |
+| Format | 248 x 248, **uint8**, RGBA container, LZW | 248 x 248, **uint16**, single channel, uncompressed |
+| Per file | 74-105 KB (varies with noise) | 123,250 B (constant) |
+
+Decoded pixel values run ~145-1011 with 686 distinct levels pooled, so the sensor is
+~10-bit and the `.acs` preserves it. The `Images\` export throws away about two bits.
+**Source images from the `.acs`.** `scripts/tiff_read.py` now decodes both widths, verified
+byte-for-byte against PIL on the real archives.
+
+### The instrument ships its segmentation
+
+Each archive holds a `*.masks.zip` — one JSON per event, keyed by the same event id:
+
+```
+[{"version":"1.0"}, {"masks":[{"pixelIndexes":{"indexes":[...]}}]}, {"masks":[...]}]
+```
+
+Flat pixel indices into the 248 x 248 frame, in two layers. **Layer 1 is the object mask**
+— its pixel count reproduces the instrument's `NumPixels` column exactly on 250 of 250
+events checked. Layer 2 is a small central core region, ~7% of the object. Rendered, the
+object mask tracks the flagellum correctly on tailed cells, so the segmentation step
+`sperm_pbmc` built by hand is already done here.
+
+### Compensation: the export is raw, and one coefficient is wrong
+
+The `$SPILLOVER` matrix is 15 x 15 and well-conditioned (condition number 2.8). Whether
+the exported `-A` values were pre- or post-compensation could not be read off the matrix,
+so it was tested against biology: **PBMCs have no acrosome, so ACRV1 on a CD45-high round
+cell must be ~0.**
+
+| | ACRV1 median on CD45-high events | corr(ACRV1, CD45) | events with a negative channel |
+| --- | ---: | ---: | ---: |
+| as exported | 10,608 | 0.940 | 4.5% |
+| **inv(S) applied** | **91** | 0.578 | 88.5% |
+| S applied | 22,589 | 0.988 | 0.1% |
+
+**The export is raw and `inv(S)` is the correction.** That settles it: the ACRV1 signal on
+PBMCs was spillover, and compensation removes it almost exactly.
+
+But one coefficient does not survive scrutiny. `BL1-A -> YL1-A = 1.0001` says AF488 lands
+in the PE detector at 100% of its own-detector intensity. Compensating with it drives the
+median CD45 in `3SP` to **-15,408**: most events there are sperm, which are LDHC-high and
+genuinely CD45-negative, so a ~100% subtraction of BL1 from YL1 overshoots. Compensated
+data legitimately spreads below zero, but not by that much.
+
+**Two consequences for modeling:**
+
+1. **Compensate, then use an `asinh` (biexponential) transform, not `log1p`.** 88.5% of
+   compensated events carry a negative in some channel, which `log1p(clip(x, 0))` would
+   flatten to zero. That is the standard flow-cytometry transform for exactly this reason.
+2. **The morphology baseline below was run on uncompensated targets.** Its ACRV1 number
+   (0.209) is partly measuring PE spillover, and has to be rerun compensated before it
+   means anything. DAPI and CD45 are far less affected — VL1 has almost no spillover in or
+   out — but the rerun is the number to quote.
+
+**Open with the lab:** is `BL1-A -> YL1-A = 1.0001` real, or a compensation setup error?
+It is the single largest coefficient in the matrix and it governs the CD45 channel.
+
+---
+
 ## Morphology baseline — how much of each marker is predictable without a network
 
 *2026-09-12 · `python analysis/feature_baseline.py data/targets --train 2 --test 3`*

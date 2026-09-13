@@ -71,6 +71,21 @@ def load_fcs(path):
         return zf.read(fcs[0].filename), images
 
 
+def compensation_detectors(parameters, keywords):
+    """Every detector named in $SPILLOVER, labelled or not.
+
+    Compensation is a change of basis across *all* detectors in the matrix -- you cannot
+    apply it to a four-column subset. So a target table that keeps only the stained
+    channels cannot be compensated afterwards, and the uncompensated values are the ones
+    least safe to model on. Keep the whole set.
+    """
+    comp = fcs_probe.spillover(keywords)
+    if not comp or not comp["detectors"]:
+        return []
+    wanted = {d.strip().lower() for d in comp["detectors"]}
+    return [r for r in parameters if r["name"].strip().lower() in wanted]
+
+
 def labelled_detectors(parameters):
     """Detectors the operator gave a real label to -- i.e. the stained channels.
 
@@ -120,6 +135,8 @@ def process(path, args):
     wanted = [(name, True) for name in ALWAYS]
     if args.columns is None:
         wanted += [(r["name"], True) for r in stained]
+        if args.all_detectors:
+            wanted += [(r["name"], True) for r in compensation_detectors(parameters, keywords)]
     else:
         wanted += [(name, False) for name in args.columns]
     if args.morphology:
@@ -261,6 +278,9 @@ def main(argv=None):
     ap.add_argument("--out", metavar="DIR", help="Write one CSV per input into DIR")
     ap.add_argument("--columns", nargs="+", metavar="NAME",
                     help="Parameters to keep, by detector name or label (default: every labelled detector)")
+    ap.add_argument("--stained-only", dest="all_detectors", action="store_false",
+                    help="Keep only the labelled detectors. Note this makes the table impossible "
+                         "to compensate later, since compensation spans every detector in $SPILLOVER")
     ap.add_argument("--no-morphology", dest="morphology", action="store_false",
                     help="Omit the instrument's own morphology and intensity measurements")
     ap.add_argument("--all-events", action="store_true",

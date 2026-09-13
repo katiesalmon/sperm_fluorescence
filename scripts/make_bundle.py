@@ -14,10 +14,19 @@ Output layout:
 
     bundle_seed0.zip
       MANIFEST.json
-      2S/targets.csv          one row per drawn event
-      2S/spillover.csv        the acquisition's compensation matrix
-      2S/images/<event>.tif   the matching image, named by event id
+      2S/targets.csv           one row per drawn event
+      2S/spillover.csv         the acquisition's compensation matrix
+      2S/images/<event>.tif    the matching image, named by event id
+      2S/masks/<event>.json    the instrument's segmentation for that event
       2P/...
+
+The images inside an .acs are **248x248 uint16, single channel** -- the sensor's full
+~10-bit depth. The separate `Images\*.zip` export is the same events downconverted to
+8-bit in an RGBA container, so it throws away about two bits. Prefer this path.
+
+Each archive also ships a `*.masks.zip` of one JSON per event, keyed by the same event id.
+Layer 1 of that JSON is the object mask -- it reproduces the instrument's `NumPixels`
+column exactly -- so segmentation comes for free and does not have to be re-derived.
 
 Every drawn event has both its row and its image, and --verify re-checks that after the
 copy. Standard library only.
@@ -40,10 +49,18 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import io  # noqa: E402
+
 import fcs_data  # noqa: E402
 import fcs_probe  # noqa: E402
+import tiff_probe  # noqa: E402
 from cytpix_zips import IMAGE_EXTS, class_of, human_bytes, open_zip, run  # noqa: E402
-from make_targets import ALWAYS, MORPHOLOGY, labelled_detectors  # noqa: E402
+from make_targets import (  # noqa: E402
+    ALWAYS,
+    MORPHOLOGY,
+    compensation_detectors,
+    labelled_detectors,
+)
 
 TEXT_HEAD_BYTES = 1024 * 1024
 
@@ -66,6 +83,8 @@ def plan_archive(zf, args):
         stem = posixpath.splitext(posixpath.basename(info.filename))[0]
         if stem.isdigit():
             images[int(stem)] = info
+
+    mask_member = next((i for i in members if i.filename.lower().endswith(".masks.zip")), None)
 
     fcs_members = [i for i in members if i.filename.lower().endswith(".fcs")]
     if not fcs_members:
@@ -93,6 +112,8 @@ def plan_archive(zf, args):
             "drawn": 0,
             "detectors": [{"name": r["name"], "label": r["label"], "voltage": r["voltage"]} for r in stained],
         }
+        stats["image_format"] = None
+        stats["mask_member"] = mask_member.filename if mask_member else None
         return [], [], [], comp, images, stats
 
     raw = zf.read(fcs_name)
@@ -117,6 +138,8 @@ def plan_archive(zf, args):
     drawn = sorted(rng.sample(eligible, args.per_class)) if args.per_class < len(eligible) else list(eligible)
 
     wanted = list(ALWAYS) + [r["name"] for r in stained]
+    if args.all_detectors:
+        wanted += [r["name"] for r in compensation_detectors(parameters, keywords)]
     if args.morphology:
         wanted += MORPHOLOGY
     indices, header = [], []
@@ -132,6 +155,18 @@ def plan_archive(zf, args):
         base = row_of[event] * par
         rows.append([values[base + j] for j in indices])
 
+    # Record what the images actually are, so a bundle is self-describing rather than
+    # relying on anyone remembering which export it came from.
+    image_format = None
+    if drawn:
+        try:
+            page = tiff_probe.probe(zf.read(images[drawn[0]].filename))["pages"][0]
+            image_format = "%sx%s spp=%s %s %s" % (
+                page["width"], page["height"], page["samples_per_pixel"],
+                tiff_probe.dtype_of(page), page["compression"])
+        except (tiff_probe.NotTiff, ValueError, KeyError):
+            image_format = "unreadable"
+
     stats = {
         "fcs_member": fcs_name,
         "events_in_fcs": n,
@@ -139,6 +174,8 @@ def plan_archive(zf, args):
         "events_with_an_image": len(row_of),
         "eligible": len(eligible),
         "drawn": len(drawn),
+        "image_format": image_format,
+        "mask_member": mask_member.filename if mask_member else None,
         "detectors": [{"name": r["name"], "label": r["label"], "voltage": r["voltage"]} for r in stained],
     }
     return drawn, rows, header, comp, images, stats
@@ -171,6 +208,7 @@ def build(paths, args):
         "seed": args.seed,
         "per_class_requested": args.per_class,
         "includes_images": args.images,
+        "includes_masks": args.masks,
         "classes": {},
     }
     out = None
@@ -195,7 +233,8 @@ def build(paths, args):
                           % (stats["events_with_an_image"] - stats["eligible"]))
 
                 payload = sum(images[e].file_size for e in drawn) if args.images else 0
-                print("       image payload: %s" % human_bytes(payload))
+                print("       images: %s%s" % (human_bytes(payload),
+                                               "  [%s]" % stats["image_format"] if stats["image_format"] else ""))
 
                 entry = dict(stats)
                 entry["source"] = os.path.basename(path)
@@ -219,6 +258,24 @@ def build(paths, args):
                         info = images[event]
                         ext = posixpath.splitext(info.filename)[1].lower()
                         out.writestr("%s/images/%d%s" % (cls, event, ext), zf.read(info.filename))
+
+                if args.masks and drawn and stats["mask_member"]:
+                    # The masks live in a zip inside the zip, one JSON per event.
+                    inner = zipfile.ZipFile(io.BytesIO(zf.read(stats["mask_member"])))
+                    available = {posixpath.basename(n) for n in inner.namelist()}
+                    missing = 0
+                    for event in drawn:
+                        leaf = "%d.json" % event
+                        if leaf not in available:
+                            missing += 1
+                            continue
+                        name = next(n for n in inner.namelist() if posixpath.basename(n) == leaf)
+                        out.writestr("%s/masks/%d.json" % (cls, event), inner.read(name))
+                    entry["masks_written"] = len(drawn) - missing
+                    if missing:
+                        print("       note: %d drawn events have no mask JSON" % missing)
+                elif args.masks and drawn:
+                    print("       note: this archive has no masks.zip")
 
         if args.dry_run:
             print("\ndry run -- nothing written")
@@ -271,9 +328,15 @@ def verify(path):
                 if missing_images:
                     problems.append("%s: %d drawn events have no image" % (cls, missing_images))
 
-            print("%-5s %4d events   %d columns   spillover: %s"
+            n_masks = len({n for n in names if n.startswith("%s/masks/" % cls)})
+            if manifest.get("includes_masks") and entry.get("masks_written") is not None:
+                if n_masks != entry["masks_written"]:
+                    problems.append("%s: %d mask files present, manifest says %d"
+                                    % (cls, n_masks, entry["masks_written"]))
+            print("%-5s %4d events   %d columns   spillover: %-3s  masks: %d   %s"
                   % (cls, len(drawn), len(entry["columns"]),
-                     "yes" if "%s/spillover.csv" % cls in names else "NO"))
+                     "yes" if "%s/spillover.csv" % cls in names else "NO",
+                     n_masks, entry.get("image_format") or ""))
 
         if problems:
             print("\nFAILED")
@@ -299,6 +362,11 @@ def main(argv=None):
     ap.add_argument("--out", default="bundle_seed0.zip", help="Output zip (default: bundle_seed0.zip)")
     ap.add_argument("--no-images", dest="images", action="store_false",
                     help="Targets and spillover only -- a few MB, and much faster")
+    ap.add_argument("--no-masks", dest="masks", action="store_false",
+                    help="Skip the instrument's per-event segmentation masks")
+    ap.add_argument("--stained-only", dest="all_detectors", action="store_false",
+                    help="Keep only the labelled detectors. The bundle then cannot be compensated, "
+                         "since compensation spans every detector named in $SPILLOVER")
     ap.add_argument("--no-morphology", dest="morphology", action="store_false",
                     help="Omit the instrument's morphology and intensity columns")
     ap.add_argument("--dry-run", action="store_true", help="Report what would be drawn, write nothing")

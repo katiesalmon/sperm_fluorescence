@@ -6,13 +6,19 @@ That is fine on a laptop and awkward on the imaging server, where the question
 anyone decides whether installing a scientific Python stack there is worth it.
 
 So: a small TIFF LZW decoder, per the TIFF 6.0 spec, including the horizontal
-differencing predictor. Deliberately narrow -- 8-bit, chunky (planar=1), LZW or
-uncompressed. Anything else raises Unsupported rather than returning wrong pixels.
+differencing predictor. Deliberately narrow -- 8- or 16-bit, chunky (planar=1), LZW
+or uncompressed. Anything else raises Unsupported rather than returning wrong pixels.
+
+Both widths are needed because the two exports differ: the `Images\*.zip` files hold
+248x248 uint8 in an RGBA container, while the images inside the `.acs` archives are
+248x248 uint16 single-channel -- the same events at the sensor's full ~10-bit depth,
+before the 8-bit downconversion.
 
 For real work use tifffile + imagecodecs; this exists so one specific question can
 be answered with no install.
 """
 
+import array
 import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0] if "/" in __file__ else ".")
@@ -88,12 +94,16 @@ def lzw_decode(data):
     return out
 
 
-def unpredict(rows, width, spp):
-    """Undo horizontal differencing (Predictor 2), in place, per row."""
+def unpredict(rows, width, spp, mask=0xFF):
+    """Undo horizontal differencing (Predictor 2), in place, per row.
+
+    `rows` holds one element per sample, so this works for 8- and 16-bit alike once the
+    bytes have been widened; `mask` is the wrap-around for the sample width.
+    """
     stride = width * spp
     for start in range(0, len(rows), stride):
         for i in range(start + spp, start + stride):
-            rows[i] = (rows[i] + rows[i - spp]) & 0xFF
+            rows[i] = (rows[i] + rows[i - spp]) & mask
     return rows
 
 
@@ -113,8 +123,8 @@ def read_page(data, page_index=0):
         if len(set(bits)) != 1:
             raise Unsupported("mixed bit depths per sample: %s" % bits)
         bits = bits[0]
-    if bits != 8:
-        raise Unsupported("only 8-bit samples are supported, got %s" % bits)
+    if bits not in (8, 16):
+        raise Unsupported("only 8- and 16-bit samples are supported, got %s" % bits)
 
     strips = page["_strips"]
     if strips["planar"] != 1:
@@ -133,24 +143,30 @@ def read_page(data, page_index=0):
     if not offsets or len(offsets) != len(counts):
         raise Unsupported("strip offsets and byte counts disagree")
 
-    rows_per_strip = strips["rows_per_strip"] or height
-    pixels = bytearray()
-    for i, (offset, count) in enumerate(zip(offsets, counts)):
+    typecode = "B" if bits == 8 else "H"
+    mask = 0xFF if bits == 8 else 0xFFFF
+    little = info["byte_order"] == "little"
+
+    samples = array.array(typecode)
+    for offset, count in zip(offsets, counts):
         chunk = decode(data[offset : offset + count])
+        strip = array.array(typecode)
+        strip.frombytes(bytes(chunk[: len(chunk) - (len(chunk) % (bits // 8))]))
+        if little != (sys.byteorder == "little"):
+            strip.byteswap()
         if strips["predictor"] == 2:
-            rows_here = min(rows_per_strip, height - i * rows_per_strip)
-            chunk = unpredict(chunk, width, spp)
-            del rows_here
+            # Differencing applies to samples, not bytes, so it must run after widening.
+            unpredict(strip, width, spp, mask)
         elif strips["predictor"] not in (1, None):
             raise Unsupported("predictor %s is not supported" % strips["predictor"])
-        pixels += chunk
+        samples += strip
 
     expected = width * height * spp
-    if len(pixels) < expected:
-        raise Unsupported("decoded %d bytes, expected %d" % (len(pixels), expected))
-    return pixels[:expected], width, height, spp
+    if len(samples) < expected:
+        raise Unsupported("decoded %d samples, expected %d" % (len(samples), expected))
+    return samples[:expected], width, height, spp
 
 
 def channel(pixels, spp, index):
-    """One channel as a flat bytes object, in pixel order."""
-    return bytes(pixels[index::spp])
+    """One channel as a flat sequence of sample values, in pixel order."""
+    return pixels[index::spp]
