@@ -143,3 +143,101 @@ single most valuable thing the framework buys.
 contract and the control battery — and let `train.py` be a plain script at first. The
 controls are the part that must not be optional. The rest can stay small until there is a
 second panel, a phase channel, or Tomm20 to add.
+
+---
+
+## Foundation model first, then a head per marker?
+
+*Added 2026-09-17, after a third research pass on what is actually public and what SSL
+has done on this exact kind of data.*
+
+### Do we have enough data?
+
+Two different questions hide in that one.
+
+**Enough to pretrain a domain encoder: yes, comfortably.** The closest precedent —
+[self-supervised learning for imaging flow cytometry](https://www.nature.com/articles/s41378-026-01236-x)
+(2026) — pretrained MoCo v2 / ResNet-18 on **80,347** single-channel grayscale 200 x 200
+brightfield IFC crops. We have 282,874 at 248 x 248 and 16-bit. Same modality, same image
+style, three and a half times the count.
+
+**Enough to build a *foundation model*: no.** Foundation models need diversity, not
+count. Ours is one instrument, one day, two cell types, one operator. What we would get is
+an encoder for *this* data, and it should be called that.
+
+### The more important question: would it help?
+
+That same paper is the sobering part. Its SSL encoder, frozen, with a linear head, scored
+**0.7 to 2.0 points *below* a supervised ResNet-18** on every downstream task. The benefit
+it demonstrated was transfer to cell types absent from pretraining — not accuracy on the
+distribution it was trained on. That is the label-efficiency story again, and we have no
+label scarcity: every one of the 282,874 crops already carries a measured target.
+
+[ViTally Consistent](https://arxiv.org/html/2411.02572) (Recursion) adds two things.
+Domain-pretrained beats generic: even the smallest microscopy MAE (CA-MAE-S/16) outperforms
+large ImageNet ViTs. And the representations still carry batch effects that need post-hoc
+correction — SSL does not make the acquisition confound go away, it learns it.
+
+So: SSL pretraining on our data would most likely **match** direct supervision, not beat
+it, and would not solve the batch problem. Its value would be a reusable embedding, which
+is worth something but is not the objective in [GOAL.md](../GOAL.md).
+
+### What is public, ranked by how close it is to our data
+
+| Model | Trained on | Closeness | Notes |
+| --- | --- | --- | --- |
+| [OpenPhenom](https://huggingface.co/recursionpharma/OpenPhenom) CA-MAE-S/16 | Cell Painting, multi-channel fluorescence | medium | **Channel-agnostic** — takes a single channel natively. Weights on Hugging Face |
+| [Cell-DINO](https://journals.plos.org/ploscompbiol/article?id=10.1371%2Fjournal.pcbi.1013828) | HPA fluorescence single cells | medium | In the official DINOv2 repo |
+| [DinoBloom](https://arxiv.org/pdf/2404.05022) | single-cell hematology (stained smears) | medium-high | Single cells, blood — the right *object*, wrong contrast |
+| DINOv3 (generic) | 1.7B natural images | low | But the strongest generic dense features; [CytoDINO](https://arxiv.org/abs/2512.17930) adapts it to single-cell cytomorphology with LoRA at 8% trainable parameters |
+
+None was trained on brightfield. The gap between "stained blood smear" and "brightfield
+sperm" is real, and the only way to know how much it costs is to probe.
+
+### Four tiers, cheapest first — and the one diagnostic that decides
+
+**Tier 0 — probe frozen public encoders.** Extract features with each of the above,
+frozen; fit a linear or small-MLP head per marker; run the full control battery. Hours
+of work, no training. This is the decision point: **if frozen DINOv3 plus a linear head
+already beats 0.78 on DAPI, representation is not the bottleneck and Tiers 1–3 are not
+worth their cost.** If it sits well below the morphology floor, domain adaptation matters.
+
+**Tier 1 — auxiliary-supervised pretraining on everything the instrument measured.** Train
+the encoder to predict all ~50 per-event columns at once — every detector, every
+morphology and texture measurement — then freeze it and fit a head per marker. This is a
+pretext task nobody else has, because nobody else has an instrument that hands over fifty
+dense labels per image. It forces the encoder to represent shape and compartment, which is
+what the markers need. Cost: one supervised run.
+
+**Tier 2 — continued pretraining of a public encoder on our crops.** The CytoDINO /
+Cell-DINO / DINOCell pattern: start from DINOv3 or OpenPhenom, adapt on 282k crops with
+LoRA or full fine-tuning under a DINO or MAE objective, then heads per marker. Do not
+train from scratch; adaptation is where the recent wins are. Cost: a GPU-day or two — and
+whether the server *has* a GPU is currently unknown.
+
+**Tier 3 — image ↔ measurement contrastive pretraining.** CLIP-style: an image encoder and
+a small MLP over the 59-dimensional FCS vector, trained to align the same event's two
+views ([scPairing](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12664900/) does this for
+single-cell multi-omics). The representation is then aligned to *everything* the cytometer
+measured, not four channels. This is the genuinely frontier option that fits our data
+shape — but it is Tier 1's idea with a harder objective, and it should only follow if
+Tier 1 shows the auxiliary signal is worth exploiting.
+
+### Practicalities that bite
+
+- **Single channel vs RGB.** Most encoders expect three channels. OpenPhenom is
+  channel-agnostic; for the rest, replicate the channel or learn a 1→3 stem.
+- **248 vs 224.** Crop or resize; the object is centred, so a centre crop loses nothing.
+- **Batch effects survive pretraining.** Whatever tier, the held-out-replicate split and
+  the background-only control stay mandatory. An embedding that separates replicate 2 from
+  replicate 3 has learned the acquisition, and probing it will look great on a random
+  split.
+- **The optical limit still applies.** No encoder recovers phase from absorption. If ACRV1
+  does not move at Tier 0, it is unlikely to move at Tier 3.
+
+### Recommendation
+
+Run Tier 0 this week — it is nearly free and it settles whether the rest is worth doing.
+My prior is that representation is not the bottleneck for DAPI or CD45, and that ACRV1's
+bottleneck is optical rather than representational. If Tier 0 surprises, Tier 1 is the
+next step, because it uses the one asset no public model has: fifty free labels per image.
