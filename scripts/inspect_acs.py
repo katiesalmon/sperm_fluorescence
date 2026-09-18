@@ -102,6 +102,18 @@ def inspect(path, max_fcs, quiet):
             for info in sorted(named, key=lambda i: -i.file_size)[:10]:
                 print("    %-56s %s" % (info.filename[:56], human_bytes(info.file_size)))
 
+        # Which events got imaged is decided by these settings, and it matters: a gate
+        # on a fluorescence channel means the imaged subset is selected on the very
+        # thing we are trying to predict.
+        for info in infos:
+            n = info.filename.lower()
+            if n.endswith(".xml") and "toc" not in n and info.file_size < 64 * 1024:
+                text = zf.read(info.filename).decode("utf-8", "replace")
+                if "ImageCaptureSettings" in text:
+                    import re as _re
+                    fields = _re.findall(r'<(ImageGate|ImageFrequency|ImageTotals)\s+([^>]*)/>', text)
+                    print("  image capture settings: " + "  ".join("%s %s" % (t, a.strip()) for t, a in fields))
+
         fcs_members = [i for i in infos if categorise(i.filename) == "fcs"]
         if not fcs_members:
             print("\n  no .fcs member found")

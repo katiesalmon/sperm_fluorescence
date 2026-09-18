@@ -50,6 +50,7 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import io  # noqa: E402
+import xml.etree.ElementTree as ET  # noqa: E402
 
 import fcs_data  # noqa: E402
 import fcs_probe  # noqa: E402
@@ -63,6 +64,39 @@ from make_targets import (  # noqa: E402
 )
 
 TEXT_HEAD_BYTES = 1024 * 1024
+
+
+def capture_settings(zf, members):
+    """The instrument's ImageCaptureSettings XML, if present, parsed to the fields that
+    decide *which* events got imaged.
+
+    This is provenance that changes how the images should be read: the 3SP archive says
+    `ImageGate GateName="DAPI+"` and `ImageTotals Total="30000"`, i.e. the camera imaged
+    only events inside a DAPI+ gate, stopping at 30,000. The imaged subset is therefore
+    selected on fluorescence, not a random sample of the run -- and DAPI-negative events
+    (debris, anucleate fragments) never appear in the training set at all.
+    """
+    for info in members:
+        name = info.filename.lower()
+        if not name.endswith(".xml") or "toc" in name or info.file_size > 64 * 1024:
+            continue
+        try:
+            root = ET.fromstring(zf.read(info.filename))
+        except ET.ParseError:
+            continue
+        if not root.tag.endswith("ImageCaptureSettings"):
+            continue
+        out = {"member": info.filename, "raw": zf.read(info.filename).decode("utf-8", "replace")}
+        for tag, attrs in (("ImageGate", ("GateName",)), ("ImageFrequency", ("Frequency", "FrequencyEnabled")),
+                           ("ImageTotals", ("Total", "Enabled")), ("CameraSettings", ("Focus", "Illumination")),
+                           ("ROISettings", ("WindowWidth", "WindowHeight"))):
+            el = root.find(".//%s" % tag)
+            if el is not None:
+                for a in attrs:
+                    if a in el.attrib:
+                        out["%s.%s" % (tag, a)] = el.attrib[a]
+        return out
+    return None
 
 
 def acs_class(path):
@@ -85,6 +119,7 @@ def plan_archive(zf, args):
             images[int(stem)] = info
 
     mask_member = next((i for i in members if i.filename.lower().endswith(".masks.zip")), None)
+    capture = capture_settings(zf, members)
 
     fcs_members = [i for i in members if i.filename.lower().endswith(".fcs")]
     if not fcs_members:
@@ -114,7 +149,8 @@ def plan_archive(zf, args):
         }
         stats["image_format"] = None
         stats["mask_member"] = mask_member.filename if mask_member else None
-        return [], [], [], comp, images, stats
+        stats["capture"] = {k: v for k, v in (capture or {}).items() if k != "raw"}
+        return [], [], [], comp, images, stats, capture
 
     raw = zf.read(fcs_name)
     values, par, n = fcs_data.read_matrix(raw, keywords)
@@ -176,9 +212,10 @@ def plan_archive(zf, args):
         "drawn": len(drawn),
         "image_format": image_format,
         "mask_member": mask_member.filename if mask_member else None,
+        "capture": {k: v for k, v in (capture or {}).items() if k != "raw"},
         "detectors": [{"name": r["name"], "label": r["label"], "voltage": r["voltage"]} for r in stained],
     }
-    return drawn, rows, header, comp, images, stats
+    return drawn, rows, header, comp, images, stats, capture
 
 
 def format_csv(header, rows):
@@ -220,7 +257,13 @@ def build(paths, args):
             cls = acs_class(path) or os.path.splitext(os.path.basename(path))[0]
             print("%-5s %s" % (cls, os.path.basename(path)))
             with open_zip(path) as zf:
-                drawn, rows, header, comp, images, stats = plan_archive(zf, args)
+                drawn, rows, header, comp, images, stats, capture = plan_archive(zf, args)
+                if stats["capture"]:
+                    c = stats["capture"]
+                    print("       imaged: gate=%s  total=%s (enabled=%s)  every-Nth=%s (enabled=%s)"
+                          % (c.get("ImageGate.GateName", "?"), c.get("ImageTotals.Total", "?"),
+                             c.get("ImageTotals.Enabled", "?"), c.get("ImageFrequency.Frequency", "?"),
+                             c.get("ImageFrequency.FrequencyEnabled", "?")))
 
                 if stats["events_with_an_image"] is None:
                     print("       %d events, %d images -- panel and matrix only, event data not read"
@@ -245,6 +288,8 @@ def build(paths, args):
                 if args.dry_run:
                     continue
 
+                if capture:
+                    out.writestr("%s/capture_settings.xml" % cls, capture["raw"])
                 if header:
                     out.writestr("%s/targets.csv" % cls, format_csv(header, rows))
                 matrix = format_spillover(comp)

@@ -185,9 +185,9 @@ The PBMC wells are noisier in both replicates, which is what drove the file size
 The images are named with bare integers — `10.tif`, `100002.tif` — and they are **sparse**:
 `2S` holds 30,000 images but ids run past 100,002, and there are gaps throughout.
 
-That is the signature of a camera that cannot keep up with the detectors. A CytPix records
-every event electronically and images only a fraction of them, naming each image by its
-event index in the full record. Which means:
+The archive's `ImageCaptureSettings` XML says why: `ImageGate GateName="DAPI+"` and
+`ImageTotals Total="30000"`. The camera imaged only events inside a **DAPI+ gate**, and
+stopped at 30,000. Each image is named by its event index in the full record. Which means:
 
 - the images are a **subset** of a larger per-event record, roughly 30% of it;
 - **the image filename is the join key** to that record;
@@ -326,12 +326,13 @@ number is therefore not a proxy for time, which is good: a replicate split is no
 a time split. But `1S` and `2S` are an hour apart on the same instrument, so within-day
 drift is the batch effect to watch, not gain.
 
-**A sampling bias to check, not assume.** The imaged fraction ranges from 7.3% (`1SP`) to
-33.0% (`2S`), tracking event rate — the camera images what it can keep up with. If that
-selection is random with respect to the cell, the imaged events are a fair sample. If it
-is not, everything trained here describes imaged events only. `make_targets.py
---compare-imaged` reports each channel's median for imaged against unimaged events, which
-answers it directly.
+**The imaged subset is selected, not sampled.** The capture settings gate on `DAPI+` and
+cap at 30,000, so the imaged fraction (7.3% in `1SP` to 33.0% in `2S`) is the gate's pass
+rate times the cap, not a camera rate. Two consequences: DAPI-negative events — debris,
+anucleate fragments — never appear in the training set, so the DAPI target is truncated
+from below; and `make_targets.py --compare-imaged` will show imaged events differing from
+unimaged ones *by design*. That is expected, not a bias to correct. `2SP`'s 42,874 means
+its cap was set differently; its own `capture_settings.xml` will say.
 
 ### Correction, from the values themselves: replicate 1 is the unstained control
 

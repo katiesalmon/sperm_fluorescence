@@ -30,10 +30,20 @@ Each archive holds a `*.masks.zip` — one JSON per event, keyed by the same eve
 [{"version":"1.0"}, {"masks":[{"pixelIndexes":{"indexes":[...]}}]}, {"masks":[...]}]
 ```
 
-Flat pixel indices into the 248 x 248 frame, in two layers. **Layer 1 is the object mask**
-— its pixel count reproduces the instrument's `NumPixels` column exactly on 250 of 250
-events checked. Layer 2 is a small central core region, ~7% of the object. Rendered, the
-object mask tracks the flagellum correctly on tailed cells, so the segmentation step
+Flat pixel indices into the 248 x 248 frame, in two layers, and both are now identified
+against the FCS columns on 594 events:
+
+| Layer | Is | Evidence |
+| --- | --- | --- |
+| 1 | **Objects** | mask count == `ObjectCount` on 594/594; pixel count == `NumPixels` |
+| 2 | **Particles** | mask count == `ParticleCount` on 594/594; lies entirely inside layer 1 |
+
+Layer 2 is the instrument's particle detection — a small region (~7% of the object),
+slightly darker than the rest but *not* the darkest part, so not a nucleus proxy. Both
+layers are brightfield segmentation products. **There are no per-stain masks in the
+archive**: all 30,000 mask files have exactly these two layers, every entry carries only
+`pixelIndexes`, and neither XML in the archive names a channel, stain or layer. Rendered,
+the object mask tracks the flagellum correctly on tailed cells, so the segmentation step
 `sperm_pbmc` built by hand is already done here.
 
 ### Compensation: the export is raw, and one coefficient is wrong

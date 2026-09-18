@@ -30,9 +30,10 @@ downconverted to 8-bit in an RGBA container, throws away about two bits of the s
 ~10-bit range, and carries no measurements or masks. The tooling for reading it has been
 removed; it is in git history if it is ever needed.
 
-The images are a **subset** of the recorded events — between 7% and 33% depending on the
-acquisition's event rate, because the camera cannot keep up with the detectors. Each image
-is named by its event index, which is the join key into the FCS.
+The images are a **subset** of the recorded events — between 7% and 33% — because the
+camera was set to image only events inside a `DAPI+` gate, up to 30,000 per acquisition
+(`capture_settings.xml`, carried in every bundle). Each image is named by its event index,
+which is the join key into the FCS.
 
 ---
 
