@@ -58,6 +58,7 @@ Full detail, including the guards worth knowing about, is in
 | `docs/approach.md` | Prior art, per-marker expectations, evaluation design, and the sequence to run |
 | `docs/results.md` | **Measured results**, newest first |
 | `docs/paths.md` | Three costed paths forward, and which to run first |
+| `docs/framework.md` | Design sketch for per-marker stain predictors, and the contract they share |
 | `docs/sampling.md` | How to survey the archives and cut a working subset |
 | `docs/server-setup.md` | What has to be installed where (for sampling: nothing) |
 | `scripts/inspect_acs.py` | Survey an `.acs`: members, `$TOT`, the detector-to-antigen table, voltages, spillover |
