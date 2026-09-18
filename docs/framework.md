@@ -241,3 +241,94 @@ Run Tier 0 this week — it is nearly free and it settles whether the rest is wo
 My prior is that representation is not the bottleneck for DAPI or CD45, and that ACRV1's
 bottleneck is optical rather than representational. If Tier 0 surprises, Tier 1 is the
 next step, because it uses the one asset no public model has: fifty free labels per image.
+
+---
+
+## Which approach yields stain *masks*?
+
+*Added 2026-09-17.*
+
+### The premise that has to be stated first
+
+There is **no spatial ground truth**. The cytometer recorded four numbers per event; it
+never took a fluorescence picture. So a stain mask cannot be *learned from* masks — it has
+to be learned from scalars. That is weakly-supervised localisation, a well-studied problem
+with a well-understood shape:
+[MIL with a pooling function](https://arxiv.org/pdf/1903.02494), class-activation maps,
+and density maps supervised by counts.
+
+### The physics that makes it principled here
+
+The marker values are `-A` parameters — the *area* of the PMT pulse as the event crosses
+the laser, which is proportional to the total fluorophore on the cell. Total fluorophore
+is a sum over the cell. So:
+
+> predict a **non-negative per-pixel map**, confine it to the instrument's object mask,
+> **sum it**, and supervise the sum against the measured `-A` value.
+
+The map is the stain mask. The only label it ever sees is the scalar. This is the crowd-
+counting density-map trick — supervise the integral, read off the spatial distribution —
+and the sum-pooling choice is the physically honest one, since fluorescence integrates.
+
+### So: Path 1, in its fully-convolutional form
+
+**Path 1 lends itself directly**, with one architectural decision: **no bottleneck and no
+global pooling before the head**. A U-Net-style or dilated fully-convolutional network
+that keeps output resolution, a `softplus` (or ReLU) final layer for non-negativity, an
+element-wise multiply by the layer-1 object mask, then a global sum. Loss on the sum.
+
+That is the same "preserve spatial detail" argument the multi-task paper makes — that
+protein cues are "sparsely distributed and easily attenuated by standard convolutional
+pooling" — arrived at from the other direction.
+
+In the per-marker framework it is one line in the spec: `head: density`. Each marker gets
+its own map. And the negative controls become **spatial**, which is the strongest evidence
+available that a model learned anatomy rather than a correlate:
+
+| Marker | Where the predicted mass must land | And must not |
+| --- | --- | --- |
+| DAPI | the head | the tail |
+| ACRV1 | the anterior head | the posterior head, the tail |
+| LDHC/AKAP4 | the principal piece | the head |
+| CD45 | — | anywhere on a sperm at all |
+
+### What the other approaches contribute
+
+- **Tier 0 with patch tokens, not the CLS token.** A frozen ViT's per-patch features
+  (DINOv3's are specifically tuned for dense tasks) plus a linear per-patch head and a sum
+  give a coarse 14 x 14 or 16 x 16 map with *no training of the encoder*. It is the cheap
+  preview of whether the density idea works at all. Probing the pooled embedding, by
+  contrast, gives no map — space is gone by then.
+- **Path 2's compartments are the yardstick.** Head / midpiece / tail from the mask give a
+  three-region "mask" per marker that is anatomically *known* rather than learned. A
+  learned density map is judged by how much of its mass falls in the right compartment.
+  Path 2 does not produce per-pixel maps, but it produces the thing the per-pixel maps
+  are checked against.
+- **Path 3 does not lend itself.** Ranks do not sum. A density map can still be trained on
+  the scalar and its sum ranked afterwards, but rank cannot be the training target.
+
+### The limits, honestly
+
+1. **Per-pixel accuracy can never be measured.** Only anatomical plausibility can. A map
+   that puts DAPI mass on the head is *consistent with* being right; nothing in this
+   dataset can show it *is* right at the pixel level. Say so in the write-up.
+2. **Identifiability.** Many maps share a sum. Non-negativity, the object-mask constraint,
+   a smoothness term, and the fact that one network must explain 190,000 events all push
+   toward maps that track real structure — but none guarantees it. A network *can* put all
+   the mass on one pixel that happens to correlate with intensity.
+3. **The `-A` value is a pulse integral across a laser slit, not a camera sum.** The
+   geometry differs; the relationship to total fluorophore is monotone but not the same
+   integral. Good enough for weak supervision, not a calibration.
+4. **Compensated values go negative; a non-negative map cannot sum to a negative.** Either
+   floor the target at zero for the density head, or predict the raw `-A` and apply the
+   spillover correction on the *summed* output. The second is cleaner.
+5. **The optical limit still applies.** A density map cannot recover phase from absorption
+   either. If ACRV1's scalar does not move, its map will be noise placed plausibly.
+
+### Recommendation
+
+If stain masks are a goal in themselves — not just a diagnostic — then the fully-
+convolutional density head is the right form of Path 1, and it should replace the pooled
+regression head rather than be added beside it. The scalar result comes out of the same
+network for free (it is the sum), and the spatial negative controls are stronger than the
+scalar ones. Preview it at Tier 0 with patch tokens before training anything.
