@@ -61,6 +61,7 @@ Full detail, including the guards worth knowing about, is in
 | `docs/framework.md` | Design sketch for per-marker stain predictors, and the contract they share |
 | `docs/sampling.md` | How to survey the archives and cut a working subset |
 | `docs/server-setup.md` | What has to be installed where (for sampling: nothing) |
+| `scripts/survey_tree.py` | Summarise an unfamiliar directory tree: files per kind per folder, sizes, names, TIFF headers |
 | `scripts/inspect_acs.py` | Survey an `.acs`: members, `$TOT`, the detector-to-antigen table, voltages, spillover |
 | `scripts/make_bundle.py` | **The sampler.** One small zip of matched images + targets + masks + matrices |
 | `scripts/make_targets.py` | Full per-event measurement table, including events with no image |
