@@ -466,6 +466,39 @@ That is worth telling that project. It does not change the work here.
    fluorescence lives in a separate FCS export, the detector-to-antigen mapping comes
    from that file's `$PnN` / `$PnS` keywords, and it may differ between replicates.
 
+## A second instrument: the `_A8` run folder (surveyed 2026-09-27)
+
+`Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709\` — same date, same nine samples, a
+different instrument. What `survey_tree.py` establishes:
+
+| | |
+| --- | --- |
+| At root | 9 x `.fcs`, 9 x `.cvw`, 9 x `.zip`, named `A1-1S`, `A2-2S`, `A3-3S`, `B1-1P`, `B2-2P`, `B3-3P`, `C1-1SP`, `C2-2SP`, `C3-3SP` — a plate position plus the sample code |
+| Image dirs | 8 extracted (`C1-1SP_images` absent; its `.zip` is at root), each split into `00000000 / 00010000 / 00020000 / 00030000` buckets of 10,000 event indices |
+| Per sample | **exactly 20,000** images — a capture cap — with sparse indices to ~35-40k, so about half the events were imaged |
+| Per image | `<sample>_<8-digit event index>.tiff`, **6 pages, 104 wide x 57-85 high (steps of 4), float32, uncompressed**, ~170 KB |
+| Page names | `LightLoss (Imaging)`, `FSC`, `SSC (Imaging)`, `Imaging_BP/534/46/LP/505`, `Imaging_BP/598/60/LP/570`, and a sixth the survey's listing cap hid |
+| Total | 160,000 imaged events, 6 channels each, ~27 GB of images plus 14.5 GB at root |
+
+**The stain images are here.** Each event carries a label-free image (`LightLoss`,
+plus `FSC` and `SSC`) *and* fluorescence images from bandpass-filtered detectors, all
+co-registered because they come from the same scan. That is the spatial ground truth
+the CytPix data does not have — and it is why the earlier "no stain masks" answer was
+right about the `.acs` and wrong about the experiment.
+
+**Inferred, not yet verified:** the channel naming (`LightLoss`, `SSC (Imaging)`,
+`Imaging_BP/…`), the `.cvw` workspace files, and the "A8" in the folder name all point to
+a **BD FACSDiscover A8** with CellView imaging. On that instrument the imaging channels
+sit on the blue laser, so the natural reading is `BP/534/46` = AF488 = **LDHC/AKAP4**,
+`BP/598/60` = PE = **CD45**, and the sixth page a far-red filter for PerCP-eF710 =
+**ACRV1** — three of the four markers imaged, with DAPI (violet-excited) likely in the FCS
+only. The `$PnS` labels in the root `.fcs` settle this; the guess should not be used
+before they do.
+
+**What is not there:** event-level pairing to the CytPix. Different instrument, different
+flow cell, different aliquot — the two runs share samples, not events. Within the A8 data
+the pairing is exact; across instruments it is population-level only.
+
 ## Status
 
 - [x] Repo + event-aware sampling tools scaffolded
