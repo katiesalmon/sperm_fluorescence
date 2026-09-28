@@ -71,10 +71,56 @@ def describe_fcs(zf, info):
     return keywords, fcs_probe.parameters(keywords)
 
 
-def inspect(path, max_fcs, quiet):
+def describe_bare_fcs(path, all_params):
+    """A bare .fcs, not inside an archive -- the A8 export ships them at the root."""
+    with open(path, "rb") as fh:
+        head = fh.read(TEXT_HEAD_BYTES)
+    keywords = fcs_probe.read_text_segment(head)
+    params = fcs_probe.parameters(keywords)
+    print("     %s" % fcs_probe.summarise(keywords))
+    for key in ("$CYT", "$CYTSN", "$DATE", "$BTIM", "$SRC", "$FIL", "$INST", "$OP"):
+        if keywords.get(key):
+            print("     %-8s %s" % (key, keywords[key]))
+    comp = fcs_probe.spillover(keywords)
+    print("     %s" % ("%s: %sx%s over %s" % (comp["keyword"], comp["size"], comp["size"], ", ".join(comp["detectors"][:8]) + ("…" if len(comp["detectors"]) > 8 else ""))
+                       if comp else "no spillover matrix in TEXT -- values may already be unmixed (check parameter names)"))
+    print_parameters(params, all_params)
+
+
+def print_parameters(params, all_params):
+    """Every parameter when asked; otherwise only those the operator labelled.
+
+    On a spectral instrument the unmixed parameters are named by fluorophore and the
+    label often just repeats the name, so "labelled only" hides exactly the channels
+    you want. --all-params exists for that case.
+    """
+    if all_params:
+        print("     all %d parameters (n  name  [= label if different]):" % len(params))
+        for row in params:
+            label = row["label"].strip()
+            same = (not label) or label.lower() == row["name"].strip().lower()
+            print("       P%-4d %-34s%s" % (row["n"], row["name"], "" if same else "  = " + label))
+        return
+    print("     labelled parameters (pass --all-params for every one):")
+    print("       %-4s %-30s %-24s %s" % ("", "name", "label ($PnS)", "voltage"))
+    shown = 0
+    for row in params:
+        label = row["label"].strip()
+        if label and label.lower() != row["name"].strip().lower():
+            print("       P%-4d %-30s %-24s %s" % (row["n"], row["name"], label, row["voltage"] or "NA"))
+            shown += 1
+    if not shown:
+        print("       (none -- every label repeats its name; use --all-params)")
+
+
+def inspect(path, max_fcs, quiet, all_params=False):
     print("=" * 78)
     print("%s  (%s)" % (os.path.basename(path), human_bytes(os.path.getsize(path))))
     print("-" * 78)
+
+    if path.lower().endswith(".fcs"):
+        describe_bare_fcs(path, all_params)
+        return []
 
     with open_archive(path) as zf:
         infos = [i for i in zf.infolist() if not i.is_dir()]
@@ -161,13 +207,7 @@ def inspect(path, max_fcs, quiet):
             else:
                 print("     no spillover matrix in TEXT -- values are likely uncompensated")
 
-            print("     parameters:")
-            print("       %-4s %-14s %-22s %-10s %s" % ("", "detector", "label ($PnS)", "range", "voltage"))
-            for row in params:
-                print(
-                    "       P%-3d %-14s %-22s %-10s %s"
-                    % (row["n"], row["name"], row["label"] or "", row["range"], row["voltage"])
-                )
+            print_parameters(params, all_params)
             print()
         if len(fcs_members) > max_fcs:
             print("  ... and %d more FCS members" % (len(fcs_members) - max_fcs))
@@ -203,27 +243,30 @@ def extract(path, dest, keep_metadata):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("source", nargs="+", help="An .acs file, several, or a directory holding them")
+    ap.add_argument("source", nargs="+", help="An .acs or .fcs file, several, or a directory holding them")
     ap.add_argument("--extract-fcs", metavar="DIR", help="Write the FCS members into DIR/<archive-name>/")
     ap.add_argument("--no-metadata", action="store_false", dest="keep_metadata",
                     help="Extract only .fcs, not the TOC/XML alongside it")
     ap.add_argument("--max-fcs", type=int, default=4, help="FCS members to describe per archive (default: 4)")
     ap.add_argument("--quiet", action="store_true", help="Skip the entry listing when no FCS is found")
+    ap.add_argument("--all-params", action="store_true",
+                    help="Print every parameter, not only the operator-labelled ones")
     args = ap.parse_args(argv)
 
     paths = []
     for item in args.source:
         if os.path.isdir(item):
             paths.extend(sorted(glob.glob(os.path.join(item, "*.acs"))))
+            paths.extend(sorted(glob.glob(os.path.join(item, "*.fcs"))))
         else:
             paths.append(item)
     if not paths:
-        ap.error("No .acs files found under: %s" % ", ".join(args.source))
+        ap.error("No .acs or .fcs files found under: %s" % ", ".join(args.source))
 
     failures = 0
     for path in paths:
         try:
-            inspect(path, args.max_fcs, args.quiet)
+            inspect(path, args.max_fcs, args.quiet, args.all_params)
             if args.extract_fcs:
                 extract(path, args.extract_fcs, args.keep_metadata)
         except (IOError, OSError) as exc:
