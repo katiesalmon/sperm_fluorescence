@@ -6,6 +6,73 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Pilot image-to-image model — the stain is predictable from label-free pages
+
+*2026-10-01 · `analysis/pilot_floor.py` and `analysis/pilot_unet.py` on
+`data/a8_bundle_seed0.zip` — 600 training events, 600 test, held out by replicate.
+A feasibility check on a laptop (74 s per fold on MPS), not a result; the full run is
+120,000 events on the server GPU.*
+
+Input: the three label-free pages, normalised per event. Target: the three fluorescence
+pages after the triangular unmix. Model: a 0.5M-parameter U-Net with no global pooling,
+L1 loss on a validity mask. The **floor** is a ridge regression from a 5 × 5 label-free
+patch to the centre pixel — the cheapest model that could possibly work.
+
+### Fold A: train replicate 2 → test replicate 3
+
+| marker | floor pixel r | **U-Net pixel r** | floor event r | **U-Net event r** | pred P:S | true P:S | want |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| LDHC/AKAP4 | 0.364 | **0.607** | 0.155 | **0.540** | 1.45 | 0.72 | ≪ 1 |
+| CD45 | 0.387 | **0.506** | 0.567 | **0.873** | 9.35 | 8.04 | ≫ 1 |
+| ACRV1 | 0.262 | **0.388** | −0.346 | **0.513** | 0.35 | 0.20 | ≪ 1 |
+
+### Fold B: train replicate 3 → test replicate 2
+
+| marker | U-Net pixel r | U-Net event r | pred P:S | true P:S | want |
+| --- | ---: | ---: | ---: | ---: | --- |
+| LDHC/AKAP4 | 0.623 | 0.613 | **0.61** | 0.96 | ≪ 1 |
+| CD45 | 0.532 | 0.880 | 10.69 | 9.96 | ≫ 1 |
+| ACRV1 | 0.407 | 0.457 | 0.37 | 0.25 | ≪ 1 |
+
+*P:S = median predicted page sum on PBMC-well events ÷ sperm-well events, in the stained
+test replicate. The floor scores ~1.12 on all three — a local patch cannot tell a PBMC
+from a sperm.*
+
+### What it says
+
+**ACRV1 is predicted from label-free pages.** Event r 0.51 / 0.46, and it lands on PBMCs
+at 0.35× its sperm level against a true 0.20×. On the sheet, the predicted ACRV1 is a
+compact spot on the sperm head — the acrosome — and faint on PBMCs. This is the marker
+that scored 0.21 from CytPix scalars and that the phase-microscopy literature said was
+optically inaccessible to conventional label-free imaging. On the A8, with FSC and SSC
+alongside extinction, it is accessible. The headroom the project was looking for is here.
+
+**CD45 is the easy one, as everywhere.** Event r 0.87–0.88 and the right cell-type
+behaviour (P:S 9–11 against 8–10 true). The model has learned "round cell".
+
+**LDHC fails the control in fold A and passes it in fold B — and that is the staining,
+not the model.** Trained on replicate 2, the model puts *more* LDHC on PBMCs than sperm
+(P:S 1.45). Replicate 2's LDHC/AKAP4 antibody binds PBMCs non-specifically — the Attune
+scalars showed it, the A8 contact sheet shows AF488 blobs on PBMCs, and the fold-A
+model reproduces its training data faithfully. Trained on the cleaner replicate 3 it gets
+the direction right (0.61). The "≪ 1" expectation is biology; replicate 2's staining
+violates it. **Treat replicate 3 as the reference for LDHC, and report both folds.**
+
+**Every number clears the floor.** Pixel r up by 0.12–0.25, event r up by 0.3–0.85,
+and the cell-type controls go from uniformly uninformative to mostly correct.
+
+### Known pipeline defects, to fix before the full run
+
+- A bright band along the padded edge in some predicted LDHC frames (visible on the
+  sheet). Padding events to 80 rows leaves a boundary the network learns; crop
+  predictions to the valid region, or pad with reflection rather than zeros.
+- The CellView horizontal scan-line streak is present in the targets and will be learned
+  as signal at scale. Mask it or model it.
+- 600 events is far too few to speak to generalisation; the ~0.1 spread between folds is
+  mostly sample size.
+
+---
+
 ## First look at the A8 images — the stain pictures, and what they say
 
 *2026-10-01 · `analysis/a8_io.py` on `data/a8_bundle_seed0.zip` (8 samples x 200 events, join
@@ -32,8 +99,11 @@ every page, which tifffile reads as six one-page series. Iterate `TiffFile(...).
 Median background-subtracted fluorescence page sums: `1S` and `1P` read 0–2 on every
 channel against 28–38 (AF488) for replicates 2 and 3. Same experimental design as the
 CytPix run. **Usable paired events: the six stained samples, 120,000.** Replicate 1's
-60,000 (plus 1SP when extracted) are the negative control: predicted fluorescence on a
-replicate-1 cell should be ~0.
+40,000 are **not** a negative control for image-to-image work — a correct virtual-stain
+model should predict the stain on an unstained cell, since the label-free pages cannot
+know the tube was not stained. The controls are cell-type ones inside the stained
+replicates: ACRV1 and LDHC low on PBMCs, CD45 low on sperm. Replicate 1 is extra
+label-free input, nothing more.
 
 ### The fluorescence pages are raw filter channels — and the spillover is estimable
 

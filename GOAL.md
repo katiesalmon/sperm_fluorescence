@@ -32,7 +32,9 @@ A per-marker table of correlations between predicted and measured intensity, tha
 3. **beats the morphology floor** already measured (`docs/results.md`): DAPI 0.78,
    CD45 0.77, LDHC 0.38, ACRV1 0.21;
 4. **survives the negative controls** — predicted ACRV1 and LDHC on a PBMC should be near
-   zero, predicted DAPI should not, and a permuted-target model should sit at zero.
+   zero, predicted CD45 on a sperm should be near zero, and a permuted-target model should
+   sit at zero. (Unstained replicate 1 is *not* a control: a correct model predicts the
+   stain there too.)
 
 Anything that clears all four is a finding. A marker that fails is also a finding, as long
 as it fails for a stated reason.

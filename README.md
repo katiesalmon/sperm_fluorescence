@@ -13,7 +13,7 @@ curled sperm / PBMC. Two of its findings constrain this work and are carried for
 **The dataset is the BD FACSDiscover A8 run** — eight samples imaged label-free and in
 three fluorescence channels, pixel-registered. In short:
 
-- **120,000 stained paired events** (replicate 1 is the unstained control), each a
+- **120,000 stained paired events** (replicate 1 is unstained — extra label-free input, not a control), each a
   six-page float32 TIFF: LightLoss, FSC, SSC, and AF488 / PE / PerCP-eF710 for
   LDHC+AKAP4, CD45 and ACRV1. DAPI is a scalar only.
 - **The join is verified from the data**: filename index = FCS row, offset 0 at r ≈ 0.8.
@@ -73,6 +73,8 @@ Full detail, including the guards worth knowing about, is in
 | `scripts/cytpix.py` | Shared helpers: class tokens, archive opening, sizes |
 | `analysis/explore_targets.py` | Which tubes were stained, spillover, replicate disagreement |
 | `analysis/feature_baseline.py` | Predict each marker from the instrument's morphology columns |
+| `analysis/pilot_unet.py` | Pilot U-Net, three label-free pages → three unmixed stain pages, held out by replicate |
+| `analysis/pilot_floor.py` | The per-pixel linear floor the pilot has to clear |
 | `analysis/a8_io.py` | Load A8 six-page stacks and targets from a bundle; constrained imaging spillover + per-pixel unmix |
 | `analysis/explore_masks.py` | Render events with the instrument's segmentation drawn on |
 | `data/` | Archives, bundles, unpacked samples — **gitignored** |

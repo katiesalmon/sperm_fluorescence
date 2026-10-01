@@ -3,6 +3,8 @@
 matplotlib
 jupyterlab
 
-# Add a deep-learning stack only once docs/approach.md has settled on one -- the
-# choice depends on what the survey says the data is, and pinning it early would
-# commit the repo to a decision it has not made yet.
+# The pilot image-to-image model (analysis/pilot_unet.py). torch 2.2 is the last
+# release for Python 3.9 and is built against NumPy 1.x -- NumPy 2 imports but torch
+# then cannot initialise it, so the pin is load-bearing until the Python moves on.
+torch>=2.2,<2.3
+numpy<2
