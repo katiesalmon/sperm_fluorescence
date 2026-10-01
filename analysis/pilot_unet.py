@@ -129,6 +129,24 @@ def main(argv=None):
     for n, (pr, er, pps, tps), want in zip(names, res, ["<< 1", ">> 1", "<< 1"]):
         print("%-12s %9.3f %9.3f %12.2f %12.2f   %s" % (n, pr, er, pps, tps, want))
 
+    # The decisive diagnostic: event r *within one cell type*. Across cell types a marker
+    # can be predicted by recognising the cell; within sperm only, ACRV1 can only be
+    # predicted by reading the acrosome itself.
+    Yn, Mn = Yte.numpy(), Mte.numpy()[:, 0]
+    ev_p = (P * Mn[:, None]).sum(axis=(2, 3)); ev_t = (Yn * Mn[:, None]).sum(axis=(2, 3))
+    print("\nevent r WITHIN one well type (no cell-type shortcut available):")
+    print("%-12s %14s %14s %14s" % ("marker", "sperm only (S)", "PBMC only (P)", "mixture (SP)"))
+    for k, n in enumerate(names):
+        cells = []
+        for w in ("S", "P", "SP"):
+            sel = wte == w
+            cells.append(np.corrcoef(ev_p[sel, k], ev_t[sel, k])[0, 1] if sel.sum() > 2 else float("nan"))
+        print("%-12s %14.3f %14.3f %14.3f" % (n, *cells))
+    sel = wte == "S"
+    print("\ntrue ACRV1 on sperm: CV = %.2f  (spread the model would have to explain; 5th-95th pct ratio %.1fx)"
+          % (ev_t[sel, 2].std() / abs(ev_t[sel, 2].mean()),
+             np.percentile(ev_t[sel, 2], 95) / max(np.percentile(ev_t[sel, 2], 5), 1e-9)))
+
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     pick = [np.where(wte == w)[0][j] for w in ("S", "P", "SP") for j in (3, 40)]
     fig, axes = plt.subplots(len(pick), 7, figsize=(14, 1.9 * len(pick)))

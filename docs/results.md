@@ -40,12 +40,27 @@ from a sperm.*
 
 ### What it says
 
-**ACRV1 is predicted from label-free pages.** Event r 0.51 / 0.46, and it lands on PBMCs
-at 0.35× its sperm level against a true 0.20×. On the sheet, the predicted ACRV1 is a
-compact spot on the sperm head — the acrosome — and faint on PBMCs. This is the marker
-that scored 0.21 from CytPix scalars and that the phase-microscopy literature said was
-optically inaccessible to conventional label-free imaging. On the A8, with FSC and SSC
-alongside extinction, it is accessible. The headroom the project was looking for is here.
+**ACRV1 is *not* read from label-free pages — the head is.** The cross-type event r of
+0.51 / 0.46 looked like the project's headroom. It is not. Computed **within sperm only**,
+where recognising the cell earns nothing, ACRV1 event r is **0.017 and −0.001** across
+the two folds — while true ACRV1 on sperm spans 11–14× between the 5th and 95th
+percentile, so there is a real intact-versus-reacted spread to explain and the model
+explains none of it. The spot on the head is a prior ("sperm have acrosomes"), not a
+reading. This is the optical limit the phase-microscopy literature predicted, now shown
+with pixel-registered ground truth rather than inferred. At 600 training events a true
+within-sperm r of ~0.3 would have been visible; zero is zero. The full run will say
+whether weak signal appears with 60,000 — `train_a8.py` now reports within-well r, and
+for ACRV1 that is the only number that matters.
+
+| within one well type, event r | sperm only | PBMC only | mixture |
+| --- | ---: | ---: | ---: |
+| LDHC/AKAP4 | **0.58 / 0.61** | 0.35 / 0.51 | 0.62 / 0.66 |
+| CD45 | 0.65 / 0.04 | **0.53 / 0.59** | 0.88 / 0.83 |
+| ACRV1 | **0.02 / −0.00** | 0.14 / 0.47 | 0.38 / 0.29 |
+
+*(fold A / fold B)* LDHC carries genuine within-sperm signal — the tail is visible in FSC
+and SSC and its extent predicts the stain. CD45 carries within-PBMC signal. ACRV1 carries
+none within sperm. Across cell types all three look predictable; only two are.
 
 **CD45 is the easy one, as everywhere.** Event r 0.87–0.88 and the right cell-type
 behaviour (P:S 9–11 against 8–10 true). The model has learned "round cell".

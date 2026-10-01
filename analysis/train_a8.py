@@ -227,7 +227,15 @@ def evaluate(model, ds, wells, scale, dev, bs=256):
         pix = np.corrcoef(P[:, k][valid], Yt[:, k][valid])[0, 1]
         ep, et = (P[:, k] * Mk[:, 0]).sum(axis=(1, 2)), (Yt[:, k] * Mk[:, 0]).sum(axis=(1, 2))
         ps = lambda v: float(np.median(v[wells == "P"]) / max(abs(np.median(v[wells == "S"])), 1e-9))
-        res[n] = {"pixel_r": float(pix), "event_r": float(np.corrcoef(ep, et)[0, 1]), "pred_PS": ps(ep), "true_PS": ps(et)}
+        # event r WITHIN one well type is the metric that cannot be earned by recognising the
+        # cell. For ACRV1 the within-sperm value is the whole question: across types the model
+        # scores ~0.5 just by knowing sperm have acrosomes; within sperm the pilot scored 0.0.
+        within = {}
+        for w in ("S", "P", "SP"):
+            sel = wells == w
+            within[w] = float(np.corrcoef(ep[sel], et[sel])[0, 1]) if sel.sum() > 2 else None
+        res[n] = {"pixel_r": float(pix), "event_r": float(np.corrcoef(ep, et)[0, 1]),
+                  "pred_PS": ps(ep), "true_PS": ps(et), "within_well_event_r": within}
     return res, P
 
 
@@ -279,6 +287,8 @@ def train(args):
         lw.writerow([ep, tot / nb, vl] + [res[n][k] if res else "" for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
         line = "epoch %3d  train %.4f  val %.4f" % (ep, tot / nb, vl)
         if res: line += "   test event r: " + "  ".join("%s %.3f" % (n, res[n]["event_r"]) for n in NAMES)
+        if res and res["ACRV1"]["within_well_event_r"]["S"] is not None:
+            line += "   ACRV1 within-sperm %.3f" % res["ACRV1"]["within_well_event_r"]["S"]
         print(line + "   (%.0fs)" % (time.time() - t0))
         if vl < best:
             best = vl; torch.save(model.state_dict(), os.path.join(args.out, "best.pt"))
@@ -289,6 +299,12 @@ def train(args):
     print("%-12s %9s %9s %12s %12s   %s" % ("marker", "pixel r", "event r", "pred P:S", "true P:S", "want"))
     for n, want in zip(NAMES, ["<< 1", ">> 1", "<< 1"]):
         r = res[n]; print("%-12s %9.3f %9.3f %12.2f %12.2f   %s" % (n, r["pixel_r"], r["event_r"], r["pred_PS"], r["true_PS"], want))
+    print("\nevent r WITHIN one well type -- the number that cannot be earned by recognising the cell:")
+    print("%-12s %14s %14s %14s" % ("marker", "sperm only (S)", "PBMC only (P)", "mixture (SP)"))
+    for n in NAMES:
+        w = res[n]["within_well_event_r"]
+        print("%-12s %14s %14s %14s" % (n, *["%.3f" % w[k] if w[k] is not None else "n/a" for k in ("S", "P", "SP")]))
+    print("(for ACRV1, 'sperm only' is the acrosome question; the pilot scored 0.0 there at 600 events)")
     json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "results": res},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 
