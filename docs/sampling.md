@@ -37,6 +37,33 @@ which is the join key into the FCS.
 
 ---
 
+## The A8 run: the primary dataset
+
+`Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709\` holds, per sample, a bare
+`<pos>-<code>.fcs` at the root and an `<pos>-<code>_images\<bucket>\<code>_<8 digits>.tiff`
+tree — one six-page float32 TIFF per imaged event, three label-free channels and three
+pixel-registered fluorescence channels. Values in the FCS are already unmixed.
+
+There is no event-id column, so the join is the FCS **row index** = the filename number.
+`make_a8_bundle.py` tests that from the data before writing anything: it sums each image
+page and correlates it with the FCS `Total Intensity (...)` columns at row offsets −1, 0
+and +1. Offset 0 must win, and the same matrix yields the page-to-channel mapping without
+trusting the page names. On an unconfirmed join it stops and writes nothing.
+
+```bash
+py -3 scripts\make_a8_bundle.py <a8-run-folder> --per-class 200 --out a8_bundle_seed0.zip
+```
+
+| Command | What you get | Cost |
+| --- | --- | --- |
+| `--per-class 0` | Panel and the six page names per sample | Seconds |
+| `--per-class 200` | 200 events per sample: six-page TIFF + targets + CellView features, join verified | ~270 MB, a few minutes on the share |
+
+The 162 raw spectral detector columns are dropped from `targets.csv` by default
+(`--all-columns` keeps them). Verify after the copy with `--verify`.
+
+---
+
 ## 1. Survey an archive
 
 ```bash

@@ -34,11 +34,16 @@ Survey the archives on the server:
 py -3 scripts\inspect_acs.py <run-folder>
 ```
 
-Cut a bundle to work on locally — images, targets, masks and compensation matrices, with
-the pairing guaranteed by construction:
+Cut a bundle from the A8 run — the primary dataset — with the join verified from the data:
 
 ```bash
-py -3 scripts\make_bundle.py <run-folder> --per-class 200 --out bundle_seed0.zip
+py -3 scripts\make_a8_bundle.py <a8-run-folder> --per-class 200 --out a8_bundle_seed0.zip
+```
+
+Or from the CytPix archives — images, scalar targets, masks and compensation matrices:
+
+```bash
+py -3 scripts\make_bundle.py <cytpix-run-folder> --per-class 200 --out bundle_seed0.zip
 ```
 
 Check it survived the copy:
@@ -63,7 +68,8 @@ Full detail, including the guards worth knowing about, is in
 | `docs/server-setup.md` | What has to be installed where (for sampling: nothing) |
 | `scripts/survey_tree.py` | Summarise an unfamiliar directory tree: files per kind per folder, sizes, names, TIFF headers |
 | `scripts/inspect_acs.py` | Survey an `.acs`: members, `$TOT`, the detector-to-antigen table, voltages, spillover |
-| `scripts/make_bundle.py` | **The sampler.** One small zip of matched images + targets + masks + matrices |
+| `scripts/make_a8_bundle.py` | **The A8 sampler.** Matched six-page images + unmixed targets + CellView features; verifies the row-index join from the data before writing |
+| `scripts/make_bundle.py` | The CytPix sampler. Images + targets + masks + compensation matrices from the `.acs` |
 | `scripts/make_targets.py` | Full per-event measurement table, including events with no image |
 | `scripts/fcs_probe.py` | FCS TEXT segment: keywords, the `$PnN` → `$PnS` table, the spillover matrix |
 | `scripts/fcs_data.py` | FCS DATA segment: the event matrix |
