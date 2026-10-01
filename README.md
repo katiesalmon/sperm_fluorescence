@@ -77,6 +77,7 @@ Full detail, including the guards worth knowing about, is in
 | `scripts/cytpix.py` | Shared helpers: class tokens, archive opening, sizes |
 | `analysis/explore_targets.py` | Which tubes were stained, spillover, replicate disagreement |
 | `analysis/feature_baseline.py` | Predict each marker from the instrument's morphology columns |
+| `analysis/a8_io.py` | Load A8 six-page stacks and targets from a bundle; constrained imaging spillover + per-pixel unmix |
 | `analysis/explore_masks.py` | Render events with the instrument's segmentation drawn on |
 | `data/` | Archives, bundles, unpacked samples — **gitignored** |
 

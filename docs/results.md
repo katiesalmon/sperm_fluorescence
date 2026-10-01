@@ -6,6 +6,85 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## First look at the A8 images — the stain pictures, and what they say
+
+*2026-10-01 · `analysis/a8_io.py` on `data/a8_bundle_seed0.zip` (8 samples x 200 events, join
+verified on the server; see [task_brief.md](task_brief.md))*
+
+### The data, numerically
+
+| | |
+| --- | --- |
+| Stack | `(6, h, 104)` float32; h in 57–77 (mode 73) — flow axis varies with the event's transit |
+| LightLoss | background 0.129, cells **darker** (extinction); range ~0–0.17 |
+| FSC, SSC, fluorescence | **already background-subtracted** by the instrument: background ≈ 0, ~46% of pixels negative (noise), cell signal positive |
+| Scale | tiny float units: AF488 p99 ≈ 0.10, PE 0.04, PerCP 0.03; SSC up to 5.5 |
+
+Two consequences for any loss: no log transform (half the pixels are negative), and no
+further background subtraction.
+
+**`tifffile.imread` returns page 1 only.** BD writes a `{"shape": [h, w]}` description on
+every page, which tifffile reads as six one-page series. Iterate `TiffFile(...).pages`.
+`a8_io.read_stack` does; nothing else in the repo should touch these files directly.
+
+### Replicate 1 is unstained on the A8 too
+
+Median background-subtracted fluorescence page sums: `1S` and `1P` read 0–2 on every
+channel against 28–38 (AF488) for replicates 2 and 3. Same experimental design as the
+CytPix run. **Usable paired events: the six stained samples, 120,000.** Replicate 1's
+60,000 (plus 1SP when extracted) are the negative control: predicted fluorescence on a
+replicate-1 cell should be ~0.
+
+### The fluorescence pages are raw filter channels — and the spillover is estimable
+
+Not from an unconstrained fit: the unmixed scalars are collinear by cell type (sperm carry
+AF488 *and* PerCP, PBMCs carry PE), so regressing page sums on all three returns R² of
+0.8–0.9 and coefficients that are physically impossible (PerCP-eF710 does not put 90% of
+its light through a 534 nm filter). Physics supplies the constraint: emission spills
+**red-ward only**, so the mixing is lower-triangular with three coefficients, each
+estimable from a well where the upstream fluorophore dominates:
+
+| | coefficient | r | from |
+| --- | ---: | ---: | --- |
+| AF488 → PE | **0.202** | 0.965 | S wells (sperm carry no CD45) |
+| AF488 → PerCP | 0.023 | 0.205 | S wells |
+| PE → PerCP | 0.166 | 0.618 | P wells, AF488's share removed first |
+
+Condition number 1.30 — inverting it per pixel is benign. `a8_io.spillover` and
+`a8_io.unmix` implement this. Estimated under a physical constraint, not from single-stain
+controls, which the experiment does not have; say so when it is used.
+
+### What the pictures show
+
+Contact sheet: `analysis/out/a8_pages.png`.
+
+- **ACRV1 is a compact spot on the sperm head.** The acrosomal cap, imaged. This is the
+  spatial ground truth the CytPix could never provide, on the marker that was least
+  predictable from scalars.
+- **LDHC/AKAP4 lights the whole flagellum**, plus the head. Principal piece, as the
+  biology says.
+- **The spillover is visible and the triangular unmix removes it.** On sperm the raw PE
+  page shows the same tail as AF488; after unmixing the tail is gone and the page is
+  noise. On PBMCs the unmixed PE page stays bright — genuine CD45.
+- **The instrument's own unmixed CD45 scalar goes strongly negative on sperm** (−2e5 to
+  −6e5), the same over-subtraction signature the Attune matrix showed. For scalar targets
+  that means `asinh`; for images, the image-level triangular unmix looks cleaner than the
+  instrument's spectral one.
+- **A horizontal streak runs through the cell's row** in several fluorescence pages — a
+  CellView scan-line artefact. Worth masking or modelling; it will otherwise be learned.
+
+### The design decision this forces
+
+**Use all three label-free pages as input, not LightLoss alone.** LightLoss shows a sperm
+head crisply but the tail only faintly, and barely resolves a PBMC at all — a sperm head
+is condensed chromatin and extinguishes strongly; a lymphocyte does not. FSC and SSC show
+the tail clearly and the PBMC brightly, and they are every bit as label-free. The
+image-to-image model's input is `(LightLoss, FSC, SSC)` → `(AF488, PE, PerCP)` unmixed.
+Whether LightLoss *alone* suffices is then an ablation, and it is the ablation that bears
+on transfer to the CytPix, which has nothing but extinction.
+
+---
+
 ## What is actually inside an .acs, and what it changes
 
 *2026-09-13 · `analysis/explore_masks.py`, `scripts/inspect_acs.py`, on a local copy of `3SP.acs`*
