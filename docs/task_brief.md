@@ -518,11 +518,31 @@ The remaining 250-odd parameters, for the record:
   `Row`/`Column`, saturation channel masks, `PhaseOffset`, `SpectralEventWidth`,
   `MergedTriggerCount`, `WaveformPresent`.
 
-**No event-index column.** The join to the images has to be the FCS **row index** — the
-8-digit filename number — and `WaveformPresent` (P271) is the likely imaged-event flag.
-Both are inferences until checked against real TIFFs: the indices must all be below
-`$TOT`, `WaveformPresent` should sum to 20,000, and an image's fluorescence content must
-match its row's unmixed value.
+**Join and page order, verified on the server (2026-10-01).** `make_a8_bundle.py` summed
+every page of 150 drawn images per sample and correlated against the FCS
+`Total Intensity (...)` columns at row offsets −1, 0, +1. On all six samples that ran:
+
+| | offset −1 | **offset 0** | offset +1 |
+| --- | ---: | ---: | ---: |
+| mean r, range across samples | −0.01 .. 0.12 | **0.73 .. 0.84** | −0.02 .. 0.12 |
+
+**Filename index = FCS row index.** `WaveformPresent` summed to exactly 20,000 on every
+sample — it is the imaged-event flag. The sixth page is `Imaging_BP/788/225/LP/675`,
+the far-red filter for PerCP-eF710 = ACRV1. Page order is as named: LightLoss, FSC, SSC,
+AF488 (LDHC/AKAP4), PE (CD45), PerCP-eF710 (ACRV1).
+
+**The fluorescence *images* are raw filter channels, not unmixed.** This is the important
+subtlety the mapping table exposed. In the sperm wells the PE page correlates with the
+AF488 total (r 0.88–0.91), not with the CD45 total — because sperm carry no CD45, and what
+the PE filter sees there is AF488 spillover. In the PBMC wells it correlates with CD45
+(r 0.88–0.95), as it should. The *scalar* parameters (`PE-A`, `DAPI-A`, …) are unmixed by
+the instrument; the three `ImgB` *images* are not. Consequence: per-pixel fluorescence
+targets carry cross-channel spillover, and image-to-image training needs a 3 × 3
+imaging-channel unmixing estimated from the data — the S wells are AF488-dominant and the
+P wells PE-dominant, which gives two of the three single-stain references for free.
+
+Also as expected: `LightLoss` is extinction, so its raw page sum is mostly background and
+does not match its own `Total Intensity` column. Background-subtract before use.
 
 **What is not there:** event-level pairing to the CytPix. Different instrument, different
 flow cell, different aliquot — the two runs share samples, not events. Within the A8 data

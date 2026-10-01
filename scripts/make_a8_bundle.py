@@ -144,6 +144,8 @@ def check_join(values, par, n_rows, params, images, rows, limit):
         return {"skipped": "no 'Total Intensity (...)' columns in this FCS"}
 
     sample = rows[:limit]
+    if not sample:
+        return {"skipped": "no events to check"}
     sums = []  # per event: [page sums]
     names = None
     used = []
@@ -200,6 +202,9 @@ def print_join(rep):
     for m in best.get("pages", []):
         print("       %-32s -> %-45s r=%s" % (m["page"][:32], (m["best_column"] or "?")[:45],
                                               "%.3f" % m["r"] if m["r"] is not None else "n/a"))
+    print("     (LightLoss is extinction: its raw page sum is mostly background, so it is not expected to\n"
+          "      match its own Total Intensity column; a fluorescence page matches another channel's column\n"
+          "      where that marker is absent from the well, which is spillover, not a join error)")
     print("     => %s" % rep["verdict"])
 
 
@@ -265,6 +270,13 @@ def build(run_folder, args):
                 entry["waveform_present"] = flagged
 
             eligible = sorted(i for i in images if i < n_rows)
+            if not eligible:
+                print("     skipped: no images found%s"
+                      % (" -- %s exists but is empty; is the zip still extracting?" % os.path.basename(img_root)
+                         if os.path.isdir(img_root) else " -- no %s folder" % os.path.basename(img_root)))
+                entry["skipped"] = "no images"
+                manifest["classes"][cls] = entry
+                continue
             rng = random.Random("%s|%s" % (args.seed, cls))
             drawn = sorted(rng.sample(eligible, args.per_class)) if args.per_class < len(eligible) else eligible
             print("     drew %d of %d eligible" % (len(drawn), len(eligible)))
@@ -301,11 +313,15 @@ def build(run_folder, args):
 
         if out and not failed:
             out.writestr("MANIFEST.json", json.dumps(manifest, indent=2, sort_keys=True))
+    except BaseException:
+        failed = True
+        raise
     finally:
         if out:
             out.close()
-            if failed:
+            if failed and os.path.exists(args.out):
                 os.remove(args.out)
+                print("     removed partial %s" % args.out)
 
     if args.dry_run:
         print("\ndry run -- nothing written")
