@@ -101,6 +101,10 @@ def spillover(bundle):
     b, rb = slope(S[:, 2], S[:, 0])   # AF488 -> PerCP
     # PE -> PerCP: remove AF488's contribution first (PBMCs do bind the LDHC antibody).
     c, rc = slope(P[:, 2] - b * P[:, 0], P[:, 1])
+    if min(a, b, c) < 0:
+        import warnings
+        warnings.warn("negative spillover coefficient (%.3f, %.3f, %.3f): physically impossible; "
+                      "the wells used for estimation do not look like real stained data" % (a, b, c))
     M = np.array([[1.0, 0.0, 0.0], [a, 1.0, 0.0], [b, c, 1.0]])
     return M, {"AF488->PE": (a, ra), "AF488->PerCP": (b, rb), "PE->PerCP": (c, rc)}
 

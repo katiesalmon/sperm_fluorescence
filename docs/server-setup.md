@@ -65,10 +65,35 @@ Check it took:
 `tifffile` cannot decode them without it, and the failure looks like a codec error rather
 than a missing package.
 
-**No deep-learning stack is pinned yet.** `requirements-dev.txt` deliberately stops short
-of torch: the framework and the model size depend on what the survey says the data is,
-and pinning early would commit the repo to a decision [approach.md](approach.md) has not
-made. Add it when step 4 of the sequence there actually starts.
+## The GPU machine (RTX A6000, 48 GB, Windows, CUDA 13.2 driver)
+
+Training runs on the same machine that reads `Z:`. Install once, into the repo's venv:
+
+```powershell
+py -3 -m venv .venv
+```
+
+```powershell
+.venv\Scripts\python -m pip install --upgrade pip
+```
+
+```powershell
+.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+```
+
+```powershell
+.venv\Scripts\python -m pip install numpy tifffile matplotlib scipy scikit-learn
+```
+
+The cu124 wheels run on any driver reporting CUDA 12.4 or newer, which 13.2 does. Check:
+
+```powershell
+.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+Then `analysis/train_a8.py prepare` once (reads every image off the share, writes a
+~16 GB cache to a **local** disk — not `Z:` — so training never touches the network),
+and `train` per fold. Both are documented in the script's header.
 
 ## If pip cannot reach the internet
 
