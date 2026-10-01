@@ -1,5 +1,11 @@
 # Task brief
 
+> **Scope, 2026-10-01.** The dataset is the BD FACSDiscover A8 run — eight samples, six of
+> them stained. The Attune CytPix sections below are retained as history: they established
+> the experimental design and the batch-effect lessons, but the samples were run for the
+> A8 and the CytPix is out of scope. `C1-1SP` has no sample; its FCS is an empty tube.
+
+
 ## Goal
 
 Given the raw (brightfield) CytPix event image, predict the fluorescence signal in each
@@ -474,11 +480,11 @@ different instrument. What `survey_tree.py` establishes:
 | | |
 | --- | --- |
 | At root | 9 x `.fcs`, 9 x `.cvw`, 9 x `.zip`, named `A1-1S`, `A2-2S`, `A3-3S`, `B1-1P`, `B2-2P`, `B3-3P`, `C1-1SP`, `C2-2SP`, `C3-3SP` — a plate position plus the sample code |
-| Image dirs | 8 extracted (`C1-1SP_images` absent; its `.zip` is at root), each split into `00000000 / 00010000 / 00020000 / 00030000` buckets of 10,000 event indices |
+| Image dirs | 8 (`C1-1SP` has no sample — eight samples, not nine), each split into `00000000 / 00010000 / 00020000 / 00030000` buckets of 10,000 event indices |
 | Per sample | **exactly 20,000** images — a capture cap — with sparse indices to ~35-40k, so about half the events were imaged |
 | Per image | `<sample>_<8-digit event index>.tiff`, **6 pages, 104 wide x 57-85 high (steps of 4), float32, uncompressed**, ~170 KB |
 | Page names | `LightLoss (Imaging)`, `FSC`, `SSC (Imaging)`, `Imaging_BP/534/46/LP/505`, `Imaging_BP/598/60/LP/570`, and a sixth the survey's listing cap hid |
-| Total | 160,000 imaged events, 6 channels each, ~27 GB of images plus 14.5 GB at root |
+| Total | 160,000 imaged events, 6 channels each; 120,000 of them stained |
 
 **The stain images are here.** Each event carries a label-free image (`LightLoss`,
 plus `FSC` and `SSC`) *and* fluorescence images from bandpass-filtered detectors, all
