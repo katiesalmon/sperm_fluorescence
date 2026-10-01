@@ -486,14 +486,43 @@ co-registered because they come from the same scan. That is the spatial ground t
 the CytPix data does not have — and it is why the earlier "no stain masks" answer was
 right about the `.acs` and wrong about the experiment.
 
-**Inferred, not yet verified:** the channel naming (`LightLoss`, `SSC (Imaging)`,
-`Imaging_BP/…`), the `.cvw` workspace files, and the "A8" in the folder name all point to
-a **BD FACSDiscover A8** with CellView imaging. On that instrument the imaging channels
-sit on the blue laser, so the natural reading is `BP/534/46` = AF488 = **LDHC/AKAP4**,
-`BP/598/60` = PE = **CD45**, and the sixth page a far-red filter for PerCP-eF710 =
-**ACRV1** — three of the four markers imaged, with DAPI (violet-excited) likely in the FCS
-only. The `$PnS` labels in the root `.fcs` settle this; the guess should not be used
-before they do.
+**Verified from `A3-3S.fcs` (2026-10-01):** `$CYT FACSDiscover A8`, FCS 3.2, 37,085 events,
+271 parameters. The panel is unmixed by the instrument and named by fluorophore:
+
+| FCS parameter | Label | Marker | Imaged? |
+| --- | --- | --- | --- |
+| `Alexa Fluor 488-A` | `LDHC_AKAP4-A` | LDHC + AKAP4 | **yes** — `ImgB1 (535)`, TIFF page `Imaging_BP/534/46/LP/505` |
+| `PE-A` | `CD45-A` | CD45 | **yes** — `ImgB2 (600)`, TIFF page `Imaging_BP/598/60/LP/570` |
+| `PerCP-e710*-A` | `ACRV-1-A` | ACRV1 | **yes** — `ImgB3 (790)`, the sixth TIFF page |
+| `DAPI-A` | — | DAPI | **no** — violet-excited; CellView images on the blue laser only |
+
+So the six TIFF pages are three label-free channels (`LightLoss (Imaging)`, `FSC`,
+`SSC (Imaging)`) and three fluorescence channels, co-registered. **Three of the four
+markers have per-pixel ground truth. DAPI has a scalar only.** The values are already
+spectrally unmixed (the 78 x 78 `SPILL` is the unmixing matrix over the spectral
+detectors; the three `ImgB` imaging detectors sit outside it), so the compensation
+problem that dominated the Attune data does not arise here.
+
+The remaining 250-odd parameters, for the record:
+
+- **P20–P97: CellView's per-channel image features** — Size, Max Intensity, Long/Short
+  Axis Moment, Center of Mass X/Y, Total Intensity, Radial Moment, Eccentricity,
+  Diffusivity, for each of the six imaging channels; plus **Correlation** between
+  fluorescence channel pairs and **Delta CoM** (centre-of-mass offset) between every
+  channel pair. The Delta CoM columns are a free compartment-localisation readout:
+  `Delta CoM (LightLoss (Imaging)/ACRV-1 PerCP-e710*)` is literally "how far the
+  ACRV1 signal sits from the cell's centroid".
+- **P103–P264: 81 detectors, `-A` and `-H`** — `ImgB1-3`, `UV1-22`, `V1-20`, `B1-16`,
+  `YG1-12`, `R1-8`. Raw spectral data.
+- **P98–P102, P265–P271: flags and metadata** — `Saturated`, `Time`, `Sorted`, plate
+  `Row`/`Column`, saturation channel masks, `PhaseOffset`, `SpectralEventWidth`,
+  `MergedTriggerCount`, `WaveformPresent`.
+
+**No event-index column.** The join to the images has to be the FCS **row index** — the
+8-digit filename number — and `WaveformPresent` (P271) is the likely imaged-event flag.
+Both are inferences until checked against real TIFFs: the indices must all be below
+`$TOT`, `WaveformPresent` should sum to 20,000, and an image's fluorescence content must
+match its row's unmixed value.
 
 **What is not there:** event-level pairing to the CytPix. Different instrument, different
 flow cell, different aliquot — the two runs share samples, not events. Within the A8 data

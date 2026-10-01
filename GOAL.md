@@ -2,19 +2,22 @@
 
 **Predict how brightly a sperm cell stains, from a picture of it that was never stained.**
 
-The CytPix photographs each event in brightfield and, at the same instant, measures its
-fluorescence on four detectors. We want a model that sees only the picture and predicts
-the four measurements. The labels are free: no one annotates anything, because the
+Two instruments imaged the same samples on the same day. The Attune CytPix photographs
+each event in brightfield and measures its fluorescence as four numbers. The BD
+FACSDiscover A8 images each event label-free *and* in three fluorescence channels,
+pixel-registered. We want a model that sees only the label-free picture and predicts
+the stain — as a number for all four markers, and as a picture for the three the A8
+imaged. The labels are free: no one annotates anything, because the
 cytometer already recorded the answer for every imaged event.
 
 ## The four targets
 
-| Detector | Marker | What it reports | Where it lives on a sperm |
+| Marker | What it reports | Where it lives on a sperm | Ground truth available |
 | --- | --- | --- | --- |
-| `VL1-A` | DAPI | DNA content | nucleus — the head |
-| `BL2-A` | ACRV1 | acrosomal integrity | the cap over the anterior head |
-| `BL1-A` | LDHC + AKAP4 | flagellar proteins (pooled on one fluor) | the principal piece — the tail |
-| `YL1-A` | CD45 | pan-leukocyte | absent from sperm entirely |
+| DAPI | DNA content | nucleus — the head | scalar only (both instruments) |
+| ACRV1 | acrosomal integrity | the cap over the anterior head | scalar + **per-pixel image** (A8) |
+| LDHC + AKAP4 | flagellar proteins, pooled on one fluor | the principal piece — the tail | scalar + **per-pixel image** (A8) |
+| CD45 | pan-leukocyte | absent from sperm entirely | scalar + **per-pixel image** (A8) |
 
 ## Why it matters
 
@@ -41,8 +44,10 @@ as it fails for a stated reason.
 
 - Not a classifier. The sibling repo `sperm_pbmc` sorts events into cell types; this
   predicts a continuous measurement.
-- Not virtual staining in the image-to-image sense. The target is four numbers per event,
-  not a fluorescence picture — the instrument never took one.
+- Not *only* scalar prediction any more. The CytPix recorded four numbers per event and
+  no fluorescence picture; the BD FACSDiscover A8 run of the same samples recorded
+  per-pixel fluorescence images for three of the four markers. Image-to-image virtual
+  staining is in scope for those three; DAPI stays scalar-only.
 - Not about Tomm20. It was in the original brief but is not in the experiment.
 
 ## Where things stand
