@@ -28,6 +28,7 @@ Examples
 """
 
 import argparse
+import contextlib
 import csv
 import glob
 import json
@@ -261,7 +262,9 @@ def train(args):
         for i in range(0, len(fit_idx), args.batch):
             x, y, m = tr.batch(fit_idx[i:i + args.batch]); x, y, m = x.to(dev), (y / scale).to(dev), m.to(dev)
             if np.random.rand() < 0.5: x, y, m = x.flip(-1), y.flip(-1), m.flip(-1)
-            with torch.autocast(device_type=dev.type, enabled=(dev.type == "cuda")):
+            # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
+            amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
+            with amp:
                 loss = (F.l1_loss(model(x), y, reduction="none") * m).sum() / m.sum() / 3
             opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.step(opt); scaler.update(); sched.step()
             tot += loss.item(); nb += 1
