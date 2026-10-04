@@ -567,30 +567,36 @@ each uint16 image page followed by a same-size uint8 mask page. Compression 3081
 is Amnis-private, but open decoders exist (`cifDataset`, R `IFC`, Bio-Formats). The
 compensated `.cif` keeps the same layout.
 
-**Panel, from the IDEAS session (inferred from gate names and plot axes — confirm):**
+**From the files themselves (`.daf`, `.ist`, and the acquisition XML inside the `.cif`):**
 
-| Channel | Conjugate (from the comp controls) | Marker | Seen in the gallery |
-| --- | --- | --- | --- |
-| Ch01 | — | brightfield | sperm head with a phase halo, tail resolved |
-| Ch02 | AF488 | **LDHC/AKAP4** | green along the tail and a ring on the head |
-| Ch03 | PE | **ACRV1** | yellow crescent/cap on the head — the acrosome |
-| Ch07 | DAPI | **DAPI** | violet, the head |
-| Ch11 | PerCP-eF710 | **TOMM20** | red spot at the neck — the midpiece |
+| | |
+| --- | --- |
+| Instrument | ImageStream, IDEAS 6.2.187, **60× objective** (the `400` in the filename is not magnification), 12-bit data |
+| Objects | **20,000**, acquired under a `DAPI+ & Cells` gate with a 20,000 cap — the same selection design as the A8 |
+| Channels with data | Ch01 and Ch09 (two brightfield cameras), Ch02, Ch03, Ch07, Ch11. The rest sit at default display range — unused |
+| Compensation | single-stain `.rif` controls for AF488, PE, PerCP-eF710, DAPI; the `.cif` is IDEAS-compensated from them |
 
-**This is the original four-marker brief — DAPI, ACRV1, LDHC, Tomm20 — and Tomm20 is
-imaged.** It was missing from both earlier instruments. CD45 is not in this panel, and
-every event in the gallery is a sperm, so the sample is most likely sperm-only. The
-conjugates differ from the A8 run (ACRV1 moved from PerCP-eF710 to PE; PerCP-eF710 now
-carries Tomm20), which matters for any cross-instrument comparison of the ACRV1 channel.
+**The channel-to-marker map is contradicted between two files, and must be settled by
+whoever did the staining:**
 
-**Gating already present in the `.daf`:** `DAPI+` (Ch07 intensity vs area, taking the
-high-DAPI cluster — a distinct low-DAPI population exists and is excluded),
-`LDHC+ACRV1+` (Ch02 vs Ch03), `TOMM20+` (Ch11 vs Ch02), and their intersection. For
-training, export from a *cell* population (e.g. `DAPI+`), not the triple-positive one,
-or the stain-negative events the model most needs to learn are gated away.
+| Channel | The `.ist` template says | The `.daf` gates and the gallery say |
+| --- | --- | --- |
+| Ch02 (AF488) | `LDHC AF488` | `LDHC` — green along the tail. **Agree.** |
+| Ch07 (DAPI) | `DAPI` | `DAPI` — the head. **Agree.** |
+| Ch03 (PE) | **`TOMM20 PE`** | **`ACRV1`** — gate `LDHC+ACRV1+` is Ch02 vs Ch03; yellow crescent on the anterior head |
+| Ch11 (PerCP-eF710) | *(template puts `ACRV-1 PerCP-Cy5.5` on Ch05, which holds no data)* | **`TOMM20`** — gate `TOM20+` on Ch11; red spot at the neck |
 
-**Unknown until confirmed:** magnification (the `400` in the filename may be the 40×
-objective), object count, donor, and whether more ISX data is coming.
+The spatial patterns favour the gates: an acrosomal cap is a crescent on the anterior
+head, and mitochondria sit in the midpiece at the neck, and that is what Ch03 and Ch11
+show respectively. The template was last saved at 17:51 on acquisition day, after the
+data was taken at 08:17, and still assigns a channel (Ch05) that was never used — so it
+may simply be stale. But "template says PE = Tomm20" is exactly the kind of mismatch
+that trains fine and means nothing, and the comp controls are named by fluorophore only,
+so they cannot arbitrate. **Treat Ch03 = ACRV1 and Ch11 = TOMM20 as the working
+assumption, flagged, until the stainer confirms which antibody went on PE.**
+
+Either way, **this run images all four markers of the original brief, including
+Tomm20**, and CD45 is absent. Every gallery event is a sperm.
 
 ## Status
 
