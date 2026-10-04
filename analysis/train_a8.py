@@ -282,7 +282,43 @@ def build_model(width, cin=3, cout=3):
     return UNet(width, cin, cout)
 
 
-def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
+def augment(x, y, m, level):
+    """level 0: horizontal flip only (the scan axis is symmetric). level 1 adds a vertical
+    flip, a small joint shift of input, target and mask, and a gain/offset jitter on the
+    label-free input -- the usual recipe; none of it changes what the target means."""
+    import torch
+    if np.random.rand() < 0.5: x, y, m = x.flip(-1), y.flip(-1), m.flip(-1)
+    if level >= 1:
+        if np.random.rand() < 0.5: x, y, m = x.flip(-2), y.flip(-2), m.flip(-2)
+        dy, dx = np.random.randint(-6, 7), np.random.randint(-6, 7)
+        if dy or dx:
+            x, y, m = (torch.roll(t, shifts=(dy, dx), dims=(-2, -1)) for t in (x, y, m))
+        gain = 1.0 + 0.1 * torch.randn(x.shape[0], x.shape[1], 1, 1, device=x.device)
+        offset = 0.1 * torch.randn(x.shape[0], x.shape[1], 1, 1, device=x.device)
+        x = x * gain + offset
+    return x, y, m
+
+
+def grad_loss(p, y, m):
+    """L1 between spatial gradients of prediction and target, masked. L1 on pixels alone
+    rewards blur; matching gradients rewards edges in the right places."""
+    import torch.nn.functional as F
+    dpx, dpy = p[..., :, 1:] - p[..., :, :-1], p[..., 1:, :] - p[..., :-1, :]
+    dyx, dyy = y[..., :, 1:] - y[..., :, :-1], y[..., 1:, :] - y[..., :-1, :]
+    mx, my = m[..., :, 1:] * m[..., :, :-1], m[..., 1:, :] * m[..., :-1, :]
+    return ((F.l1_loss(dpx, dyx, reduction="none") * mx).sum() + (F.l1_loss(dpy, dyy, reduction="none") * my).sum()) / (mx.sum() + my.sum() + 1e-6)
+
+
+def predict(model, x, tta=False):
+    """Model output, optionally averaged over the four flips (test-time augmentation)."""
+    import torch
+    if not tta:
+        return model(x)
+    outs = [model(x), model(x.flip(-1)).flip(-1), model(x.flip(-2)).flip(-2), model(x.flip(-1).flip(-2)).flip(-2).flip(-1)]
+    return torch.stack(outs).mean(0)
+
+
+def evaluate(model, ds, wells, scale, dev, bs=256, idx=None, tta=False):
     """Score on `idx` (default: everything); `wells` is already that subset's wells. Native
     size on a ragged cache: predictions are made per object, pixel r pooled over valid
     pixels, event r over per-object sums. Returns (res, preds) with preds[i] = (C, h, w)."""
@@ -294,7 +330,7 @@ def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
     with torch.no_grad():
         for b in make_batches(ds, idx, bs):
             x, y, m = ds.batch(b)
-            p = (model(x.to(dev)).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
+            p = (predict(model, x.to(dev), tta).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
             for q, j in enumerate(b):
                 preds[pos[int(j)]] = p[q]; trues[pos[int(j)]] = y[q]; masks[pos[int(j)]] = m[q]
     res = {}
@@ -390,11 +426,14 @@ def train(args):
                 # and a network never penalised there paints stain onto it (seen in the
                 # ISX progression sheets). The validity mask still scopes the metrics.
                 m = torch.ones_like(m)
-            if np.random.rand() < 0.5: x, y, m = x.flip(-1), y.flip(-1), m.flip(-1)
+            x, y, m = augment(x, y, m, args.aug)
             # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
             amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
             with amp:
-                loss = (F.l1_loss(model(x), y, reduction="none") * m).sum() / m.sum() / 3
+                out = model(x)
+                loss = (F.l1_loss(out, y, reduction="none") * m).sum() / m.sum() / out.shape[1]
+                if args.grad_loss > 0:
+                    loss = loss + args.grad_loss * grad_loss(out, y, m)
             opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
             try: sched.step()
             except ValueError: pass   # OneCycle's step budget is an estimate when batches vary
@@ -423,7 +462,11 @@ def train(args):
             line += "   ACRV1 within-sperm %.3f" % res["ACRV1"]["within_well_event_r"]["S"]
         print(line + "   (%.0fs)" % (time.time() - t0))
         # Checkpoint selection, on the training replicate's held-out slice only.
-        if args.select_on == "acrv1_sperm":
+        if args.select_on == "val_event_r":
+            rv, _ = evaluate(model, tr, wtr[val_idx], scale, dev, idx=val_idx)
+            mean_r = float(np.mean([rv[n]["event_r"] for n in NAMES]))
+            score, line_sel = -mean_r, "   val event r %.3f" % mean_r
+        elif args.select_on == "acrv1_sperm":
             rv, _ = evaluate(model, tr, wtr[val_idx], scale, dev, idx=val_idx)
             w_acrv = rv["ACRV1"]["within_well_event_r"]; r_s = w_acrv.get("S", next(iter(w_acrv.values())))
             score = -(r_s if r_s is not None else -1.0)
@@ -442,7 +485,7 @@ def train(args):
             _snapshot_sheet(args.out, ep, snap_x, snap_y, sp, snap_m, wte[snap_idx])
 
     model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
-    res, P = evaluate(model, te, wte, scale, dev)
+    res, P = evaluate(model, te, wte, scale, dev, tta=args.tta)
     print("\nbest-by-validation model on the held-out replicate:")
     print("%-12s %9s %9s %12s %12s   %s" % ("marker", "pixel r", "event r", "pred P:S", "true P:S", "want"))
     wants = dict(zip(["LDHC/AKAP4", "CD45", "ACRV1"], ["<< 1", ">> 1", "<< 1"]))
@@ -464,13 +507,14 @@ def train(args):
             ck = os.path.join(args.out, "best_%s.pt" % nm.replace("/", "_"))
             if not os.path.exists(ck): continue
             model.load_state_dict(torch.load(ck, map_location=dev))
-            rk, _ = evaluate(model, te, wte, scale, dev)
+            rk, _ = evaluate(model, te, wte, scale, dev, tta=args.tta)
             per_marker[nm] = dict(rk[nm], epoch=best_ep[k])
             w = rk[nm]["within_well_event_r"]
             print("%-12s %6d %9.3f %9.3f   %s" % (nm, best_ep[k], rk[nm]["pixel_r"], rk[nm]["event_r"],
                   "  ".join("%s %.3f" % (kk, v) for kk, v in w.items() if v is not None)))
         model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
     json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "target": args.target, "full_frame": args.full_frame,
+               "aug": args.aug, "grad_loss": args.grad_loss, "tta": args.tta, "seed": args.seed,
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res,
                "per_marker_checkpoint": per_marker},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
@@ -553,8 +597,13 @@ def main(argv=None):
                    help="Train a single-output model for one marker (name as in the cache's meta.json)")
     t.add_argument("--snapshot", type=int, default=0, metavar="N",
                    help="Every N epochs, save predictions for a fixed set of test objects (epoch_XX.png + .npz) and, at the end, a progression sheet")
-    t.add_argument("--select-on", choices=["val_l1", "acrv1_sperm"], default="val_l1",
-                   help="Checkpoint selection: validation L1 (default) or within-sperm ACRV1 event r on the validation slice")
+    t.add_argument("--select-on", choices=["val_l1", "val_event_r", "acrv1_sperm"], default="val_l1",
+                   help="Checkpoint selection on the validation slice: L1 (default), mean event r across markers, or within-sperm ACRV1 event r")
+    t.add_argument("--aug", type=int, default=0, choices=[0, 1],
+                   help="0: horizontal flip only. 1: + vertical flip, +-6 px shift, input gain/offset jitter")
+    t.add_argument("--grad-loss", type=float, default=0.0, metavar="W",
+                   help="Weight of a gradient-difference term beside the L1, for sharper edges (try 0.5)")
+    t.add_argument("--tta", action="store_true", help="Average predictions over the four flips at evaluation")
     args = ap.parse_args(argv)
     return prepare(args) if args.cmd == "prepare" else train(args)
 
