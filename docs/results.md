@@ -61,6 +61,17 @@ brightfield cameras) + Ch06 (side scatter); targets the IDEAS-compensated Ch02/C
 Whole-sample numbers are within 0.01 of these for the three sperm markers; DAPI drops to
 0.40 on the DAPI-low fragments, as it should — they have little DNA to predict.
 
+**Correction (2026-10-05): the "nucleated" subset contains a round-cell population, and
+it was propping up DAPI.** 4–6% of objects are large, round, granular cells at 18–27× the
+sperm DAPI level, bright in every stain including LDHC and ACRV1 — which argues for
+immature germ cells (LDHC is testis-specific; ACRV1 marks the forming acrosome in round
+spermatids) over leukocytes, though with no CD45 in the panel the two cannot be separated.
+Scored on **sperm only** (DAPI between the fragment trough and 4× the sperm median,
+n = 5,660): LDHC 0.974, ACRV1 0.985, TOMM20 0.978 — unchanged — but **DAPI 0.800**, down
+from 0.922. Among true haploid sperm there is little DNA variance to explain, and the
+0.92 came partly from the round cells' extreme values. DAPI's honest number within sperm
+is 0.80. On the round cells alone the model is weakest on TOMM20 (0.66): too few examples.
+
 **This is a different regime from the A8.** There, ACRV1 within sperm reached 0.25 from
 57,000 training events; here it is 0.98 from 10,000, and the prediction sheets show the
 acrosomal cap drawn on the anterior head from epoch 3 onward. Four things differ, and
