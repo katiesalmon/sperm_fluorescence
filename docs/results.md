@@ -6,6 +6,76 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Generalist A8 + ISX on the laptop: one model, two instruments, and masks IDEAS would draw
+
+*2026-10-05 · `analysis/prepare_generalist.py`, `analysis/train_a8.py` (availability
+masks, `--include`, `--init`), `analysis/stain_masks.py`, `analysis/make_sheet.py`. Laptop
+MPS, width 32, batch 16, `--channel-scale --full-frame --aug 1`. ISX: 10,000 train /
+10,000 test (first/second half of the one tube). A8: the laptop sample bundle, 200 objects
+per well in replicate 2 (train) and 3 (test), zoomed 1.25× to the ISX pitch, each A8 object
+repeated 6× per epoch. Five target channels; a channel an instrument did not stain is
+masked out of the loss, validation and scoring for that instrument.*
+
+### Four runs
+
+| run | train on | epochs | ISX event r (LDHC / ACRV1 / DAPI / TOMM20) | A8 within-well (S / P / SP) LDHC | ACRV1 | CD45 |
+|---|---|---|---|---|---|---|
+| A8 scratch | A8 only | 20 | — | 0.66 / 0.34 / 0.78 | 0.19 / 0.22 / 0.45 | 0.83 / 0.55 / 0.90 |
+| ISX only | ISX only | 15 | 0.968 / 0.965 / 0.888 / 0.934 | — | — | — |
+| A8 fine-tune | A8, from the ISX-only checkpoint | 20 | — | 0.65 / 0.34 / 0.78 | 0.13 / 0.20 / 0.39 | 0.23 / 0.55 / 0.89 |
+| joint | both | 15 | *(running)* | | | |
+
+**Fine-tuning from the ISX checkpoint does not help the A8** on this sample: every
+within-well number lands on the scratch run's within noise (the CD45-in-S drop is a
+handful of CD45-positive events in a sperm well, not a trend). With 600 A8 training
+objects and 20 epochs the pretrained features are simply overwritten; whether the
+transfer shows up at full A8 scale (57,000 events per fold) is a server question. The ISX
+side reproduces the earlier joint pilot within 0.01 on every marker, so the five-channel
+cache and the availability masking cost nothing.
+
+### Stain masks, scored against the masks IDEAS stores
+
+The `.cif` carries IDEAS's per-channel masks (M02, M03, M07, M11), so on the ISX the
+predicted masks can be scored against exactly what IDEAS draws. A predicted channel is
+thresholded at a fraction of that object's own peak, the fraction chosen per channel on
+training objects to maximise IoU against IDEAS. A population-wide absolute threshold was
+tried first and loses 0.06–0.08 IoU on every marker: a sperm head's faint predicted halo
+sits above any cut that still keeps a dim diffuse round cell.
+
+ISX held-out, 300 objects, ISX-only model:
+
+| marker | IoU vs IDEAS | Dice | present/absent agree | *thresholded truth vs IDEAS* |
+|---|---|---|---|---|
+| LDHC/AKAP4 | 0.72 | 0.83 | 1.00 | 0.69 |
+| DAPI | 0.72 | 0.83 | 1.00 | 0.70 |
+| ACRV1 | 0.64 | 0.75 | 0.96 | 0.69 |
+| TOMM20 | 0.62 | 0.72 | 0.90 | 0.62 |
+
+The last column is the ceiling that matters: thresholding the *real* fluorescence image
+reproduces IDEAS's mask only to IoU 0.62–0.70, because IDEAS's default mask is its own
+algorithm, not a threshold. The predicted masks match IDEAS as well as the truth does.
+On the sheet the acrosome cap, nuclear head, midpiece and tail masks each land on the
+IDEAS outline.
+
+A8 has no instrument mask, so its reference is the thresholded truth (a rule that scores
+0.62–0.70 against IDEAS on ISX, above). A8 held-out, 600 objects: LDHC/AKAP4 IoU 0.63–0.64,
+CD45 0.61, ACRV1 0.40, for scratch and fine-tuned alike. The predicted masks are cleaner
+than the A8 truth masks because the network averages the A8 noise away, which costs IoU
+against a noisy reference even where the shape is right.
+
+### Why the A8 images are what they are
+
+CellView does not take a picture. One laser is split into a row of radiofrequency-tagged
+beamlets, a single PMT records the sum, and the image is demodulated out of it: each pixel
+integrates microseconds of a few milliwatts, so shot noise dominates, worst on PerCP
+(ACRV1); the beamlets form a band, so noise is structured by row (the streaks the cache
+builder removes); unmixing AF488/PE/PerCP subtracts noise along with spillover; and the
+label-free channel is loss of a single coherent wavelength, not white-light brightfield.
+The ISX is a 60× TDI camera at a few hundred events per second. The S8 inherits the A8's
+imaging, so for sorting these are the images the model has to live with.
+
+---
+
 ## Zero-shot ISX → CytPix: fails outright
 
 *2026-10-05 · `analysis/predict_cytpix.py`, the laptop ISX joint model on 15 CytPix
