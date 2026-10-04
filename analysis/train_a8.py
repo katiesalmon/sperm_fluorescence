@@ -49,7 +49,7 @@ H, W = 80, 104
 CLASS_RE = re.compile(r"-(?P<cls>[123](?:S|P|SP))$", re.IGNORECASE)
 INDEX_RE = re.compile(r"_(?P<idx>\d{6,10})\.tiff?$", re.IGNORECASE)
 SCALARS = ["LDHC_AKAP4-A", "CD45-A", "ACRV-1-A", "DAPI-A"]
-NAMES = ["LDHC/AKAP4", "CD45", "ACRV1"]
+NAMES = ["LDHC/AKAP4", "CD45", "ACRV1"]   # A8 default; overridden by <cache>/meta.json when present
 
 
 # ------------------------------------------------------------------------- prepare ----
@@ -189,7 +189,7 @@ class Cached:
                 torch.tensor(np.stack(out[2])[:, None].astype(np.float32)))
 
 
-def build_model(width):
+def build_model(width, cin=3, cout=3):
     import torch, torch.nn as nn, torch.nn.functional as F
 
     class Block(nn.Module):
@@ -200,17 +200,17 @@ def build_model(width):
         def forward(s, x): return s.net(x)
 
     class UNet(nn.Module):
-        def __init__(s, w):
+        def __init__(s, w, cin=3, cout=3):
             super().__init__()
-            s.e1, s.e2, s.e3, s.e4 = Block(3, w), Block(w, 2 * w), Block(2 * w, 4 * w), Block(4 * w, 8 * w)
+            s.e1, s.e2, s.e3, s.e4 = Block(cin, w), Block(w, 2 * w), Block(2 * w, 4 * w), Block(4 * w, 8 * w)
             s.d3, s.d2, s.d1 = Block(8 * w + 4 * w, 4 * w), Block(4 * w + 2 * w, 2 * w), Block(2 * w + w, w)
-            s.out = nn.Conv2d(w, 3, 1)
+            s.out = nn.Conv2d(w, cout, 1)
         def forward(s, x):
             e1 = s.e1(x); e2 = s.e2(F.max_pool2d(e1, 2)); e3 = s.e3(F.max_pool2d(e2, 2)); e4 = s.e4(F.max_pool2d(e3, 2))
             up = lambda t, ref: F.interpolate(t, size=ref.shape[-2:], mode="bilinear", align_corners=False)
             d3 = s.d3(torch.cat([up(e4, e3), e3], 1)); d2 = s.d2(torch.cat([up(d3, e2), e2], 1)); d1 = s.d1(torch.cat([up(d2, e1), e1], 1))
             return s.out(d1)
-    return UNet(width)
+    return UNet(width, cin, cout)
 
 
 def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
@@ -225,16 +225,17 @@ def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
             P.append((model(x.to(dev)).float().cpu() * scale).numpy()); Yt.append(y.numpy()); Mk.append(m.numpy())
     P, Yt, Mk = np.concatenate(P), np.concatenate(Yt), np.concatenate(Mk)
     res = {}
+    has_ps = (wells == "P").any() and (wells == "S").any()
     for k, n in enumerate(NAMES):
         valid = Mk[:, 0] > 0
         pix = np.corrcoef(P[:, k][valid], Yt[:, k][valid])[0, 1]
         ep, et = (P[:, k] * Mk[:, 0]).sum(axis=(1, 2)), (Yt[:, k] * Mk[:, 0]).sum(axis=(1, 2))
-        ps = lambda v: float(np.median(v[wells == "P"]) / max(abs(np.median(v[wells == "S"])), 1e-9))
+        ps = (lambda v: float(np.median(v[wells == "P"]) / max(abs(np.median(v[wells == "S"])), 1e-9))) if has_ps else (lambda v: None)
         # event r WITHIN one well type is the metric that cannot be earned by recognising the
         # cell. For ACRV1 the within-sperm value is the whole question: across types the model
         # scores ~0.5 just by knowing sperm have acrosomes; within sperm the pilot scored 0.0.
         within = {}
-        for w in ("S", "P", "SP"):
+        for w in sorted(set(wells)):
             sel = wells == w
             within[w] = float(np.corrcoef(ep[sel], et[sel])[0, 1]) if sel.sum() > 2 else None
         res[n] = {"pixel_r": float(pix), "event_r": float(np.corrcoef(ep, et)[0, 1]),
@@ -244,6 +245,11 @@ def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
 
 def train(args):
     import torch, torch.nn.functional as F
+    global NAMES
+    meta_path = os.path.join(args.cache, "meta.json")
+    meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
+    if meta.get("target_names"):
+        NAMES = list(meta["target_names"])
     dev = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     all_cls = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(args.cache, "*_x.npy"))})
@@ -269,7 +275,8 @@ def train(args):
           % (dev, tr_cls, len(fit_idx), nval, te_cls, len(te), args.width,
              "/".join("%.4f" % v for v in scale_vec), args.select_on))
 
-    model = build_model(args.width).to(dev)
+    cin, cout = tr.xs[0].shape[1], tr.ys[0].shape[1]
+    model = build_model(args.width, cin, cout).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * (len(fit_idx) // args.batch + 1))
     try:
@@ -303,13 +310,13 @@ def train(args):
         lw.writerow([ep, tot / nb, vl] + [res[n][k] if res else "" for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
         line = "epoch %3d  train %.4f  val %.4f" % (ep, tot / nb, vl)
         if res: line += "   test event r: " + "  ".join("%s %.3f" % (n, res[n]["event_r"]) for n in NAMES)
-        if res and res["ACRV1"]["within_well_event_r"]["S"] is not None:
+        if res and "ACRV1" in res and res["ACRV1"]["within_well_event_r"].get("S") is not None:
             line += "   ACRV1 within-sperm %.3f" % res["ACRV1"]["within_well_event_r"]["S"]
         print(line + "   (%.0fs)" % (time.time() - t0))
         # Checkpoint selection, on the training replicate's held-out slice only.
         if args.select_on == "acrv1_sperm":
             rv, _ = evaluate(model, tr, wtr[val_idx], scale, dev, idx=val_idx)
-            r_s = rv["ACRV1"]["within_well_event_r"]["S"]
+            w_acrv = rv["ACRV1"]["within_well_event_r"]; r_s = w_acrv.get("S", next(iter(w_acrv.values())))
             score = -(r_s if r_s is not None else -1.0)
             line_sel = "   val ACRV1 within-sperm %.3f" % (r_s if r_s is not None else float("nan"))
         else:
@@ -322,31 +329,36 @@ def train(args):
     res, P = evaluate(model, te, wte, scale, dev)
     print("\nbest-by-validation model on the held-out replicate:")
     print("%-12s %9s %9s %12s %12s   %s" % ("marker", "pixel r", "event r", "pred P:S", "true P:S", "want"))
-    for n, want in zip(NAMES, ["<< 1", ">> 1", "<< 1"]):
-        r = res[n]; print("%-12s %9.3f %9.3f %12.2f %12.2f   %s" % (n, r["pixel_r"], r["event_r"], r["pred_PS"], r["true_PS"], want))
+    wants = dict(zip(["LDHC/AKAP4", "CD45", "ACRV1"], ["<< 1", ">> 1", "<< 1"]))
+    for n in NAMES:
+        r = res[n]
+        ps = ("%12.2f %12.2f   %s" % (r["pred_PS"], r["true_PS"], wants.get(n, ""))) if r["pred_PS"] is not None else "%12s %12s" % ("n/a", "n/a")
+        print("%-12s %9.3f %9.3f %s" % (n, r["pixel_r"], r["event_r"], ps))
+    kinds = sorted({k for n in NAMES for k in res[n]["within_well_event_r"]})
     print("\nevent r WITHIN one well type -- the number that cannot be earned by recognising the cell:")
-    print("%-12s %14s %14s %14s" % ("marker", "sperm only (S)", "PBMC only (P)", "mixture (SP)"))
+    print("%-12s " % "marker" + " ".join("%14s" % k for k in kinds))
     for n in NAMES:
         w = res[n]["within_well_event_r"]
-        print("%-12s %14s %14s %14s" % (n, *["%.3f" % w[k] if w[k] is not None else "n/a" for k in ("S", "P", "SP")]))
-    print("(for ACRV1, 'sperm only' is the acrosome question; the pilot scored 0.0 there at 600 events)")
+        print("%-12s " % n + " ".join("%14s" % ("%.3f" % w[k] if w.get(k) is not None else "n/a") for k in kinds))
     json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width,
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-    pick = [np.where(wte == w)[0][j] for w in ("S", "P", "SP") for j in (3, 40, 400) if (wte == w).sum() > j]
-    fig, axes = plt.subplots(len(pick), 7, figsize=(14, 1.9 * len(pick)))
+    kinds_te = sorted(set(wte)); per = max(1, 9 // len(kinds_te))
+    pick = [np.where(wte == w)[0][j] for w in kinds_te for j in [3, 40, 400, 900, 2000, 5000][:per] if (wte == w).sum() > j]
+    ncol = 1 + 2 * cout
+    fig, axes = plt.subplots(len(pick), ncol, figsize=(2 * ncol, 1.9 * len(pick)))
     for i, j in enumerate(pick):
         x, y, m = te.batch([j]); x, y = x[0].numpy(), y[0].numpy()
-        panels = [x[0]] + [v for k in range(3) for v in (y[k], P[j, k])]
+        panels = [x[0]] + [v for k in range(cout) for v in (y[k], P[j, k])]
         for c, (ax, a) in enumerate(zip(axes[i], panels)):
             if c == 0: ax.imshow(a, cmap="gray")
             else:
                 ref = panels[c if c % 2 == 1 else c - 1]; ax.imshow(a, cmap="magma", vmin=0, vmax=max(np.percentile(ref, 99.5), 1e-4))
             ax.set_xticks([]); ax.set_yticks([])
             if c == 0: ax.set_ylabel(wte[j], fontsize=8)
-            if i == 0: ax.set_title(["LightLoss in", "true LDHC", "pred LDHC", "true CD45", "pred CD45", "true ACRV1", "pred ACRV1"][c], fontsize=8)
+            if i == 0: ax.set_title((["input ch0"] + [t % n for n in NAMES for t in ("true %s", "pred %s")])[c], fontsize=7)
     fig.tight_layout(); fig.savefig(os.path.join(args.out, "preds.png"), dpi=120)
     print("wrote", os.path.join(args.out, "results.json"), "and preds.png")
     return 0
