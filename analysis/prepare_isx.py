@@ -5,7 +5,7 @@ Inputs are the three label-free channels -- Ch01 and Ch09 (brightfield, two came
 and Ch06 (side scatter) -- normalised per event. Targets are the four stained channels,
 Ch02 LDHC/AKAP4, Ch03 ACRV1, Ch07 DAPI, Ch11 TOMM20, with each image's background
 (median outside the combined mask) subtracted, in 12-bit counts. Frames are 112 x 80:
-larger objects are centre-cropped, smaller ones reflect-padded with a validity mask.
+larger objects are centre-cropped, smaller ones padded with their own background and a validity mask.
 
 There is one sample, so the cache is split into two pseudo-replicates by acquisition
 order: class `1H` is the first half of the objects, `2H` the second. train_a8.py's
@@ -44,8 +44,13 @@ def fit_frame(a, valid=None):
     if w > W: left = (w - W) // 2; a = a[:, :, left:left + W]; w = W
     ph, pw = H - h, W - w
     bh, bw = ph // 2, pw // 2
-    padded = np.pad(a, ((0, 0), (bh, ph - bh), (bw, pw - bw)), mode="reflect" if (bh < h and bw < w) else "edge")
-    out[:] = padded; m[bh:bh + h, bw:bw + w] = True
+    # Pad with each channel's border median -- its background -- rather than reflecting.
+    # Reflection tiles a small object into copies of itself across the frame, which the
+    # mask keeps out of the loss but the network still sees as input.
+    border = np.concatenate([a[:, 0, :], a[:, -1, :], a[:, :, 0], a[:, :, -1]], axis=1)
+    fill = np.median(border, axis=1)
+    out[:] = fill[:, None, None]
+    out[:, bh:bh + h, bw:bw + w] = a; m[bh:bh + h, bw:bw + w] = True
     return out, m
 
 

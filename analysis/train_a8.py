@@ -250,12 +250,24 @@ def train(args):
     meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
     if meta.get("target_names"):
         NAMES = list(meta["target_names"])
+    target_k = None
+    if args.target:
+        if args.target not in NAMES:
+            raise SystemExit("--target must be one of %s" % NAMES)
+        target_k = NAMES.index(args.target)
     dev = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     all_cls = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(args.cache, "*_x.npy"))})
     tr_cls = [c for c in all_cls if c[0] in args.train]; te_cls = [c for c in all_cls if c[0] in args.test]
-    xs, ys, ms, wtr, _ = load_cache(args.cache, tr_cls); tr = Cached(xs, ys, ms)
-    xs, ys, ms, wte, _ = load_cache(args.cache, te_cls); te = Cached(xs, ys, ms)
+    xs, ys, ms, wtr, _ = load_cache(args.cache, tr_cls)
+    if target_k is not None:
+        ys = [y[:, target_k:target_k + 1] for y in ys]   # memmap views: one target channel
+    tr = Cached(xs, ys, ms)
+    xs, ys, ms, wte, _ = load_cache(args.cache, te_cls)
+    if target_k is not None:
+        ys = [y[:, target_k:target_k + 1] for y in ys]
+        NAMES = [args.target]
+    te = Cached(xs, ys, ms)
     # hold a slice of the training replicate out for model selection; the test replicate is never used for it
     rng = np.random.default_rng(args.seed); perm = rng.permutation(len(tr))
     nval = min(max(500, len(tr) // 20), max(1, len(tr) // 5))   # 5% of a big set, never more than 20% of a small one
@@ -286,6 +298,7 @@ def train(args):
     log = open(os.path.join(args.out, "log.csv"), "w", newline=""); lw = csv.writer(log)
     lw.writerow(["epoch", "train_l1", "val_l1"] + ["%s_%s" % (n, k) for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")])
     best = float("inf"); t0 = time.time()
+    best_ch = np.full(len(NAMES), np.inf); best_ep = [0] * len(NAMES)
     val_ds = Cached(tr.xs, tr.ys, tr.ms)
 
     # Fixed test objects for per-epoch snapshots: a spread over well types and over the
@@ -317,12 +330,20 @@ def train(args):
             opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.step(opt); scaler.update(); sched.step()
             tot += loss.item(); nb += 1
         # validation L1 on the held-out slice of the TRAINING replicate
-        model.eval(); vl = 0.0; vn = 0
+        model.eval(); vl = 0.0; vn = 0; vch = np.zeros(len(NAMES)); vm = 0.0
         with torch.no_grad():
             for i in range(0, len(val_idx), 256):
                 x, y, m = val_ds.batch(val_idx[i:i + 256]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
-                vl += ((F.l1_loss(model(x), y, reduction="none") * m).sum() / m.sum() / 3).item(); vn += 1
-        vl /= max(vn, 1)
+                per = (F.l1_loss(model(x), y, reduction="none") * m).sum(dim=(0, 2, 3)).cpu().numpy()
+                vch += per; vm += m.sum().item()
+                vl += (per.sum() / m.sum().item() / len(NAMES)); vn += 1
+        vl /= max(vn, 1); vch /= max(vm, 1.0)
+        # Each marker keeps its own best epoch: a shared trunk's best moment differs per
+        # marker, and one checkpoint cannot serve all of them.
+        for k, nm in enumerate(NAMES):
+            if vch[k] < best_ch[k]:
+                best_ch[k] = vch[k]; best_ep[k] = ep
+                torch.save(model.state_dict(), os.path.join(args.out, "best_%s.pt" % nm.replace("/", "_")))
         res, _ = evaluate(model, te, wte, scale, dev) if (ep % args.eval_every == 0 or ep == args.epochs) else ({}, None)
         lw.writerow([ep, tot / nb, vl] + [res[n][k] if res else "" for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
         line = "epoch %3d  train %.4f  val %.4f" % (ep, tot / nb, vl)
@@ -364,8 +385,23 @@ def train(args):
     for n in NAMES:
         w = res[n]["within_well_event_r"]
         print("%-12s " % n + " ".join("%14s" % ("%.3f" % w[k] if w.get(k) is not None else "n/a") for k in kinds))
-    json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width,
-               "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res},
+    per_marker = {}
+    if len(NAMES) > 1:
+        print("\nsame joint model, but each marker evaluated at ITS OWN best validation epoch:")
+        print("%-12s %6s %9s %9s   %s" % ("marker", "epoch", "pixel r", "event r", "within-well event r"))
+        for k, nm in enumerate(NAMES):
+            ck = os.path.join(args.out, "best_%s.pt" % nm.replace("/", "_"))
+            if not os.path.exists(ck): continue
+            model.load_state_dict(torch.load(ck, map_location=dev))
+            rk, _ = evaluate(model, te, wte, scale, dev)
+            per_marker[nm] = dict(rk[nm], epoch=best_ep[k])
+            w = rk[nm]["within_well_event_r"]
+            print("%-12s %6d %9.3f %9.3f   %s" % (nm, best_ep[k], rk[nm]["pixel_r"], rk[nm]["event_r"],
+                  "  ".join("%s %.3f" % (kk, v) for kk, v in w.items() if v is not None)))
+        model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
+    json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "target": args.target,
+               "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res,
+               "per_marker_checkpoint": per_marker},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 
     if args.snapshot and snap_preds:
@@ -439,6 +475,8 @@ def main(argv=None):
     t.add_argument("--lr", type=float, default=2e-3); t.add_argument("--eval-every", type=int, default=5); t.add_argument("--seed", type=int, default=0)
     t.add_argument("--out", default="runs/fold")
     t.add_argument("--channel-scale", action="store_true", help="Normalise the L1 per target channel instead of one shared scale")
+    t.add_argument("--target", default=None, metavar="NAME",
+                   help="Train a single-output model for one marker (name as in the cache's meta.json)")
     t.add_argument("--snapshot", type=int, default=0, metavar="N",
                    help="Every N epochs, save predictions for a fixed set of test objects (epoch_XX.png + .npz) and, at the end, a progression sheet")
     t.add_argument("--select-on", choices=["val_l1", "acrv1_sperm"], default="val_l1",

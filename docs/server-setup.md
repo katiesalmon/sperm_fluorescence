@@ -136,3 +136,15 @@ features come from the image contents.
 - The venv lives in `.venv/` and is gitignored, so it never travels with the repo. Each
   machine makes its own.
 - Nothing here needs admin rights as long as Python itself was installed per-user.
+
+## The ImageStream run on the GPU machine
+
+The `.cif` is read directly (`analysis/isx_io.py`); nothing from IDEAS is needed. Build
+the cache once from the share, then train. `prepare_isx.py` is pure numpy, ~2 minutes.
+
+```powershell
+.venv\Scripts\python analysis\prepare_isx.py "Z:\Blair_Main\2026\081226\260813_Blair_Sperm_ISX\ALL_1_400_1.cif" "Z:\Blair_Main\2026\081226\260813_Blair_Sperm_ISX\ALL_1_400_1.daf" --cache C:\Users\blair\katie\isx_cache
+```
+
+The ablation -- one joint model with per-marker checkpoints, then one model per marker --
+is five `train` runs on the same cache; see the commands in the project log.
