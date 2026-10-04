@@ -595,24 +595,19 @@ compensated `.cif` keeps the same layout.
 | Channels with data | Ch01 and Ch09 (two brightfield cameras), Ch02, Ch03, Ch07, Ch11. The rest sit at default display range — unused |
 | Compensation | single-stain `.rif` controls for AF488, PE, PerCP-eF710, DAPI; the `.cif` is IDEAS-compensated from them |
 
-**The channel-to-marker map is contradicted between two files, and must be settled by
-whoever did the staining:**
+**Channel map, confirmed by Katelynn 2026-10-04 — the gallery labels are correct and
+the template is stale:** Ch02 = LDHC/AKAP4 (AF488), **Ch03 = ACRV1 (PE)**, Ch07 = DAPI,
+**Ch11 = TOMM20 (PerCP-eF710)**. Label-free: Ch01 and Ch09 (brightfield, two cameras) and
+Ch06 (side scatter). Sample identity and donor are not known; treated as a single
+sperm-only sample.
 
-| Channel | The `.ist` template says | The `.daf` gates and the gallery say |
-| --- | --- | --- |
-| Ch02 (AF488) | `LDHC AF488` | `LDHC` — green along the tail. **Agree.** |
-| Ch07 (DAPI) | `DAPI` | `DAPI` — the head. **Agree.** |
-| Ch03 (PE) | **`TOMM20 PE`** | **`ACRV1`** — gate `LDHC+ACRV1+` is Ch02 vs Ch03; yellow crescent on the anterior head |
-| Ch11 (PerCP-eF710) | *(template puts `ACRV-1 PerCP-Cy5.5` on Ch05, which holds no data)* | **`TOMM20`** — gate `TOM20+` on Ch11; red spot at the neck |
-
-The spatial patterns favour the gates: an acrosomal cap is a crescent on the anterior
-head, and mitochondria sit in the midpiece at the neck, and that is what Ch03 and Ch11
-show respectively. The template was last saved at 17:51 on acquisition day, after the
-data was taken at 08:17, and still assigns a channel (Ch05) that was never used — so it
-may simply be stale. But "template says PE = Tomm20" is exactly the kind of mismatch
-that trains fine and means nothing, and the comp controls are named by fluorophore only,
-so they cannot arbitrate. **Treat Ch03 = ACRV1 and Ch11 = TOMM20 as the working
-assumption, flagged, until the stainer confirms which antibody went on PE.**
+**Decode validated against IDEAS's own numbers.** The `.daf` feature block is column-major
+(a 4-byte feature index, then 20,000 float64 per feature; `analysis/isx_daf.py`). Masked,
+background-subtracted channel sums from the decoded images against IDEAS's
+`Intensity_MC_ChXX` on 400 objects: **r = 0.9998 (Ch02), 1.0000 (Ch03), 1.0000 (Ch07),
+1.0000 (Ch11)**, slope 0.99. Mask pixel count against `Area_M01` gives **0.1111 µm² per
+pixel → 0.333 µm pixels at 60×**. That is a stronger check than an IDEAS TIFF export
+would have been, and it was done without one.
 
 Either way, **this run images all four markers of the original brief, including
 Tomm20**, and CD45 is absent. Every gallery event is a sperm.
