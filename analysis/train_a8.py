@@ -267,8 +267,8 @@ def train(args):
         # least headroom to waste -- got roughly a fifth of the gradient in the first runs.
         scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10
     else:
-        scale_vec = np.full(3, np.abs(ysample).mean() * 10, np.float32)
-    scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, 3, 1, 1)
+        scale_vec = np.full(ysample.shape[1], np.abs(ysample).mean() * 10, np.float32)
+    scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
     scale_dev = scale.to(dev)
     os.makedirs(args.out, exist_ok=True)
     print("device %s   train %s: %d fit + %d val   test %s: %d   width %d   target scale %s   select on %s"

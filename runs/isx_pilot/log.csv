@@ -1,0 +1,10 @@
+epoch,train_l1,val_l1,LDHC/AKAP4_pixel_r,LDHC/AKAP4_event_r,LDHC/AKAP4_pred_PS,ACRV1_pixel_r,ACRV1_event_r,ACRV1_pred_PS,DAPI_pixel_r,DAPI_event_r,DAPI_pred_PS,TOMM20_pixel_r,TOMM20_event_r,TOMM20_pred_PS
+1,nan,nan,,,,,,,,,,,,
+2,nan,nan,,,,,,,,,,,,
+3,nan,nan,,,,,,,,,,,,
+4,nan,nan,,,,,,,,,,,,
+5,nan,nan,nan,nan,,0.8954596914960821,0.9203874320231138,,0.8250338950666456,0.8394273467808891,,0.3501171416839602,0.21347648484483045,
+6,nan,nan,,,,,,,,,,,,
+7,nan,nan,,,,,,,,,,,,
+8,nan,nan,,,,,,,,,,,,
+9,nan,nan,,,,,,,,,,,,

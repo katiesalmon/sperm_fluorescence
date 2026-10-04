@@ -54,7 +54,7 @@ def decode_nibbles(buf, count):
 
 
 def decode_greyscale(data, page, nchannels):
-    """(nchannels, h, w) uint16 for one image page."""
+    """(nchannels, h, w) int16 for one image page."""
     strips = page["_strips"]
     buf = b"".join(data[o:o + c] for o, c in zip(strips["offsets"], strips["byte_counts"]))
     W, H = page["width"], page["height"]
@@ -71,7 +71,10 @@ def decode_greyscale(data, page, nchannels):
         row = np.cumsum(step)
         out[y] = row
         last = row
-    out = (out & 0xFFFF).astype(np.uint16)
+    # Signed: a compensated .cif holds slightly negative pixels in two's complement, and
+    # reading them as uint16 (~65500) overflows float16 downstream. Raw .rif data is
+    # non-negative either way.
+    out = (out & 0xFFFF).astype(np.uint16).view(np.int16)
     return np.stack(np.hsplit(out, nchannels))
 
 
