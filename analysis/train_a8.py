@@ -286,6 +286,28 @@ def make_batches(ds, idx, batch_size, rng=None):
     return batches
 
 
+def target_scale(tr, channel_scale):
+    """Target divisor(s) from a deterministic sample of the training set."""
+    if getattr(tr, "avail", None) is not None:
+        # Mixed-instrument cache: a channel's scale comes only from objects that carry it,
+        # otherwise the unstained objects' zeros drag it towards 0 (and the loss to NaN).
+        sidx = tr.sample_idx(200); per_ch = []
+        for k in range(tr.cout):
+            ok = [i for i in sidx if tr.avail[i, k]]
+            per_ch.append(float(np.mean([np.abs(tr.item(i)[1][k]).mean() for i in ok])) if ok else 1.0)
+        ysample = np.array(per_ch, np.float32)[None, :, None, None]
+    else:
+        ysample = tr.sample_targets(200)
+    if channel_scale:
+        # One scale per channel. With a single shared scale the L1 is dominated by the
+        # brightest channel: AF488 is ~3x PerCP, so ACRV1 -- the dimmest and the one with the
+        # least headroom to waste -- got roughly a fifth of the gradient in the first runs.
+        scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10
+    else:
+        scale_vec = np.full(ysample.shape[1], np.abs(ysample).mean() * 10, np.float32)
+    return np.where(scale_vec > 0, scale_vec, 1.0).astype(np.float32)
+
+
 def build_model(width, cin=3, cout=3):
     import torch, torch.nn as nn, torch.nn.functional as F
 
@@ -417,24 +439,7 @@ def train(args):
     repeats = {c: int(v.get("repeat", 1)) for c, v in meta.get("classes", {}).items()} if isinstance(meta.get("classes"), dict) else {}
     if any(r > 1 for r in repeats.values()):
         fit_idx = np.concatenate([np.repeat(fit_idx[tr.classes[fit_idx] == c], repeats.get(c, 1)) for c in np.unique(tr.classes[fit_idx])])
-    if getattr(tr, "avail", None) is not None:
-        # Mixed-instrument cache: a channel's scale comes only from objects that carry it,
-        # otherwise the unstained objects' zeros drag it towards 0 (and the loss to NaN).
-        sidx = tr.sample_idx(200); per_ch = []
-        for k in range(tr.cout):
-            ok = [i for i in sidx if tr.avail[i, k]]
-            per_ch.append(float(np.mean([np.abs(tr.item(i)[1][k]).mean() for i in ok])) if ok else 1.0)
-        ysample = np.array(per_ch, np.float32)[None, :, None, None]
-    else:
-        ysample = tr.sample_targets(200)
-    if args.channel_scale:
-        # One scale per channel. With a single shared scale the L1 is dominated by the
-        # brightest channel: AF488 is ~3x PerCP, so ACRV1 -- the dimmest and the one with the
-        # least headroom to waste -- got roughly a fifth of the gradient in the first runs.
-        scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10
-    else:
-        scale_vec = np.full(ysample.shape[1], np.abs(ysample).mean() * 10, np.float32)
-    scale_vec = np.where(scale_vec > 0, scale_vec, 1.0).astype(np.float32)
+    scale_vec = target_scale(tr, args.channel_scale)
     scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
     scale_dev = scale.to(dev)
     os.makedirs(args.out, exist_ok=True)
@@ -544,7 +549,7 @@ def train(args):
                 sp = (model(torch.tensor(snap_x).to(dev)).float().cpu() * scale).numpy()
             snap_preds[ep] = sp
             np.savez_compressed(os.path.join(args.out, "epoch_%02d.npz" % ep), pred=sp, true=snap_y, x=snap_x, mask=snap_m, idx=np.array(snap_idx))
-            _snapshot_sheet(args.out, ep, snap_x, snap_y, sp, snap_m, wte[snap_idx])
+            _snapshot_sheet(args.out, ep, snap_x, snap_y, sp, snap_m, wte[snap_idx], _avail_of(te, snap_idx).numpy() > 0)
 
     model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
     res, P = evaluate(model, te, wte, scale, dev, tta=args.tta)
@@ -581,6 +586,7 @@ def train(args):
     json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "target": args.target, "full_frame": args.full_frame,
                "aug": args.aug, "grad_loss": args.grad_loss, "tta": args.tta, "seed": args.seed,
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res,
+               "scale": [float(v) for v in scale_vec], "include": args.include, "init": args.init,
                "per_marker_checkpoint": per_marker},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 
@@ -592,41 +598,50 @@ def train(args):
     xb, yb, mb = te.batch(pick)
     pb = np.stack([np.pad(P[j], [(0, 0), ((yb.shape[2] - P[j].shape[1]) // 2, yb.shape[2] - P[j].shape[1] - (yb.shape[2] - P[j].shape[1]) // 2),
                                  ((yb.shape[3] - P[j].shape[2]) // 2, yb.shape[3] - P[j].shape[2] - (yb.shape[3] - P[j].shape[2]) // 2)]) for j in pick])
-    _sheet(os.path.join(args.out, "preds.png"), "held-out predictions (best checkpoint)", xb.numpy(), yb.numpy(), pb, mb.numpy()[:, 0], wte[pick])
+    _sheet(os.path.join(args.out, "preds.png"), "held-out predictions (best checkpoint)", xb.numpy(), yb.numpy(), pb, mb.numpy()[:, 0], wte[pick], _avail_of(te, pick).numpy() > 0)
     print("wrote", os.path.join(args.out, "results.json"), "and preds.png")
     return 0
 
 
-def _sheet(path, title, x, y, p, m, labels):
+def _sheet(path, title, x, y, p, m, labels, avail=None):
     """IDEAS-style sheet. Rows = objects. Columns: brightfield input; for each marker its
     true and predicted image in that marker's colour on the truth's display range; then
-    the all-channel overlay, true and predicted, composited additively."""
+    the all-channel overlay, true and predicted, composited additively.
+    `avail` (n, C) bool: channels an object's instrument did not stain are left out of
+    its overlay and drawn blank; a channel no row carries gets no column at all."""
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     n, cout = len(x), y.shape[1]
+    if avail is None: avail = np.ones((n, cout), bool)
+    avail = np.asarray(avail, bool)
+    shown = [k for k in range(cout) if avail[:, k].any()]
     rng_ = render.ranges([y[i] for i in range(n)], [m[i] for i in range(n)])
-    cols = 1 + 2 * cout + 2
-    fig, axes = plt.subplots(n, cols, figsize=(1.55 * cols, 1.9 * n), facecolor="black")
+    cols = 1 + 2 * len(shown) + 2
+    fig, axes = plt.subplots(n, cols, figsize=(1.55 * cols, 1.9 * n), facecolor="black", squeeze=False)
+    blank = np.zeros(y.shape[2:] + (3,), np.float32)
     for i in range(n):
         tl, pl = [], []
         panels = [render.grey(x[i, 0])]
-        for k, nm in enumerate(NAMES):
+        for k in shown:
+            nm = NAMES[k]
+            if not avail[i, k]:
+                panels += [blank, blank]; continue
             c = render.color_for(nm, k); lo, hi = rng_[k]
             t = render.colorize(y[i, k], c, lo, hi); q = render.colorize(np.clip(p[i, k], 0, None), c, lo, hi)
             panels += [t, q]; tl.append(t); pl.append(q)
-        panels += [render.composite(tl), render.composite(pl)]
+        panels += [render.composite(tl) if tl else blank, render.composite(pl) if pl else blank]
         for c_, (ax, img) in enumerate(zip(axes[i], panels)):
             ax.imshow(img, interpolation="nearest"); ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values(): sp.set_edgecolor("#444")
             if i == 0:
-                heads = ["BF"] + [h % nm for nm in NAMES for h in ("%s", "%s pred")] + ["overlay", "overlay pred"]
+                heads = ["BF"] + [h % NAMES[k] for k in shown for h in ("%s", "%s pred")] + ["overlay", "overlay pred"]
                 ax.set_title(heads[c_], fontsize=7, color="white")
         axes[i, 0].set_ylabel(str(labels[i]), fontsize=7, color="white")
     fig.suptitle(title, fontsize=9, color="white"); fig.tight_layout()
     fig.savefig(path, dpi=110, facecolor="black"); plt.close(fig)
 
 
-def _snapshot_sheet(out, ep, x, y, p, m, wells):
-    _sheet(os.path.join(out, "epoch_%02d.png" % ep), "epoch %d" % ep, x, y, p, m, wells)
+def _snapshot_sheet(out, ep, x, y, p, m, wells, avail=None):
+    _sheet(os.path.join(out, "epoch_%02d.png" % ep), "epoch %d" % ep, x, y, p, m, wells, avail)
 
 
 def _progression_sheet(out, x, y, preds, m):
