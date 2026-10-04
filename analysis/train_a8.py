@@ -213,12 +213,15 @@ def build_model(width):
     return UNet(width)
 
 
-def evaluate(model, ds, wells, scale, dev, bs=256):
+def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
+    """`scale` broadcasts over (N, 3, H, W): a scalar, or a (1, 3, 1, 1) tensor per channel.
+    `idx` restricts to a subset of ds; `wells` must already be that subset's wells."""
     import torch
+    idx = np.arange(len(ds)) if idx is None else np.asarray(idx)
     model.eval(); P, Yt, Mk = [], [], []
     with torch.no_grad():
-        for i in range(0, len(ds), bs):
-            x, y, m = ds.batch(range(i, min(i + bs, len(ds))))
+        for i in range(0, len(idx), bs):
+            x, y, m = ds.batch(idx[i:i + bs])
             P.append((model(x.to(dev)).float().cpu() * scale).numpy()); Yt.append(y.numpy()); Mk.append(m.numpy())
     P, Yt, Mk = np.concatenate(P), np.concatenate(Yt), np.concatenate(Mk)
     res = {}
@@ -251,15 +254,28 @@ def train(args):
     rng = np.random.default_rng(args.seed); perm = rng.permutation(len(tr))
     nval = min(max(500, len(tr) // 20), max(1, len(tr) // 5))   # 5% of a big set, never more than 20% of a small one
     val_idx, fit_idx = perm[:nval], perm[nval:]
-    scale = float(np.abs(np.concatenate([np.asarray(y[:200]) for y in tr.ys]).astype(np.float32)).mean()) * 10
+    ysample = np.concatenate([np.asarray(y[:200]) for y in tr.ys]).astype(np.float32)
+    if args.channel_scale:
+        # One scale per channel. With a single shared scale the L1 is dominated by the
+        # brightest channel: AF488 is ~3x PerCP, so ACRV1 -- the dimmest and the one with the
+        # least headroom to waste -- got roughly a fifth of the gradient in the first runs.
+        scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10
+    else:
+        scale_vec = np.full(3, np.abs(ysample).mean() * 10, np.float32)
+    scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, 3, 1, 1)
+    scale_dev = scale.to(dev)
     os.makedirs(args.out, exist_ok=True)
-    print("device %s   train %s: %d fit + %d val   test %s: %d   width %d   target scale %.4f"
-          % (dev, tr_cls, len(fit_idx), nval, te_cls, len(te), args.width, scale))
+    print("device %s   train %s: %d fit + %d val   test %s: %d   width %d   target scale %s   select on %s"
+          % (dev, tr_cls, len(fit_idx), nval, te_cls, len(te), args.width,
+             "/".join("%.4f" % v for v in scale_vec), args.select_on))
 
     model = build_model(args.width).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * (len(fit_idx) // args.batch + 1))
-    scaler = torch.cuda.amp.GradScaler(enabled=(dev.type == "cuda"))
+    try:
+        scaler = torch.amp.GradScaler("cuda", enabled=(dev.type == "cuda"))
+    except (AttributeError, TypeError):
+        scaler = torch.cuda.amp.GradScaler(enabled=(dev.type == "cuda"))
     log = open(os.path.join(args.out, "log.csv"), "w", newline=""); lw = csv.writer(log)
     lw.writerow(["epoch", "train_l1", "val_l1"] + ["%s_%s" % (n, k) for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")])
     best = float("inf"); t0 = time.time()
@@ -268,7 +284,7 @@ def train(args):
     for ep in range(1, args.epochs + 1):
         model.train(); rng.shuffle(fit_idx); tot = 0.0; nb = 0
         for i in range(0, len(fit_idx), args.batch):
-            x, y, m = tr.batch(fit_idx[i:i + args.batch]); x, y, m = x.to(dev), (y / scale).to(dev), m.to(dev)
+            x, y, m = tr.batch(fit_idx[i:i + args.batch]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
             if np.random.rand() < 0.5: x, y, m = x.flip(-1), y.flip(-1), m.flip(-1)
             # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
             amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
@@ -280,7 +296,7 @@ def train(args):
         model.eval(); vl = 0.0; vn = 0
         with torch.no_grad():
             for i in range(0, len(val_idx), 256):
-                x, y, m = val_ds.batch(val_idx[i:i + 256]); x, y, m = x.to(dev), (y / scale).to(dev), m.to(dev)
+                x, y, m = val_ds.batch(val_idx[i:i + 256]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
                 vl += ((F.l1_loss(model(x), y, reduction="none") * m).sum() / m.sum() / 3).item(); vn += 1
         vl /= max(vn, 1)
         res, _ = evaluate(model, te, wte, scale, dev) if (ep % args.eval_every == 0 or ep == args.epochs) else ({}, None)
@@ -290,8 +306,17 @@ def train(args):
         if res and res["ACRV1"]["within_well_event_r"]["S"] is not None:
             line += "   ACRV1 within-sperm %.3f" % res["ACRV1"]["within_well_event_r"]["S"]
         print(line + "   (%.0fs)" % (time.time() - t0))
-        if vl < best:
-            best = vl; torch.save(model.state_dict(), os.path.join(args.out, "best.pt"))
+        # Checkpoint selection, on the training replicate's held-out slice only.
+        if args.select_on == "acrv1_sperm":
+            rv, _ = evaluate(model, tr, wtr[val_idx], scale, dev, idx=val_idx)
+            r_s = rv["ACRV1"]["within_well_event_r"]["S"]
+            score = -(r_s if r_s is not None else -1.0)
+            line_sel = "   val ACRV1 within-sperm %.3f" % (r_s if r_s is not None else float("nan"))
+        else:
+            score, line_sel = vl, ""
+        if line_sel: print("          " + line_sel.strip())
+        if score < best:
+            best = score; torch.save(model.state_dict(), os.path.join(args.out, "best.pt"))
 
     model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
     res, P = evaluate(model, te, wte, scale, dev)
@@ -305,7 +330,8 @@ def train(args):
         w = res[n]["within_well_event_r"]
         print("%-12s %14s %14s %14s" % (n, *["%.3f" % w[k] if w[k] is not None else "n/a" for k in ("S", "P", "SP")]))
     print("(for ACRV1, 'sperm only' is the acrosome question; the pilot scored 0.0 there at 600 events)")
-    json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "results": res},
+    json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width,
+               "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -336,6 +362,9 @@ def main(argv=None):
     t.add_argument("--epochs", type=int, default=40); t.add_argument("--batch", type=int, default=64); t.add_argument("--width", type=int, default=48)
     t.add_argument("--lr", type=float, default=2e-3); t.add_argument("--eval-every", type=int, default=5); t.add_argument("--seed", type=int, default=0)
     t.add_argument("--out", default="runs/fold")
+    t.add_argument("--channel-scale", action="store_true", help="Normalise the L1 per target channel instead of one shared scale")
+    t.add_argument("--select-on", choices=["val_l1", "acrv1_sperm"], default="val_l1",
+                   help="Checkpoint selection: validation L1 (default) or within-sperm ACRV1 event r on the validation slice")
     args = ap.parse_args(argv)
     return prepare(args) if args.cmd == "prepare" else train(args)
 

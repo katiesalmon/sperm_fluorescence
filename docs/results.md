@@ -6,6 +6,72 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Full-scale virtual staining — 57,000 training events per fold, RTX A6000
+
+*2026-10-04 · `analysis/train_a8.py`, width-48 U-Net, 40 epochs, ~1 h per fold. Checkpoint
+chosen on validation L1 within the training replicate; the test replicate is never used
+for selection. Outputs in `runs/fold_2to3/` and `runs/fold_3to2/` on the server.*
+
+### The headline table
+
+| | fold A: train 2 → test 3 | | | fold B: train 3 → test 2 | | |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| marker | pixel r | event r | **within-type r** | pixel r | event r | **within-type r** |
+| LDHC/AKAP4 (within sperm) | 0.715 | 0.729 | **0.727** | 0.713 | 0.720 | **0.708** |
+| CD45 (within PBMC) | 0.512 | 0.756 | **0.567** | 0.523 | 0.737 | **0.525** |
+| ACRV1 (within sperm) | 0.505 | 0.601 | **0.282** | 0.557 | 0.572 | **0.227** |
+
+*Within-type r is event r computed inside one well type, where recognising the cell earns
+nothing. It is the number to quote.*
+
+### What scale changed, and a correction
+
+**ACRV1 within sperm is not zero.** At 600 training events it read 0.02 / −0.00 and I
+wrote "zero is zero". At 57,000 it reads **0.28 / 0.23**, replicated across folds on
+20,000 test sperm each — small, but far from chance. The pilot was underpowered to see
+r ≈ 0.25, and the earlier claim was overconfident. What the signal *is* remains the
+question: ACRV1 is intra-acrosomal, so its total scales with acrosome size, and acrosome
+size is visible in scatter. An r of 0.25 — six percent of variance — is consistent with
+the model reading acrosome *extent*, not acrosomal *state*. The optical-limit conclusion
+softens from "nothing" to "a sliver, probably geometric".
+
+**LDHC/AKAP4 is the strong result**: 0.73 / 0.71 within sperm, up from 0.58 / 0.61 in
+the pilot. Half the variance in flagellar stain intensity is predictable from label-free
+scatter. **CD45 within PBMCs** is 0.57 / 0.53 — essentially unchanged from the pilot, so
+that is probably its ceiling: CD45 level varies by leukocyte subtype, which morphology
+only partly resolves.
+
+### Controls
+
+| | fold A pred / true P:S | fold B pred / true P:S | want |
+| --- | --- | --- | --- |
+| ACRV1 | 0.00 / 0.02 | 0.20 / 0.02 | ≪ 1 ✓ |
+| CD45 | 17.98 / 7.54 | 8.49 / 9.09 | ≫ 1 ✓ (fold A overshoots: sperm predictions near zero inflate the ratio) |
+| LDHC/AKAP4 | 1.07 / **0.53** | 0.44 / **1.07** | ≪ 1 — see below |
+
+LDHC's control reverses between folds *in the truth*: replicate 3 has sperm > PBMC
+(0.53, the biology), replicate 2 has PBMC > sperm (1.07, the antibody binding PBMCs
+non-specifically). Each model faithfully reproduces its training replicate and so fails
+on the other. This is now established on 60,000 events per replicate, not inferred.
+**Replicate 3 is the LDHC reference; replicate 2's LDHC channel should not be trained on
+without saying so.**
+
+### Training dynamics, and the fix they point at
+
+Validation L1 plateaued by epoch 13–25 and drifted up after; train L1 kept falling — mild
+overfit to the training replicate. Test ACRV1 within-sperm r **peaked at 0.30 around
+epochs 15–20 and declined to 0.26** by epoch 40, so selection on validation L1 is not
+selecting for the metric we care about.
+
+A second thing in the loss: a single shared target scale lets the brightest channel
+dominate. AF488 is ~3× PerCP, so ACRV1 received roughly a fifth of the gradient. Two
+flags added for the next run — `--channel-scale` (one scale per channel) and
+`--select-on acrv1_sperm` (checkpoint on within-sperm ACRV1 r, measured on the validation
+slice of the training replicate, never on test). Neither changes the defaults, so these
+results stay reproducible.
+
+---
+
 ## Pilot image-to-image model — the stain is predictable from label-free pages
 
 *2026-10-01 · `analysis/pilot_floor.py` and `analysis/pilot_unet.py` on

@@ -51,10 +51,11 @@ as it fails for a stated reason.
 
 ## Where things stand
 
-The A8 data is understood: eight samples (replicate 1 unstained, so six stained —
-120,000 paired events), the join verified from the data, the imaging spillover
-estimated under a physical constraint, and the stain pictures confirm the biology by
-eye. Next is a pilot image-to-image model, then the full run on the server GPU.
+Full-scale virtual staining has run, both replicate folds. Within cell type — the number
+that cannot be earned by recognising the cell — LDHC/AKAP4 is predicted from label-free
+scatter at r ≈ 0.72, CD45 at ≈ 0.55 within PBMCs, and ACRV1 at ≈ 0.25 within sperm:
+small but real, and probably acrosome extent rather than acrosomal state. The next run
+fixes the loss weighting and checkpoint selection that both disadvantaged ACRV1.
 
 - [docs/task_brief.md](docs/task_brief.md) — what the data turned out to be
 - [docs/results.md](docs/results.md) — what has actually been measured
