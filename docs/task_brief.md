@@ -554,6 +554,44 @@ does not match its own `Total Intensity` column. Background-subtract before use.
 flow cell, different aliquot — the two runs share samples, not events. Within the A8 data
 the pairing is exact; across instruments it is population-level only.
 
+## A third instrument: the ImageStream run (`260813_Blair_Sperm_ISX`, surveyed 2026-10-04)
+
+`Z:\Blair_Main\2026\081226\260813_Blair_Sperm_ISX\` — a different day (13 Aug), an Amnis
+ImageStream, one sample file `ALL_1_400_1` plus single-stain compensation controls and a
+no-primary-antibody control. Native formats: `.rif` raw, `.cif` compensated, `.daf`
+analysis, `.ist` template.
+
+**Container, from `inspect_amnis.py`:** TIFF with one page per object holding all 12
+channels tiled side by side (every page width divisible by 12; 28–90 px per channel),
+each uint16 image page followed by a same-size uint8 mask page. Compression 30817/30818
+is Amnis-private, but open decoders exist (`cifDataset`, R `IFC`, Bio-Formats). The
+compensated `.cif` keeps the same layout.
+
+**Panel, from the IDEAS session (inferred from gate names and plot axes — confirm):**
+
+| Channel | Conjugate (from the comp controls) | Marker | Seen in the gallery |
+| --- | --- | --- | --- |
+| Ch01 | — | brightfield | sperm head with a phase halo, tail resolved |
+| Ch02 | AF488 | **LDHC/AKAP4** | green along the tail and a ring on the head |
+| Ch03 | PE | **ACRV1** | yellow crescent/cap on the head — the acrosome |
+| Ch07 | DAPI | **DAPI** | violet, the head |
+| Ch11 | PerCP-eF710 | **TOMM20** | red spot at the neck — the midpiece |
+
+**This is the original four-marker brief — DAPI, ACRV1, LDHC, Tomm20 — and Tomm20 is
+imaged.** It was missing from both earlier instruments. CD45 is not in this panel, and
+every event in the gallery is a sperm, so the sample is most likely sperm-only. The
+conjugates differ from the A8 run (ACRV1 moved from PerCP-eF710 to PE; PerCP-eF710 now
+carries Tomm20), which matters for any cross-instrument comparison of the ACRV1 channel.
+
+**Gating already present in the `.daf`:** `DAPI+` (Ch07 intensity vs area, taking the
+high-DAPI cluster — a distinct low-DAPI population exists and is excluded),
+`LDHC+ACRV1+` (Ch02 vs Ch03), `TOMM20+` (Ch11 vs Ch02), and their intersection. For
+training, export from a *cell* population (e.g. `DAPI+`), not the triple-positive one,
+or the stain-negative events the model most needs to learn are gated away.
+
+**Unknown until confirmed:** magnification (the `400` in the filename may be the 40×
+objective), object count, donor, and whether more ISX data is coming.
+
 ## Status
 
 - [x] Repo + event-aware sampling tools scaffolded
