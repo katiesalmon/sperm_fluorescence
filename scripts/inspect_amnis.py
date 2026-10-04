@@ -90,7 +90,7 @@ def survey_tiff(path, pages, head_bytes):
                 nch, min(w for w, _, _ in real) // nch, max(w for w, _, _ in real) // nch) if hit == len(real) and real else ""))
     pairs = sum(1 for a, b in zip(sig, sig[1:]) if a[3] == "uint16" and b[3] == "uint8" and a[:2] == b[:2])
     print("  uint16 page followed by a same-size uint8 page: %d times in %d pages   <- image + mask pairs" % (pairs, len(sig)))
-    comps = sorted({c for (_, _, _, _, c) in sig if c is not None})
+    comps = sorted({c for (_, _, _, _, c) in sig if c is not None}, key=str)
     print("  compression codes: %s%s" % (comps, "   (30817/30818 are Amnis-private, not a public codec)"
                                           if any(c in (30817, 30818) for c in comps) else ""))
 
