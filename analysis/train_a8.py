@@ -43,6 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 import a8_io  # noqa: E402
 import fcs_data  # noqa: E402
+import render  # noqa: E402
 import fcs_probe  # noqa: E402
 
 H, W = 80, 104
@@ -197,6 +198,9 @@ class Cached:
         self.offsets = np.cumsum([0] + [len(x) for x in xs])
         self.cin, self.cout = xs[0].shape[1], ys[0].shape[1]
     def __len__(self): return int(self.offsets[-1])
+    def shape(self, i):
+        k = np.searchsorted(self.offsets, i, side="right") - 1
+        return tuple(int(v) for v in self.xs[k].shape[2:])
     def sample_targets(self, n):
         return np.concatenate([np.asarray(y[:n]) for y in self.ys]).astype(np.float32)
     def batch(self, idx):
@@ -221,6 +225,7 @@ class RaggedCached:
         self.counts = np.cumsum([0] + [len(e[0]) for e in extra])
         self.cin = xs[0].shape[0]; self.cout = 1 if target_k is not None else ys[0].shape[0]
     def __len__(self): return int(self.counts[-1])
+    def shape(self, i): return tuple(int(v) for v in self.shapes[i])
     def item(self, i):
         k = np.searchsorted(self.counts, i, side="right") - 1; j = i - self.counts[k]
         shapes, offsets = self.per_class[k]; h, w = shapes[j]; a, b = offsets[j], offsets[j + 1]
@@ -331,8 +336,11 @@ def evaluate(model, ds, wells, scale, dev, bs=256, idx=None, tta=False):
         for b in make_batches(ds, idx, bs):
             x, y, m = ds.batch(b)
             p = (predict(model, x.to(dev), tta).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
+            H, W = p.shape[-2:]
             for q, j in enumerate(b):
-                preds[pos[int(j)]] = p[q]; trues[pos[int(j)]] = y[q]; masks[pos[int(j)]] = m[q]
+                # crop back to the object's own size: a batch is padded to its largest member
+                h, w = ds.shape(int(j)); t, l = (H - h) // 2, (W - w) // 2
+                preds[pos[int(j)]] = p[q][:, t:t + h, l:l + w]; trues[pos[int(j)]] = y[q][:, t:t + h, l:l + w]; masks[pos[int(j)]] = m[q][t:t + h, l:l + w]
     res = {}
     has_ps = (wells == "P").any() and (wells == "S").any()
     for k, n in enumerate(NAMES):
@@ -522,61 +530,76 @@ def train(args):
     if args.snapshot and snap_preds:
         _progression_sheet(args.out, snap_x, snap_y, snap_preds, snap_m)
 
-    import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     kinds_te = sorted(set(wte)); per = max(1, 9 // len(kinds_te))
     pick = [np.where(wte == w)[0][j] for w in kinds_te for j in [3, 40, 400, 900, 2000, 5000][:per] if (wte == w).sum() > j]
-    ncol = 1 + 2 * cout
-    fig, axes = plt.subplots(len(pick), ncol, figsize=(2 * ncol, 1.9 * len(pick)))
-    for i, j in enumerate(pick):
-        x, y, m = te.batch([j]); x, y = x[0].numpy(), y[0].numpy()
-        panels = [x[0]] + [v for k in range(cout) for v in (y[k], P[j][k])]
-        for c, (ax, a) in enumerate(zip(axes[i], panels)):
-            if c == 0: ax.imshow(a, cmap="gray")
-            else:
-                ref = panels[c if c % 2 == 1 else c - 1]; ax.imshow(a, cmap="magma", vmin=0, vmax=max(np.percentile(ref, 99.5), 1e-4))
-            ax.set_xticks([]); ax.set_yticks([])
-            if c == 0: ax.set_ylabel(wte[j], fontsize=8)
-            if i == 0: ax.set_title((["input ch0"] + [t % n for n in NAMES for t in ("true %s", "pred %s")])[c], fontsize=7)
-    fig.tight_layout(); fig.savefig(os.path.join(args.out, "preds.png"), dpi=120)
+    xb, yb, mb = te.batch(pick)
+    pb = np.stack([np.pad(P[j], [(0, 0), ((yb.shape[2] - P[j].shape[1]) // 2, yb.shape[2] - P[j].shape[1] - (yb.shape[2] - P[j].shape[1]) // 2),
+                                 ((yb.shape[3] - P[j].shape[2]) // 2, yb.shape[3] - P[j].shape[2] - (yb.shape[3] - P[j].shape[2]) // 2)]) for j in pick])
+    _sheet(os.path.join(args.out, "preds.png"), "held-out predictions (best checkpoint)", xb.numpy(), yb.numpy(), pb, mb.numpy()[:, 0], wte[pick])
     print("wrote", os.path.join(args.out, "results.json"), "and preds.png")
     return 0
 
 
-def _snapshot_sheet(out, ep, x, y, p, m, wells):
-    """One epoch: rows = fixed objects, columns = input, then true/pred per marker."""
+def _sheet(path, title, x, y, p, m, labels):
+    """IDEAS-style sheet. Rows = objects. Columns: brightfield input; for each marker its
+    true and predicted image in that marker's colour on the truth's display range; then
+    the all-channel overlay, true and predicted, composited additively."""
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     n, cout = len(x), y.shape[1]
-    fig, axes = plt.subplots(n, 1 + 2 * cout, figsize=(1.6 * (1 + 2 * cout), 1.9 * n))
+    rng_ = render.ranges([y[i] for i in range(n)], [m[i] for i in range(n)])
+    cols = 1 + 2 * cout + 2
+    fig, axes = plt.subplots(n, cols, figsize=(1.55 * cols, 1.9 * n), facecolor="black")
     for i in range(n):
-        panels = [x[i, 0]] + [v for k in range(cout) for v in (y[i, k], p[i, k])]
-        for c, (ax, a) in enumerate(zip(axes[i], panels)):
-            if c == 0: ax.imshow(a, cmap="gray")
-            else:
-                ref = panels[c if c % 2 == 1 else c - 1]; ax.imshow(a, cmap="magma", vmin=0, vmax=max(np.percentile(ref[m[i] > 0], 99.5), 1e-4))
-            ax.set_xticks([]); ax.set_yticks([])
-            if c == 0: ax.set_ylabel(str(wells[i]), fontsize=7)
-            if i == 0: ax.set_title((["input"] + [t % nm for nm in NAMES for t in ("true %s", "pred %s")])[c], fontsize=7)
-    fig.suptitle("epoch %d" % ep, fontsize=9); fig.tight_layout()
-    fig.savefig(os.path.join(out, "epoch_%02d.png" % ep), dpi=100); plt.close(fig)
+        tl, pl = [], []
+        panels = [render.grey(x[i, 0])]
+        for k, nm in enumerate(NAMES):
+            c = render.color_for(nm, k); lo, hi = rng_[k]
+            t = render.colorize(y[i, k], c, lo, hi); q = render.colorize(np.clip(p[i, k], 0, None), c, lo, hi)
+            panels += [t, q]; tl.append(t); pl.append(q)
+        panels += [render.composite(tl), render.composite(pl)]
+        for c_, (ax, img) in enumerate(zip(axes[i], panels)):
+            ax.imshow(img, interpolation="nearest"); ax.set_xticks([]); ax.set_yticks([])
+            for sp in ax.spines.values(): sp.set_edgecolor("#444")
+            if i == 0:
+                heads = ["BF"] + [h % nm for nm in NAMES for h in ("%s", "%s pred")] + ["overlay", "overlay pred"]
+                ax.set_title(heads[c_], fontsize=7, color="white")
+        axes[i, 0].set_ylabel(str(labels[i]), fontsize=7, color="white")
+    fig.suptitle(title, fontsize=9, color="white"); fig.tight_layout()
+    fig.savefig(path, dpi=110, facecolor="black"); plt.close(fig)
+
+
+def _snapshot_sheet(out, ep, x, y, p, m, wells):
+    _sheet(os.path.join(out, "epoch_%02d.png" % ep), "epoch %d" % ep, x, y, p, m, wells)
 
 
 def _progression_sheet(out, x, y, preds, m):
-    """Per marker: rows = fixed objects, columns = input, truth, then prediction at each
-    snapshot epoch. The picture of what training actually changes."""
+    """Per marker: rows = objects, columns = BF, truth, prediction at each snapshot epoch,
+    in the marker's colour on the truth's range. Plus one sheet for the all-channel
+    overlay: truth, then the predicted overlay at each epoch."""
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     eps = sorted(preds); n, cout = len(x), y.shape[1]
-    for k, nm in enumerate(NAMES):
-        fig, axes = plt.subplots(n, 2 + len(eps), figsize=(1.5 * (2 + len(eps)), 1.8 * n))
+    rng_ = render.ranges([y[i] for i in range(n)], [m[i] for i in range(n)])
+    def draw(path, title, true_fn, pred_fn):
+        fig, axes = plt.subplots(n, 2 + len(eps), figsize=(1.5 * (2 + len(eps)), 1.8 * n), facecolor="black")
         for i in range(n):
-            hi = max(np.percentile(y[i, k][m[i] > 0], 99.5), 1e-4)
-            axes[i, 0].imshow(x[i, 0], cmap="gray"); axes[i, 1].imshow(y[i, k], cmap="magma", vmin=0, vmax=hi)
+            axes[i, 0].imshow(render.grey(x[i, 0])); axes[i, 1].imshow(true_fn(i))
             for j, ep in enumerate(eps):
-                axes[i, 2 + j].imshow(preds[ep][i, k], cmap="magma", vmin=0, vmax=hi)
-                if i == 0: axes[i, 2 + j].set_title("ep %d" % ep, fontsize=8)
-            if i == 0: axes[i, 0].set_title("input", fontsize=8); axes[i, 1].set_title("true", fontsize=8)
-            for ax in axes[i]: ax.set_xticks([]); ax.set_yticks([])
-        fig.suptitle("%s -- prediction by epoch, fixed test objects, truth's colour scale" % nm, fontsize=9)
-        fig.tight_layout(); fig.savefig(os.path.join(out, "progression_%s.png" % nm.replace("/", "_")), dpi=100); plt.close(fig)
+                axes[i, 2 + j].imshow(pred_fn(i, ep))
+                if i == 0: axes[i, 2 + j].set_title("ep %d" % ep, fontsize=8, color="white")
+            if i == 0: axes[i, 0].set_title("BF", fontsize=8, color="white"); axes[i, 1].set_title("true", fontsize=8, color="white")
+            for ax in axes[i]:
+                ax.set_xticks([]); ax.set_yticks([])
+                for sp in ax.spines.values(): sp.set_edgecolor("#444")
+        fig.suptitle(title, fontsize=9, color="white"); fig.tight_layout(); fig.savefig(path, dpi=100, facecolor="black"); plt.close(fig)
+    for k, nm in enumerate(NAMES):
+        c = render.color_for(nm, k); lo, hi = rng_[k]
+        draw(os.path.join(out, "progression_%s.png" % nm.replace("/", "_")), "%s -- prediction by epoch" % nm,
+             lambda i: render.colorize(y[i, k], c, lo, hi),
+             lambda i, ep: render.colorize(np.clip(preds[ep][i, k], 0, None), c, lo, hi))
+    if cout > 1:
+        draw(os.path.join(out, "progression_overlay.png"), "all-channel overlay -- prediction by epoch",
+             lambda i: render.composite([render.colorize(y[i, k], render.color_for(nm, k), *rng_[k]) for k, nm in enumerate(NAMES)]),
+             lambda i, ep: render.composite([render.colorize(np.clip(preds[ep][i, k], 0, None), render.color_for(nm, k), *rng_[k]) for k, nm in enumerate(NAMES)]))
 
 
 def main(argv=None):
