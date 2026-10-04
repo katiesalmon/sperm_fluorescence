@@ -6,6 +6,36 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Zero-shot ISX → CytPix: fails outright
+
+*2026-10-05 · `analysis/predict_cytpix.py`, the laptop ISX joint model on 15 CytPix
+replicate-1 crops (`sperm_pbmc` sample, 1S/1P/1SP). No ground truth exists for these —
+replicate 1 is the unstained control — so this is a qualitative look.*
+
+The model paints saturated stain over the **background** and leaves the cell dark, on
+every object and every marker. Tight cropping, a Gaussian blur to match the ISX's smooth
+background, and mirroring brightfield into the empty scatter slot change nothing. Pixel
+pitch is not the problem: a sperm head spans ~10 px on the CytPix and ~9 on the ISX.
+
+Three causes, in order of how much they are our fault:
+
+1. **This checkpoint learned nothing about background.** The laptop pilot predates
+   `--full-frame`; its loss never covered the padded zone, and on a CytPix crop nearly
+   the whole frame is background. The GPU `isx_rag_joint` model was trained full-frame
+   and is the right checkpoint to retry with.
+2. **Domain gap in the input.** The CytPix background is a noise floor (the `sperm_pbmc`
+   finding), the ISX's is smooth; the CytPix has one brightfield channel where the model
+   expects two plus side scatter; the contrast mechanisms differ. Per-event
+   standardisation turns CytPix noise into texture the model has never seen.
+3. **It was never going to work zero-shot**, and we said so: experiment C in the
+   generalist plan. A model that has never seen an instrument's images does not transfer
+   to it. The realistic CytPix route is an ISX-pretrained encoder fine-tuned on CytPix
+   data — and since the CytPix has only scalar targets (replicates 2 and 3), that is the
+   image-to-scalar head from the original plan, on top of an encoder that already knows
+   sperm anatomy.
+
+---
+
 ## Joint vs per-marker models: the shared encoder wins or ties on every marker
 
 *2026-10-05 · Laptop: fixed-frame cache, width 32, 20 epochs, scored within nucleated sperm.
