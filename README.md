@@ -75,6 +75,8 @@ Full detail, including the guards worth knowing about, is in
 | `analysis/feature_baseline.py` | Predict each marker from the instrument's morphology columns |
 | `analysis/pilot_unet.py` | Pilot U-Net, three label-free pages → three unmixed stain pages, held out by replicate |
 | `analysis/pilot_floor.py` | The per-pixel linear floor the pilot has to clear |
+| `analysis/prepare_isx.py` | Cache an ImageStream `.cif` for `train_a8.py` |
+| `analysis/eval_subset.py` | Re-score a run within nucleated sperm vs DAPI-low fragments |
 | `analysis/isx_daf.py` | Read IDEAS's per-object features from a `.daf` — used to validate the decode at r ≈ 1.000 |
 | `analysis/isx_io.py` | Decode Amnis ImageStream `.cif`/`.rif` directly: 12-channel images and masks, no IDEAS needed |
 | `analysis/a8_io.py` | Load A8 six-page stacks and targets from a bundle; constrained imaging spillover + per-pixel unmix |

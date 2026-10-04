@@ -6,6 +6,53 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## ImageStream pilot — all four markers predicted within nucleated sperm at r ≈ 0.92–0.98
+
+*2026-10-04 · `analysis/prepare_isx.py`, `train_a8.py` (width 32, 20 epochs, `--channel-scale`,
+laptop MPS, 21 min), `eval_subset.py`. One sample, 20,000 objects; trained on the first
+10,000 by acquisition order, tested on the second 10,000. Inputs Ch01 + Ch09 (two
+brightfield cameras) + Ch06 (side scatter); targets the IDEAS-compensated Ch02/Ch03/Ch07/Ch11.*
+
+| within nucleated sperm (6,241 test objects) | pixel r | event r | morphology floor (42 IDEAS features) |
+| --- | ---: | ---: | ---: |
+| LDHC/AKAP4 | 0.947 | **0.972** | 0.932 |
+| ACRV1 | 0.950 | **0.981** | 0.912 |
+| DAPI | 0.923 | **0.922** | 0.811 |
+| TOMM20 | 0.942 | **0.976** | 0.719 |
+
+Whole-sample numbers are within 0.01 of these for the three sperm markers; DAPI drops to
+0.40 on the DAPI-low fragments, as it should — they have little DNA to predict.
+
+**This is a different regime from the A8.** There, ACRV1 within sperm reached 0.25 from
+57,000 training events; here it is 0.98 from 10,000, and the prediction sheets show the
+acrosomal cap drawn on the anterior head from epoch 3 onward. Four things differ, and
+the comparison has to keep them apart:
+
+1. **Contrast.** 60× brightfield with a phase-like halo on two cameras plus side scatter,
+   against the A8's extinction channel. The acrosome is *visible* in the ISX Ch01 panel;
+   it was not in LightLoss. This is the explanation the phase-microscopy literature
+   predicts, and the one that matters scientifically.
+2. **Target quality.** The ISX stains are bright, 12-bit, compensated and masked; the A8
+   pages were tiny float values with heavy noise. A noisy target caps achievable r
+   regardless of the input. "Higher quality images" was true on both sides of the pair.
+3. **The split.** First half versus second half of one tube, minutes apart — no batch
+   shift at all. The A8's held-out replicate carried real staining and gain differences.
+   The A8's own within-replicate random split gave LDHC 0.66 against 0.38 across, so
+   part of the gap is the evaluation, not the instrument. A same-split A8 run is the
+   control this comparison needs.
+4. **A shared per-object factor.** The four stains inter-correlate at 0.48 within
+   nucleated sperm, so something per-cell — focus, in-frame fraction — scales all of
+   them, and it is label-free-visible. It cannot explain 0.98 on each marker alone, but
+   the marker-*ratio* numbers (e.g. ACRV1 relative to DAPI) are the version of the result
+   that is immune to it, and should be reported alongside.
+
+The 38.5% DAPI-low population is why the morphology floor read 0.96 on the whole sample:
+telling fragment from sperm is most of that. Within nucleated sperm it is still high
+(0.72–0.93), and the network clears it on every marker, by the most on TOMM20 (+0.26)
+and DAPI (+0.11).
+
+---
+
 ## Full-scale virtual staining — 57,000 training events per fold, RTX A6000
 
 *2026-10-04 · `analysis/train_a8.py`, width-48 U-Net, 40 epochs, ~1 h per fold. Checkpoint
