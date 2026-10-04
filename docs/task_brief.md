@@ -561,6 +561,25 @@ ImageStream, one sample file `ALL_1_400_1` plus single-stain compensation contro
 no-primary-antibody control. Native formats: `.rif` raw, `.cif` compensated, `.daf`
 analysis, `.ist` template.
 
+**Decoded (2026-10-04, `analysis/isx_io.py`):** the codec is the one documented by the
+open-source FlowSight reader — nibble-coded signed deltas with 2-D prediction for images,
+byte-pair run-length for masks — and vectorises in numpy at **2.3 ms per object, ~47 s
+for the whole file**, with no IDEAS, Bio-Formats or C++ involved. Two corrections to the
+survey's reading, both found by rendering objects 0, 2 and 6 against the IDEAS gallery:
+
+- **All 12 channels are written**, not the six in use: slot *k* is Ch(*k*+1), 67 px wide
+  at 60×. The "unused" channels are not empty — Ch04/05/08/10/12 carry spillover from
+  their neighbours, and **Ch06 is side scatter**, a third label-free input alongside the
+  two brightfield cameras (Ch01, Ch09).
+- This IDEAS version writes no leading throwaway value; the stream is exactly W × H
+  residuals.
+
+Object 0 decoded shows the head with its phase halo in Ch01, a ring in Ch02, ring-plus-
+anterior-spot in Ch03, a blob in Ch07 and a spot in Ch11 — the same five panels the
+gallery shows for object 0. The `.cif` is IDEAS-compensated, but the Ch02 ring is still
+visible in Ch03, so residual AF488→PE spillover remains and the raw `.rif` plus the
+single-stain controls would let us redo it if needed.
+
 **Container, from `inspect_amnis.py`:** TIFF with one page per object holding all 12
 channels tiled side by side (every page width divisible by 12; 28–90 px per channel),
 each uint16 image page followed by a same-size uint8 mask page. Compression 30817/30818
