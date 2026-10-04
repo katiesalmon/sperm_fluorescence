@@ -322,6 +322,11 @@ def train(args):
         model.train(); rng.shuffle(fit_idx); tot = 0.0; nb = 0
         for i in range(0, len(fit_idx), args.batch):
             x, y, m = tr.batch(fit_idx[i:i + args.batch]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
+            if args.full_frame:
+                # Train on every pixel. The padded zone is background with a zero target,
+                # and a network never penalised there paints stain onto it (seen in the
+                # ISX progression sheets). The validity mask still scopes the metrics.
+                m = torch.ones_like(m)
             if np.random.rand() < 0.5: x, y, m = x.flip(-1), y.flip(-1), m.flip(-1)
             # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
             amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
@@ -334,6 +339,7 @@ def train(args):
         with torch.no_grad():
             for i in range(0, len(val_idx), 256):
                 x, y, m = val_ds.batch(val_idx[i:i + 256]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
+                if args.full_frame: m = torch.ones_like(m)
                 per = (F.l1_loss(model(x), y, reduction="none") * m).sum(dim=(0, 2, 3)).cpu().numpy()
                 vch += per; vm += m.sum().item()
                 vl += (per.sum() / m.sum().item() / len(NAMES)); vn += 1
@@ -399,7 +405,7 @@ def train(args):
             print("%-12s %6d %9.3f %9.3f   %s" % (nm, best_ep[k], rk[nm]["pixel_r"], rk[nm]["event_r"],
                   "  ".join("%s %.3f" % (kk, v) for kk, v in w.items() if v is not None)))
         model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
-    json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "target": args.target,
+    json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width, "target": args.target, "full_frame": args.full_frame,
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res,
                "per_marker_checkpoint": per_marker},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
@@ -475,6 +481,9 @@ def main(argv=None):
     t.add_argument("--lr", type=float, default=2e-3); t.add_argument("--eval-every", type=int, default=5); t.add_argument("--seed", type=int, default=0)
     t.add_argument("--out", default="runs/fold")
     t.add_argument("--channel-scale", action="store_true", help="Normalise the L1 per target channel instead of one shared scale")
+    t.add_argument("--full-frame", action="store_true",
+                   help="Compute the training loss over the whole frame, padding included (requires a "
+                        "background-padded cache, i.e. prepare_isx after 33089b3). Metrics stay masked.")
     t.add_argument("--target", default=None, metavar="NAME",
                    help="Train a single-output model for one marker (name as in the cache's meta.json)")
     t.add_argument("--snapshot", type=int, default=0, metavar="N",
