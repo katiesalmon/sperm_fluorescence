@@ -49,7 +49,7 @@ class NotTiff(ValueError):
     pass
 
 
-def probe(data, max_description=400):
+def probe(data, max_description=400, max_pages=MAX_PAGES):
     """Describe the TIFF in `data` (bytes). Raises NotTiff if it is not one.
 
     Returns {'byte_order', 'bigtiff', 'pages': [ {...}, ... ]}, one dict per page.
@@ -80,7 +80,7 @@ def probe(data, max_description=400):
 
     pages = []
     seen = set()
-    while offset and offset not in seen and len(pages) < MAX_PAGES:
+    while offset and offset not in seen and len(pages) < max_pages:
         seen.add(offset)
         page, offset = _read_ifd(data, offset, endian, bigtiff, max_description)
         pages.append(page)
