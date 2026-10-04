@@ -164,7 +164,7 @@ def prepare(args):
 def load_cache(cache, classes):
     """Open the per-class arrays. Returns (xs, ys, ms, wells, scalars, extra): extra is None
     for a fixed-frame cache and [(shapes, offsets), ...] for a ragged one."""
-    xs, ys, ms, wells, scal, extra = [], [], [], [], [], []
+    xs, ys, ms, wells, scal, extra, avail, clsarr = [], [], [], [], [], [], [], []
     for cls in classes:
         p = os.path.join(cache, cls + "_x.npy")
         if not os.path.exists(p): continue
@@ -175,23 +175,41 @@ def load_cache(cache, classes):
             shapes = np.load(sp); extra.append((shapes, np.load(os.path.join(cache, cls + "_offsets.npy")))); n = len(shapes)
         else:
             n = len(xs[-1])
-        wells += [cls.lstrip("123")] * n
+        wells += [cls.lstrip("123")] * n; clsarr += [cls] * n
         scal.append(np.load(os.path.join(cache, cls + "_scalars.npy")))
-    return xs, ys, ms, np.array(wells), np.concatenate(scal), (extra if extra else None)
+        ap_ = os.path.join(cache, cls + "_avail.npy")
+        avail.append(np.load(ap_) if os.path.exists(ap_) else None)
+    avail = np.concatenate(avail) if avail and all(a is not None for a in avail) else None
+    return xs, ys, ms, np.array(wells), np.concatenate(scal), (extra if extra else None), avail, np.array(clsarr)
 
 
 def open_cache(cache, classes, target_k=None):
-    xs, ys, ms, wells, scal, extra = load_cache(cache, classes)
+    """A dataset plus its per-object wells, scalars, and class names. `ds.avail` is an
+    (N, C) bool of which target channels each object actually has, or None for all."""
+    xs, ys, ms, wells, scal, extra, avail, clsarr = load_cache(cache, classes)
     if extra is None:
         if target_k is not None:
             ys = [y[:, target_k:target_k + 1] for y in ys]
-        return Cached(xs, ys, ms), wells, scal
-    return RaggedCached(xs, ys, ms, extra, target_k), wells, scal
+        ds = Cached(xs, ys, ms)
+    else:
+        ds = RaggedCached(xs, ys, ms, extra, target_k)
+    if avail is not None and target_k is not None:
+        avail = avail[:, target_k:target_k + 1]
+    ds.avail = avail; ds.classes = clsarr
+    return ds, wells, scal
+
+
+def _avail_of(ds, idx):
+    import torch
+    if getattr(ds, "avail", None) is None:
+        return torch.ones(len(idx), ds.cout)
+    return torch.tensor(ds.avail[np.asarray(idx)].astype(np.float32))
 
 
 class Cached:
     """Fixed-frame cache: index several (N, C, H, W) memmaps as one dataset."""
     ragged = False
+    avail = None
 
     def __init__(self, xs, ys, ms):
         self.xs, self.ys, self.ms = xs, ys, ms
@@ -201,6 +219,8 @@ class Cached:
     def shape(self, i):
         k = np.searchsorted(self.offsets, i, side="right") - 1
         return tuple(int(v) for v in self.xs[k].shape[2:])
+    def sample_idx(self, n):
+        return np.unique(np.linspace(0, len(self) - 1, n).astype(int))
     def sample_targets(self, n):
         return np.concatenate([np.asarray(y[:n]) for y in self.ys]).astype(np.float32)
     def batch(self, idx):
@@ -218,6 +238,7 @@ class RaggedCached:
     shape in it, so batches are assembled from objects of like shape (make_batches).
     Nothing is cropped at any point, so evaluation is on whole objects."""
     ragged = True
+    avail = None
 
     def __init__(self, xs, ys, ms, extra, target_k=None):
         self.xs, self.ys, self.ms, self.target_k = xs, ys, ms, target_k
@@ -233,8 +254,10 @@ class RaggedCached:
         y = np.asarray(self.ys[k][:, a:b]).reshape(-1, h, w).astype(np.float32)
         if self.target_k is not None: y = y[self.target_k:self.target_k + 1]
         return x, y, np.asarray(self.ms[k][a:b]).reshape(h, w)
+    def sample_idx(self, n):
+        return np.unique(np.linspace(0, len(self) - 1, n).astype(int))   # spread over every class
     def sample_targets(self, n):
-        flat = np.concatenate([self.item(i)[1].reshape(self.cout, -1) for i in range(min(n, len(self)))], axis=1)
+        flat = np.concatenate([self.item(i)[1].reshape(self.cout, -1) for i in self.sample_idx(n)], axis=1)
         return flat[None, :, :, None]   # (1, C, pixels, 1): same reduction axes as a fixed frame
     def batch(self, idx):
         import torch
@@ -342,14 +365,20 @@ def evaluate(model, ds, wells, scale, dev, bs=256, idx=None, tta=False):
                 h, w = ds.shape(int(j)); t, l = (H - h) // 2, (W - w) // 2
                 preds[pos[int(j)]] = p[q][:, t:t + h, l:l + w]; trues[pos[int(j)]] = y[q][:, t:t + h, l:l + w]; masks[pos[int(j)]] = m[q][t:t + h, l:l + w]
     res = {}
-    has_ps = (wells == "P").any() and (wells == "S").any()
+    av = _avail_of(ds, idx).numpy() > 0
     for k, n in enumerate(NAMES):
-        pp = np.concatenate([p[k][m > 0] for p, m in zip(preds, masks)]); tt = np.concatenate([t[k][m > 0] for t, m in zip(trues, masks)])
-        ep = np.array([(p[k] * m).sum() for p, m in zip(preds, masks)]); et = np.array([(t[k] * m).sum() for t, m in zip(trues, masks)])
-        ps = (lambda v: float(np.median(v[wells == "P"]) / max(abs(np.median(v[wells == "S"])), 1e-9))) if has_ps else (lambda v: None)
+        ok = np.flatnonzero(av[:, k])            # objects whose instrument stained this channel
+        if len(ok) < 3:
+            res[n] = {"pixel_r": None, "event_r": None, "pred_PS": None, "true_PS": None, "within_well_event_r": {}}
+            continue
+        w_ok = wells[ok]
+        has_ps = (w_ok == "P").any() and (w_ok == "S").any()
+        pp = np.concatenate([preds[i][k][masks[i] > 0] for i in ok]); tt = np.concatenate([trues[i][k][masks[i] > 0] for i in ok])
+        ep = np.array([(preds[i][k] * masks[i]).sum() for i in ok]); et = np.array([(trues[i][k] * masks[i]).sum() for i in ok])
+        ps = (lambda v: float(np.median(v[w_ok == "P"]) / max(abs(np.median(v[w_ok == "S"])), 1e-9))) if has_ps else (lambda v: None)
         within = {}
-        for w in sorted(set(wells)):
-            sel = wells == w
+        for w in sorted(set(w_ok)):
+            sel = w_ok == w
             within[w] = float(np.corrcoef(ep[sel], et[sel])[0, 1]) if sel.sum() > 2 else None
         res[n] = {"pixel_r": float(np.corrcoef(pp, tt)[0, 1]), "event_r": float(np.corrcoef(ep, et)[0, 1]),
                   "pred_PS": ps(ep), "true_PS": ps(et), "within_well_event_r": within}
@@ -371,6 +400,9 @@ def train(args):
     dev = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     all_cls = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(args.cache, "*_x.npy"))})
+    if args.include:
+        keep = {c.strip() for c in args.include.split(",")}
+        all_cls = [c for c in all_cls if c in keep]
     tr_cls = [c for c in all_cls if c[0] in args.train]; te_cls = [c for c in all_cls if c[0] in args.test]
     tr, wtr, _ = open_cache(args.cache, tr_cls, target_k)
     te, wte, _ = open_cache(args.cache, te_cls, target_k)
@@ -380,7 +412,21 @@ def train(args):
     rng = np.random.default_rng(args.seed); perm = rng.permutation(len(tr))
     nval = min(max(500, len(tr) // 20), max(1, len(tr) // 5))   # 5% of a big set, never more than 20% of a small one
     val_idx, fit_idx = perm[:nval], perm[nval:]
-    ysample = tr.sample_targets(200)
+    # a class may ask to be seen several times per epoch (meta.json "repeat"), so a small
+    # instrument is not drowned by a large one
+    repeats = {c: int(v.get("repeat", 1)) for c, v in meta.get("classes", {}).items()} if isinstance(meta.get("classes"), dict) else {}
+    if any(r > 1 for r in repeats.values()):
+        fit_idx = np.concatenate([np.repeat(fit_idx[tr.classes[fit_idx] == c], repeats.get(c, 1)) for c in np.unique(tr.classes[fit_idx])])
+    if getattr(tr, "avail", None) is not None:
+        # Mixed-instrument cache: a channel's scale comes only from objects that carry it,
+        # otherwise the unstained objects' zeros drag it towards 0 (and the loss to NaN).
+        sidx = tr.sample_idx(200); per_ch = []
+        for k in range(tr.cout):
+            ok = [i for i in sidx if tr.avail[i, k]]
+            per_ch.append(float(np.mean([np.abs(tr.item(i)[1][k]).mean() for i in ok])) if ok else 1.0)
+        ysample = np.array(per_ch, np.float32)[None, :, None, None]
+    else:
+        ysample = tr.sample_targets(200)
     if args.channel_scale:
         # One scale per channel. With a single shared scale the L1 is dominated by the
         # brightest channel: AF488 is ~3x PerCP, so ACRV1 -- the dimmest and the one with the
@@ -388,6 +434,7 @@ def train(args):
         scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10
     else:
         scale_vec = np.full(ysample.shape[1], np.abs(ysample).mean() * 10, np.float32)
+    scale_vec = np.where(scale_vec > 0, scale_vec, 1.0).astype(np.float32)
     scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
     scale_dev = scale.to(dev)
     os.makedirs(args.out, exist_ok=True)
@@ -397,6 +444,10 @@ def train(args):
 
     cin, cout = tr.cin, tr.cout
     model = build_model(args.width, cin, cout).to(dev)
+    if args.init:
+        state = torch.load(args.init, map_location=dev)
+        missing = model.load_state_dict(state, strict=False)
+        print("initialised from %s (%d missing, %d unexpected keys)" % (args.init, len(missing.missing_keys), len(missing.unexpected_keys)))
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * (len(fit_idx) // args.batch + 1))
     try:
@@ -406,7 +457,7 @@ def train(args):
     log = open(os.path.join(args.out, "log.csv"), "w", newline=""); lw = csv.writer(log)
     lw.writerow(["epoch", "train_l1", "val_l1"] + ["%s_%s" % (n, k) for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")])
     best = float("inf"); t0 = time.time()
-    best_ch = np.full(len(NAMES), np.inf); best_ep = [0] * len(NAMES)
+    best_ch = np.full(len(NAMES), np.inf); best_ep = [0] * len(NAMES); vm = 0.0
     val_ds = tr
 
     # Fixed test objects for per-epoch snapshots: a spread over well types and over the
@@ -429,11 +480,12 @@ def train(args):
         model.train(); tot = 0.0; nb = 0
         for b in make_batches(tr, fit_idx, args.batch, rng):
             x, y, m = tr.batch(b); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
+            m = m * _avail_of(tr, b).to(dev)[:, :, None, None]     # (B, C, H, W): only channels this object has
             if args.full_frame:
                 # Train on every pixel. The padded zone is background with a zero target,
                 # and a network never penalised there paints stain onto it (seen in the
                 # ISX progression sheets). The validity mask still scopes the metrics.
-                m = torch.ones_like(m)
+                m = torch.ones_like(m) * _avail_of(tr, b).to(dev)[:, :, None, None]
             x, y, m = augment(x, y, m, args.aug)
             # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
             amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
@@ -452,10 +504,12 @@ def train(args):
             for b in make_batches(val_ds, val_idx, 256):
                 x, y, m = val_ds.batch(b); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
                 if args.full_frame: m = torch.ones_like(m)
+                m = m * _avail_of(val_ds, b).to(dev)[:, :, None, None]
                 per = (F.l1_loss(model(x), y, reduction="none") * m).sum(dim=(0, 2, 3)).cpu().numpy()
-                vch += per; vm += m.sum().item()
-                vl += (per.sum() / m.sum().item() / len(NAMES)); vn += 1
-        vl /= max(vn, 1); vch /= max(vm, 1.0)
+                cnt = m.sum(dim=(0, 2, 3)).cpu().numpy()
+                vch += per; vm = vm + cnt
+                vl += (per.sum() / max(cnt.sum(), 1.0)); vn += 1
+        vl /= max(vn, 1); vch = vch / np.maximum(np.asarray(vm, dtype=np.float64), 1.0)
         # Each marker keeps its own best epoch: a shared trunk's best moment differs per
         # marker, and one checkpoint cannot serve all of them.
         for k, nm in enumerate(NAMES):
@@ -465,18 +519,18 @@ def train(args):
         res, _ = evaluate(model, te, wte, scale, dev) if (ep % args.eval_every == 0 or ep == args.epochs) else ({}, None)
         lw.writerow([ep, tot / nb, vl] + [res[n][k] if res else "" for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
         line = "epoch %3d  train %.4f  val %.4f" % (ep, tot / nb, vl)
-        if res: line += "   test event r: " + "  ".join("%s %.3f" % (n, res[n]["event_r"]) for n in NAMES)
+        if res: line += "   test event r: " + "  ".join("%s %s" % (n, "%.3f" % res[n]["event_r"] if res[n]["event_r"] is not None else "n/a") for n in NAMES)
         if res and "ACRV1" in res and res["ACRV1"]["within_well_event_r"].get("S") is not None:
             line += "   ACRV1 within-sperm %.3f" % res["ACRV1"]["within_well_event_r"]["S"]
         print(line + "   (%.0fs)" % (time.time() - t0))
         # Checkpoint selection, on the training replicate's held-out slice only.
         if args.select_on == "val_event_r":
             rv, _ = evaluate(model, tr, wtr[val_idx], scale, dev, idx=val_idx)
-            mean_r = float(np.mean([rv[n]["event_r"] for n in NAMES]))
+            mean_r = float(np.mean([rv[n]["event_r"] for n in NAMES if rv[n]["event_r"] is not None]))
             score, line_sel = -mean_r, "   val event r %.3f" % mean_r
         elif args.select_on == "acrv1_sperm":
             rv, _ = evaluate(model, tr, wtr[val_idx], scale, dev, idx=val_idx)
-            w_acrv = rv["ACRV1"]["within_well_event_r"]; r_s = w_acrv.get("S", next(iter(w_acrv.values())))
+            w_acrv = rv["ACRV1"]["within_well_event_r"]; r_s = w_acrv.get("S", next(iter(w_acrv.values()), None)) if w_acrv else None
             score = -(r_s if r_s is not None else -1.0)
             line_sel = "   val ACRV1 within-sperm %.3f" % (r_s if r_s is not None else float("nan"))
         else:
@@ -499,6 +553,8 @@ def train(args):
     wants = dict(zip(["LDHC/AKAP4", "CD45", "ACRV1"], ["<< 1", ">> 1", "<< 1"]))
     for n in NAMES:
         r = res[n]
+        if r["event_r"] is None:
+            print("%-12s %9s %9s   (not stained on the test instrument)" % (n, "n/a", "n/a")); continue
         ps = ("%12.2f %12.2f   %s" % (r["pred_PS"], r["true_PS"], wants.get(n, ""))) if r["pred_PS"] is not None else "%12s %12s" % ("n/a", "n/a")
         print("%-12s %9.3f %9.3f %s" % (n, r["pixel_r"], r["event_r"], ps))
     kinds = sorted({k for n in NAMES for k in res[n]["within_well_event_r"]})
@@ -517,6 +573,7 @@ def train(args):
             model.load_state_dict(torch.load(ck, map_location=dev))
             rk, _ = evaluate(model, te, wte, scale, dev, tta=args.tta)
             per_marker[nm] = dict(rk[nm], epoch=best_ep[k])
+            if rk[nm]["event_r"] is None: continue
             w = rk[nm]["within_well_event_r"]
             print("%-12s %6d %9.3f %9.3f   %s" % (nm, best_ep[k], rk[nm]["pixel_r"], rk[nm]["event_r"],
                   "  ".join("%s %.3f" % (kk, v) for kk, v in w.items() if v is not None)))
@@ -616,6 +673,8 @@ def main(argv=None):
     t.add_argument("--full-frame", action="store_true",
                    help="Compute the training loss over the whole frame, padding included (requires a "
                         "background-padded cache, i.e. prepare_isx after 33089b3). Metrics stay masked.")
+    t.add_argument("--include", default=None, metavar="CLS,CLS", help="Restrict to these cache classes before the train/test split")
+    t.add_argument("--init", default=None, metavar="CKPT", help="Initialise weights from a checkpoint (warm start / fine-tune)")
     t.add_argument("--target", default=None, metavar="NAME",
                    help="Train a single-output model for one marker (name as in the cache's meta.json)")
     t.add_argument("--snapshot", type=int, default=0, metavar="N",
