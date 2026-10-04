@@ -161,24 +161,44 @@ def prepare(args):
 # --------------------------------------------------------------------------- train ----
 
 def load_cache(cache, classes):
-    import torch
-    xs, ys, ms, wells, scal = [], [], [], [], []
+    """Open the per-class arrays. Returns (xs, ys, ms, wells, scalars, extra): extra is None
+    for a fixed-frame cache and [(shapes, offsets), ...] for a ragged one."""
+    xs, ys, ms, wells, scal, extra = [], [], [], [], [], []
     for cls in classes:
         p = os.path.join(cache, cls + "_x.npy")
         if not os.path.exists(p): continue
         xs.append(np.load(p, mmap_mode="r")); ys.append(np.load(os.path.join(cache, cls + "_y.npy"), mmap_mode="r"))
         ms.append(np.load(os.path.join(cache, cls + "_m.npy"), mmap_mode="r"))
-        n = len(xs[-1]); wells += [cls.lstrip("123")] * n
+        sp = os.path.join(cache, cls + "_shapes.npy")
+        if os.path.exists(sp):
+            shapes = np.load(sp); extra.append((shapes, np.load(os.path.join(cache, cls + "_offsets.npy")))); n = len(shapes)
+        else:
+            n = len(xs[-1])
+        wells += [cls.lstrip("123")] * n
         scal.append(np.load(os.path.join(cache, cls + "_scalars.npy")))
-    return xs, ys, ms, np.array(wells), np.concatenate(scal)
+    return xs, ys, ms, np.array(wells), np.concatenate(scal), (extra if extra else None)
+
+
+def open_cache(cache, classes, target_k=None):
+    xs, ys, ms, wells, scal, extra = load_cache(cache, classes)
+    if extra is None:
+        if target_k is not None:
+            ys = [y[:, target_k:target_k + 1] for y in ys]
+        return Cached(xs, ys, ms), wells, scal
+    return RaggedCached(xs, ys, ms, extra, target_k), wells, scal
 
 
 class Cached:
-    """Index into several memmaps as one dataset."""
+    """Fixed-frame cache: index several (N, C, H, W) memmaps as one dataset."""
+    ragged = False
+
     def __init__(self, xs, ys, ms):
         self.xs, self.ys, self.ms = xs, ys, ms
         self.offsets = np.cumsum([0] + [len(x) for x in xs])
+        self.cin, self.cout = xs[0].shape[1], ys[0].shape[1]
     def __len__(self): return int(self.offsets[-1])
+    def sample_targets(self, n):
+        return np.concatenate([np.asarray(y[:n]) for y in self.ys]).astype(np.float32)
     def batch(self, idx):
         import torch
         out = [[], [], []]
@@ -187,6 +207,55 @@ class Cached:
             out[0].append(self.xs[k][j]); out[1].append(self.ys[k][j]); out[2].append(self.ms[k][j])
         return (torch.tensor(np.stack(out[0]).astype(np.float32)), torch.tensor(np.stack(out[1]).astype(np.float32)),
                 torch.tensor(np.stack(out[2])[:, None].astype(np.float32)))
+
+
+class RaggedCached:
+    """Native-size cache: every object keeps its own (h, w). A batch is padded to the largest
+    shape in it, so batches are assembled from objects of like shape (make_batches).
+    Nothing is cropped at any point, so evaluation is on whole objects."""
+    ragged = True
+
+    def __init__(self, xs, ys, ms, extra, target_k=None):
+        self.xs, self.ys, self.ms, self.target_k = xs, ys, ms, target_k
+        self.shapes = np.concatenate([e[0] for e in extra]); self.per_class = extra
+        self.counts = np.cumsum([0] + [len(e[0]) for e in extra])
+        self.cin = xs[0].shape[0]; self.cout = 1 if target_k is not None else ys[0].shape[0]
+    def __len__(self): return int(self.counts[-1])
+    def item(self, i):
+        k = np.searchsorted(self.counts, i, side="right") - 1; j = i - self.counts[k]
+        shapes, offsets = self.per_class[k]; h, w = shapes[j]; a, b = offsets[j], offsets[j + 1]
+        x = np.asarray(self.xs[k][:, a:b]).reshape(self.cin, h, w).astype(np.float32)
+        y = np.asarray(self.ys[k][:, a:b]).reshape(-1, h, w).astype(np.float32)
+        if self.target_k is not None: y = y[self.target_k:self.target_k + 1]
+        return x, y, np.asarray(self.ms[k][a:b]).reshape(h, w)
+    def sample_targets(self, n):
+        flat = np.concatenate([self.item(i)[1].reshape(self.cout, -1) for i in range(min(n, len(self)))], axis=1)
+        return flat[None, :, :, None]   # (1, C, pixels, 1): same reduction axes as a fixed frame
+    def batch(self, idx):
+        import torch
+        items = [self.item(i) for i in idx]
+        H = max(x.shape[1] for x, _, _ in items); W = max(x.shape[2] for x, _, _ in items); n = len(items)
+        X = np.zeros((n, self.cin, H, W), np.float32); Y = np.zeros((n, self.cout, H, W), np.float32); M = np.zeros((n, 1, H, W), np.float32)
+        for q, (x, y, m) in enumerate(items):
+            h, w = x.shape[1:]; t, l = (H - h) // 2, (W - w) // 2
+            X[q, :, t:t + h, l:l + w] = x; Y[q, :, t:t + h, l:l + w] = y; M[q, 0, t:t + h, l:l + w] = m
+        return torch.tensor(X), torch.tensor(Y), torch.tensor(M)
+
+
+def make_batches(ds, idx, batch_size, rng=None):
+    """Batches of indices. Fixed-frame: random chunks. Ragged: sort by shape -- with a
+    little jitter when training, so size-neighbours mix across epochs -- so each batch
+    pads almost nothing, then shuffle batch order."""
+    idx = np.asarray(idx)
+    if not ds.ragged:
+        if rng is not None: idx = rng.permutation(idx)
+        return [idx[i:i + batch_size] for i in range(0, len(idx), batch_size)]
+    key = ds.shapes[idx].astype(np.float64); key = key[:, 0] * 1000 + key[:, 1]
+    if rng is not None: key = key + rng.uniform(0, 12, len(key))
+    order = idx[np.argsort(key, kind="stable")]
+    batches = [order[i:i + batch_size] for i in range(0, len(order), batch_size)]
+    if rng is not None: rng.shuffle(batches)
+    return batches
 
 
 def build_model(width, cin=3, cout=3):
@@ -214,33 +283,33 @@ def build_model(width, cin=3, cout=3):
 
 
 def evaluate(model, ds, wells, scale, dev, bs=256, idx=None):
-    """`scale` broadcasts over (N, 3, H, W): a scalar, or a (1, 3, 1, 1) tensor per channel.
-    `idx` restricts to a subset of ds; `wells` must already be that subset's wells."""
+    """Score on `idx` (default: everything); `wells` is already that subset's wells. Native
+    size on a ragged cache: predictions are made per object, pixel r pooled over valid
+    pixels, event r over per-object sums. Returns (res, preds) with preds[i] = (C, h, w)."""
     import torch
     idx = np.arange(len(ds)) if idx is None else np.asarray(idx)
-    model.eval(); P, Yt, Mk = [], [], []
+    model.eval()
+    preds = [None] * len(idx); trues = [None] * len(idx); masks = [None] * len(idx)
+    pos = {int(j): q for q, j in enumerate(idx)}
     with torch.no_grad():
-        for i in range(0, len(idx), bs):
-            x, y, m = ds.batch(idx[i:i + bs])
-            P.append((model(x.to(dev)).float().cpu() * scale).numpy()); Yt.append(y.numpy()); Mk.append(m.numpy())
-    P, Yt, Mk = np.concatenate(P), np.concatenate(Yt), np.concatenate(Mk)
+        for b in make_batches(ds, idx, bs):
+            x, y, m = ds.batch(b)
+            p = (model(x.to(dev)).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
+            for q, j in enumerate(b):
+                preds[pos[int(j)]] = p[q]; trues[pos[int(j)]] = y[q]; masks[pos[int(j)]] = m[q]
     res = {}
     has_ps = (wells == "P").any() and (wells == "S").any()
     for k, n in enumerate(NAMES):
-        valid = Mk[:, 0] > 0
-        pix = np.corrcoef(P[:, k][valid], Yt[:, k][valid])[0, 1]
-        ep, et = (P[:, k] * Mk[:, 0]).sum(axis=(1, 2)), (Yt[:, k] * Mk[:, 0]).sum(axis=(1, 2))
+        pp = np.concatenate([p[k][m > 0] for p, m in zip(preds, masks)]); tt = np.concatenate([t[k][m > 0] for t, m in zip(trues, masks)])
+        ep = np.array([(p[k] * m).sum() for p, m in zip(preds, masks)]); et = np.array([(t[k] * m).sum() for t, m in zip(trues, masks)])
         ps = (lambda v: float(np.median(v[wells == "P"]) / max(abs(np.median(v[wells == "S"])), 1e-9))) if has_ps else (lambda v: None)
-        # event r WITHIN one well type is the metric that cannot be earned by recognising the
-        # cell. For ACRV1 the within-sperm value is the whole question: across types the model
-        # scores ~0.5 just by knowing sperm have acrosomes; within sperm the pilot scored 0.0.
         within = {}
         for w in sorted(set(wells)):
             sel = wells == w
             within[w] = float(np.corrcoef(ep[sel], et[sel])[0, 1]) if sel.sum() > 2 else None
-        res[n] = {"pixel_r": float(pix), "event_r": float(np.corrcoef(ep, et)[0, 1]),
+        res[n] = {"pixel_r": float(np.corrcoef(pp, tt)[0, 1]), "event_r": float(np.corrcoef(ep, et)[0, 1]),
                   "pred_PS": ps(ep), "true_PS": ps(et), "within_well_event_r": within}
-    return res, P
+    return res, preds
 
 
 def train(args):
@@ -259,20 +328,15 @@ def train(args):
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     all_cls = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(args.cache, "*_x.npy"))})
     tr_cls = [c for c in all_cls if c[0] in args.train]; te_cls = [c for c in all_cls if c[0] in args.test]
-    xs, ys, ms, wtr, _ = load_cache(args.cache, tr_cls)
+    tr, wtr, _ = open_cache(args.cache, tr_cls, target_k)
+    te, wte, _ = open_cache(args.cache, te_cls, target_k)
     if target_k is not None:
-        ys = [y[:, target_k:target_k + 1] for y in ys]   # memmap views: one target channel
-    tr = Cached(xs, ys, ms)
-    xs, ys, ms, wte, _ = load_cache(args.cache, te_cls)
-    if target_k is not None:
-        ys = [y[:, target_k:target_k + 1] for y in ys]
         NAMES = [args.target]
-    te = Cached(xs, ys, ms)
     # hold a slice of the training replicate out for model selection; the test replicate is never used for it
     rng = np.random.default_rng(args.seed); perm = rng.permutation(len(tr))
     nval = min(max(500, len(tr) // 20), max(1, len(tr) // 5))   # 5% of a big set, never more than 20% of a small one
     val_idx, fit_idx = perm[:nval], perm[nval:]
-    ysample = np.concatenate([np.asarray(y[:200]) for y in tr.ys]).astype(np.float32)
+    ysample = tr.sample_targets(200)
     if args.channel_scale:
         # One scale per channel. With a single shared scale the L1 is dominated by the
         # brightest channel: AF488 is ~3x PerCP, so ACRV1 -- the dimmest and the one with the
@@ -283,11 +347,11 @@ def train(args):
     scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
     scale_dev = scale.to(dev)
     os.makedirs(args.out, exist_ok=True)
-    print("device %s   train %s: %d fit + %d val   test %s: %d   width %d   target scale %s   select on %s"
-          % (dev, tr_cls, len(fit_idx), nval, te_cls, len(te), args.width,
+    print("device %s   train %s: %d fit + %d val   test %s: %d   width %d   layout %s   target scale %s   select on %s"
+          % (dev, tr_cls, len(fit_idx), nval, te_cls, len(te), args.width, "ragged, native size" if tr.ragged else "fixed frame",
              "/".join("%.4f" % v for v in scale_vec), args.select_on))
 
-    cin, cout = tr.xs[0].shape[1], tr.ys[0].shape[1]
+    cin, cout = tr.cin, tr.cout
     model = build_model(args.width, cin, cout).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * (len(fit_idx) // args.batch + 1))
@@ -299,7 +363,7 @@ def train(args):
     lw.writerow(["epoch", "train_l1", "val_l1"] + ["%s_%s" % (n, k) for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")])
     best = float("inf"); t0 = time.time()
     best_ch = np.full(len(NAMES), np.inf); best_ep = [0] * len(NAMES)
-    val_ds = Cached(tr.xs, tr.ys, tr.ms)
+    val_ds = tr
 
     # Fixed test objects for per-epoch snapshots: a spread over well types and over the
     # brightest target channel, so both strong and faint stains are watched.
@@ -313,15 +377,14 @@ def train(args):
             order = cand[:3000][np.argsort(sums)]
             per = max(1, 6 // len(kinds_te))
             snap_idx += [int(order[int(q * (len(order) - 1))]) for q in np.linspace(0.15, 0.95, per)]
-        snap_x = np.stack([np.asarray(te.batch([j])[0][0]) for j in snap_idx])
-        snap_y = np.stack([np.asarray(te.batch([j])[1][0]) for j in snap_idx])
-        snap_m = np.stack([np.asarray(te.batch([j])[2][0, 0]) for j in snap_idx])
+        xb, yb, mb = te.batch(snap_idx)           # padded to the largest of the six, display only
+        snap_x, snap_y, snap_m = xb.numpy(), yb.numpy(), mb.numpy()[:, 0]
         snap_preds = {}
 
     for ep in range(1, args.epochs + 1):
-        model.train(); rng.shuffle(fit_idx); tot = 0.0; nb = 0
-        for i in range(0, len(fit_idx), args.batch):
-            x, y, m = tr.batch(fit_idx[i:i + args.batch]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
+        model.train(); tot = 0.0; nb = 0
+        for b in make_batches(tr, fit_idx, args.batch, rng):
+            x, y, m = tr.batch(b); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
             if args.full_frame:
                 # Train on every pixel. The padded zone is background with a zero target,
                 # and a network never penalised there paints stain onto it (seen in the
@@ -332,13 +395,15 @@ def train(args):
             amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
             with amp:
                 loss = (F.l1_loss(model(x), y, reduction="none") * m).sum() / m.sum() / 3
-            opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.step(opt); scaler.update(); sched.step()
+            opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+            try: sched.step()
+            except ValueError: pass   # OneCycle's step budget is an estimate when batches vary
             tot += loss.item(); nb += 1
         # validation L1 on the held-out slice of the TRAINING replicate
         model.eval(); vl = 0.0; vn = 0; vch = np.zeros(len(NAMES)); vm = 0.0
         with torch.no_grad():
-            for i in range(0, len(val_idx), 256):
-                x, y, m = val_ds.batch(val_idx[i:i + 256]); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
+            for b in make_batches(val_ds, val_idx, 256):
+                x, y, m = val_ds.batch(b); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
                 if args.full_frame: m = torch.ones_like(m)
                 per = (F.l1_loss(model(x), y, reduction="none") * m).sum(dim=(0, 2, 3)).cpu().numpy()
                 vch += per; vm += m.sum().item()
@@ -420,7 +485,7 @@ def train(args):
     fig, axes = plt.subplots(len(pick), ncol, figsize=(2 * ncol, 1.9 * len(pick)))
     for i, j in enumerate(pick):
         x, y, m = te.batch([j]); x, y = x[0].numpy(), y[0].numpy()
-        panels = [x[0]] + [v for k in range(cout) for v in (y[k], P[j, k])]
+        panels = [x[0]] + [v for k in range(cout) for v in (y[k], P[j][k])]
         for c, (ax, a) in enumerate(zip(axes[i], panels)):
             if c == 0: ax.imshow(a, cmap="gray")
             else:

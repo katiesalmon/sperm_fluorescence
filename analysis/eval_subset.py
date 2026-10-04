@@ -36,22 +36,19 @@ def main(argv=None):
     T.NAMES = names
     dev = torch.device("mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu"))
 
-    xs, ys, ms, wtr, _ = T.load_cache(args.cache, res["train"])
-    xs_te, ys_te, ms_te, wte, scal = T.load_cache(args.cache, res["test"])
-    if res.get("target"):
-        k = meta["target_names"].index(res["target"])
-        ys = [y[:, k:k + 1] for y in ys]; ys_te = [y[:, k:k + 1] for y in ys_te]
-    tr = T.Cached(xs, ys, ms); te = T.Cached(xs_te, ys_te, ms_te)
+    target_k = meta["target_names"].index(res["target"]) if res.get("target") else None
+    tr, wtr, _ = T.open_cache(args.cache, res["train"], target_k)
+    te, wte, scal = T.open_cache(args.cache, res["test"], target_k)
 
     # the training scale, recomputed exactly as train() did
-    ysample = np.concatenate([np.asarray(y[:200]) for y in tr.ys]).astype(np.float32)
+    ysample = tr.sample_targets(200)
     if res.get("channel_scale"):
         scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10
     else:
         scale_vec = np.full(ysample.shape[1], np.abs(ysample).mean() * 10, np.float32)
     scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
 
-    model = T.build_model(res["width"], tr.xs[0].shape[1], tr.ys[0].shape[1]).to(dev)
+    model = T.build_model(res["width"], tr.cin, tr.cout).to(dev)
     model.load_state_dict(torch.load(os.path.join(args.run, args.checkpoint), map_location=dev))
 
     dapi_col = meta["targets"].index("Ch07") if "Ch07" in meta["targets"] else None
