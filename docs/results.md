@@ -6,6 +6,44 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Joint vs per-marker models: the shared encoder wins or ties on every marker
+
+*2026-10-05 · Laptop: fixed-frame cache, width 32, 20 epochs, scored within nucleated sperm.
+GPU (RTX A6000): ragged native-size cache, width 48, 40 epochs, `--full-frame`, whole-sample
+event r. Same architecture and budget per arm; a dedicated model has one output channel.*
+
+| event r | joint, laptop | dedicated, laptop | joint, GPU | dedicated, GPU |
+| --- | ---: | ---: | ---: | ---: |
+| LDHC/AKAP4 | **0.972** | 0.951 | 0.983 | — |
+| ACRV1 | **0.981** | 0.974 | 0.981 | — |
+| DAPI | 0.922 | *(running)* | 0.916 | — |
+| TOMM20 | 0.976 | *(queued)* | **0.978** | 0.977 |
+
+**Dedicated models never beat the joint one.** LDHC loses 0.02 on its own, ACRV1 loses
+0.007, TOMM20 ties. The 7.5-minute GPU runs and the 15-minute laptop runs agree.
+
+**The joint model learns the hard channel faster.** TOMM20 — dimmest, last to train — hit
+0.87 by epoch 10 in the joint model and 0.53 on its own; LDHC was ahead in the joint model
+at every checkpoint. The other markers' supervision teaches the shared trunk the anatomy
+(head, midpiece, tail) before a weak channel could on its own. That is the multi-task
+argument made by the data, and the case for per-marker networks — strongest where a
+channel is hard — is where it fails most clearly.
+
+**Per-marker checkpoints are moot on this instrument.** Every marker's best validation
+epoch in the 40-epoch GPU run was 40. Nothing peaked and declined, so the stopping effect
+that cost ACRV1 on the A8 (peak at epoch 15–20, decline to 40) does not occur here. Keep
+the mechanism for the A8; it changes nothing on the ISX.
+
+**Decision:** one shared-encoder model with per-channel loss scaling, per-marker
+checkpoints retained as a free safeguard. Four networks would cost 4x for no gain.
+
+The ISX split is nearly saturated (laptop and GPU within 0.01 of each other despite 2x
+epochs and native-size objects), so these differences are small in absolute terms; a
+second sample is what would make them sharper, and what would make any of this a
+generalisation claim.
+
+---
+
 ## ImageStream pilot — all four markers predicted within nucleated sperm at r ≈ 0.92–0.98
 
 *2026-10-04 · `analysis/prepare_isx.py`, `train_a8.py` (width 32, 20 epochs, `--channel-scale`,
