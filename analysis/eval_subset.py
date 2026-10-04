@@ -27,6 +27,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run"); ap.add_argument("--cache", required=True)
     ap.add_argument("--dapi-min", type=float, default=25119.0, help="IDEAS Intensity_MC_Ch07 threshold (default: the trough between the two modes)")
+    ap.add_argument("--dapi-max", type=float, default=None,
+                    help="Also score 'sperm only': DAPI between --dapi-min and this (excludes round cells, ~4x the sperm median and up)")
     ap.add_argument("--checkpoint", default="best.pt")
     args = ap.parse_args(argv)
 
@@ -57,6 +59,9 @@ def main(argv=None):
     if dapi is not None:
         subsets["DAPI-high (nucleated)"] = np.flatnonzero(dapi >= args.dapi_min)
         subsets["DAPI-low"] = np.flatnonzero(dapi < args.dapi_min)
+        if args.dapi_max:
+            subsets["sperm only (no round cells)"] = np.flatnonzero((dapi >= args.dapi_min) & (dapi < args.dapi_max))
+            subsets["round cells (DAPI >= max)"] = np.flatnonzero(dapi >= args.dapi_max)
     out = {}
     print("%s  checkpoint %s  (%d test objects)\n" % (args.run, args.checkpoint, len(te)))
     print("%-24s %7s  " % ("subset", "n") + "  ".join("%18s" % n for n in names))
