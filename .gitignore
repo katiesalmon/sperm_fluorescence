@@ -12,6 +12,11 @@ survey_*.json
 bundle_*.zip
 analysis/out/
 
+# Training artifacts: checkpoints, logs, prediction sheets. Rebuildable from the cache.
+runs/
+*.pt
+*.npz
+
 # Site-specific path to the export zips. Per machine, never committed.
 images_path.txt
 
