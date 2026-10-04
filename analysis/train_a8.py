@@ -288,6 +288,23 @@ def train(args):
     best = float("inf"); t0 = time.time()
     val_ds = Cached(tr.xs, tr.ys, tr.ms)
 
+    # Fixed test objects for per-epoch snapshots: a spread over well types and over the
+    # brightest target channel, so both strong and faint stains are watched.
+    snap_idx = []
+    if args.snapshot:
+        kinds_te = sorted(set(wte))
+        for w in kinds_te:
+            cand = np.flatnonzero(wte == w)
+            if len(cand) == 0: continue
+            sums = np.array([np.asarray(te.batch([j])[1][0, -1]).sum() for j in cand[:3000]])
+            order = cand[:3000][np.argsort(sums)]
+            per = max(1, 6 // len(kinds_te))
+            snap_idx += [int(order[int(q * (len(order) - 1))]) for q in np.linspace(0.15, 0.95, per)]
+        snap_x = np.stack([np.asarray(te.batch([j])[0][0]) for j in snap_idx])
+        snap_y = np.stack([np.asarray(te.batch([j])[1][0]) for j in snap_idx])
+        snap_m = np.stack([np.asarray(te.batch([j])[2][0, 0]) for j in snap_idx])
+        snap_preds = {}
+
     for ep in range(1, args.epochs + 1):
         model.train(); rng.shuffle(fit_idx); tot = 0.0; nb = 0
         for i in range(0, len(fit_idx), args.batch):
@@ -324,6 +341,13 @@ def train(args):
         if line_sel: print("          " + line_sel.strip())
         if score < best:
             best = score; torch.save(model.state_dict(), os.path.join(args.out, "best.pt"))
+        if args.snapshot and (ep % args.snapshot == 0 or ep == 1 or ep == args.epochs):
+            model.eval()
+            with torch.no_grad():
+                sp = (model(torch.tensor(snap_x).to(dev)).float().cpu() * scale).numpy()
+            snap_preds[ep] = sp
+            np.savez_compressed(os.path.join(args.out, "epoch_%02d.npz" % ep), pred=sp, true=snap_y, x=snap_x, mask=snap_m, idx=np.array(snap_idx))
+            _snapshot_sheet(args.out, ep, snap_x, snap_y, sp, snap_m, wte[snap_idx])
 
     model.load_state_dict(torch.load(os.path.join(args.out, "best.pt"), map_location=dev))
     res, P = evaluate(model, te, wte, scale, dev)
@@ -343,6 +367,9 @@ def train(args):
     json.dump({"train": tr_cls, "test": te_cls, "epochs": args.epochs, "width": args.width,
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
+
+    if args.snapshot and snap_preds:
+        _progression_sheet(args.out, snap_x, snap_y, snap_preds, snap_m)
 
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     kinds_te = sorted(set(wte)); per = max(1, 9 // len(kinds_te))
@@ -364,6 +391,43 @@ def train(args):
     return 0
 
 
+def _snapshot_sheet(out, ep, x, y, p, m, wells):
+    """One epoch: rows = fixed objects, columns = input, then true/pred per marker."""
+    import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+    n, cout = len(x), y.shape[1]
+    fig, axes = plt.subplots(n, 1 + 2 * cout, figsize=(1.6 * (1 + 2 * cout), 1.9 * n))
+    for i in range(n):
+        panels = [x[i, 0]] + [v for k in range(cout) for v in (y[i, k], p[i, k])]
+        for c, (ax, a) in enumerate(zip(axes[i], panels)):
+            if c == 0: ax.imshow(a, cmap="gray")
+            else:
+                ref = panels[c if c % 2 == 1 else c - 1]; ax.imshow(a, cmap="magma", vmin=0, vmax=max(np.percentile(ref[m[i] > 0], 99.5), 1e-4))
+            ax.set_xticks([]); ax.set_yticks([])
+            if c == 0: ax.set_ylabel(str(wells[i]), fontsize=7)
+            if i == 0: ax.set_title((["input"] + [t % nm for nm in NAMES for t in ("true %s", "pred %s")])[c], fontsize=7)
+    fig.suptitle("epoch %d" % ep, fontsize=9); fig.tight_layout()
+    fig.savefig(os.path.join(out, "epoch_%02d.png" % ep), dpi=100); plt.close(fig)
+
+
+def _progression_sheet(out, x, y, preds, m):
+    """Per marker: rows = fixed objects, columns = input, truth, then prediction at each
+    snapshot epoch. The picture of what training actually changes."""
+    import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+    eps = sorted(preds); n, cout = len(x), y.shape[1]
+    for k, nm in enumerate(NAMES):
+        fig, axes = plt.subplots(n, 2 + len(eps), figsize=(1.5 * (2 + len(eps)), 1.8 * n))
+        for i in range(n):
+            hi = max(np.percentile(y[i, k][m[i] > 0], 99.5), 1e-4)
+            axes[i, 0].imshow(x[i, 0], cmap="gray"); axes[i, 1].imshow(y[i, k], cmap="magma", vmin=0, vmax=hi)
+            for j, ep in enumerate(eps):
+                axes[i, 2 + j].imshow(preds[ep][i, k], cmap="magma", vmin=0, vmax=hi)
+                if i == 0: axes[i, 2 + j].set_title("ep %d" % ep, fontsize=8)
+            if i == 0: axes[i, 0].set_title("input", fontsize=8); axes[i, 1].set_title("true", fontsize=8)
+            for ax in axes[i]: ax.set_xticks([]); ax.set_yticks([])
+        fig.suptitle("%s -- prediction by epoch, fixed test objects, truth's colour scale" % nm, fontsize=9)
+        fig.tight_layout(); fig.savefig(os.path.join(out, "progression_%s.png" % nm.replace("/", "_")), dpi=100); plt.close(fig)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -375,6 +439,8 @@ def main(argv=None):
     t.add_argument("--lr", type=float, default=2e-3); t.add_argument("--eval-every", type=int, default=5); t.add_argument("--seed", type=int, default=0)
     t.add_argument("--out", default="runs/fold")
     t.add_argument("--channel-scale", action="store_true", help="Normalise the L1 per target channel instead of one shared scale")
+    t.add_argument("--snapshot", type=int, default=0, metavar="N",
+                   help="Every N epochs, save predictions for a fixed set of test objects (epoch_XX.png + .npz) and, at the end, a progression sheet")
     t.add_argument("--select-on", choices=["val_l1", "acrv1_sperm"], default="val_l1",
                    help="Checkpoint selection: validation L1 (default) or within-sperm ACRV1 event r on the validation slice")
     args = ap.parse_args(argv)
