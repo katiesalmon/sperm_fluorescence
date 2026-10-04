@@ -14,6 +14,28 @@ sys.path.insert(0, os.path.dirname(__file__))
 import train_a8 as T
 
 
+def load_run(run, cache, test, include=None, checkpoint="best.pt"):
+    """(model, device, scale tensor, test dataset, wells, class names, results dict) for a finished run."""
+    import torch
+    meta = json.load(open(os.path.join(cache, "meta.json")))
+    if "target_names" in meta: T.NAMES = list(meta["target_names"])
+    res = json.load(open(os.path.join(run, "results.json")))
+    classes = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(cache, "*_x.npy"))})
+    if include: classes = [c for c in classes if c in include.split(",")]
+    te_cls = [c for c in classes if c[0] in test]
+    te, wte, _ = T.open_cache(cache, te_cls)
+    dev = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    model = T.build_model(res.get("width", 32), te.cin, te.cout).to(dev)
+    model.load_state_dict(torch.load(os.path.join(run, checkpoint), map_location=dev)); model.eval()
+    if "scale" in res:
+        scale_vec = np.array(res["scale"], np.float32)
+    else:   # older run: rebuild the divisor the way train() did, from the same training classes
+        tr, _, _ = T.open_cache(cache, [c for c in classes if c in res["train"]])
+        scale_vec = T.target_scale(tr, res.get("channel_scale", False))
+    scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
+    return model, dev, scale, te, wte, te_cls, res
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
@@ -21,23 +43,7 @@ def main():
     ap.add_argument("--include", default=None, help="Restrict to these cache classes (comma list)")
     ap.add_argument("--checkpoint", default="best.pt"); ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    import torch
-    meta = json.load(open(os.path.join(a.cache, "meta.json")))
-    if "target_names" in meta: T.NAMES = list(meta["target_names"])
-    res = json.load(open(os.path.join(a.run, "results.json")))
-    classes = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(a.cache, "*_x.npy"))})
-    if a.include: classes = [c for c in classes if c in a.include.split(",")]
-    te_cls = [c for c in classes if c[0] in a.test]
-    te, wte, _ = T.open_cache(a.cache, te_cls)
-    dev = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
-    model = T.build_model(res.get("width", 32), te.cin, te.cout).to(dev)
-    model.load_state_dict(torch.load(os.path.join(a.run, a.checkpoint), map_location=dev)); model.eval()
-    if "scale" in res:
-        scale_vec = np.array(res["scale"], np.float32)
-    else:   # older run: rebuild the divisor the way train() did, from the same training classes
-        tr, _, _ = T.open_cache(a.cache, [c for c in classes if c[0] in "".join(str(d) for d in range(10) if str(d) not in a.test) and c in res["train"]])
-        scale_vec = T.target_scale(tr, res.get("channel_scale", False))
-    scale = torch.tensor(scale_vec, dtype=torch.float32).view(1, -1, 1, 1)
+    model, dev, scale, te, wte, _, _ = load_run(a.run, a.cache, a.test, a.include, a.checkpoint)
     rng = np.random.default_rng(a.seed)
     pick = []
     for w in sorted(set(wte)):
