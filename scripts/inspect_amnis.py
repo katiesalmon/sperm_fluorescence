@@ -53,7 +53,10 @@ def survey_tiff(path, pages, head_bytes):
              " (capped; pass --pages for more)" if len(pg) >= pages else " (end of chain reached)"))
     if not pg:
         return
-    sig = [(p.get("width"), p.get("height"), p.get("samples_per_pixel"), tiff_probe.dtype_of(p), p.get("compression")) for p in pg]
+    def one(v):  # a tag read as a list (per-sample values) is hashed by its first element
+        return v[0] if isinstance(v, list) and v else v
+    sig = [(one(p.get("width")), one(p.get("height")), one(p.get("samples_per_pixel")),
+            tiff_probe.dtype_of(p), one(p.get("compression"))) for p in pg]
     shapes = collections.Counter(sig)
     print("  page geometries (w x h, spp, dtype, compression):")
     for (w, h, spp, dt, comp), n in shapes.most_common(8):
@@ -73,8 +76,23 @@ def survey_tiff(path, pages, head_bytes):
             print("    x%-3d %s" % (n, k))
     else:
         print("  no page names or descriptions in the first %d pages" % min(48, len(pg)))
-    widths = [p.get("width") for p in pg]; heights = [p.get("height") for p in pg]
+    widths = [one(p.get("width")) for p in pg]; heights = [one(p.get("height")) for p in pg]
     print("  width range %s..%s   height range %s..%s" % (min(widths), max(widths), min(heights), max(heights)))
+
+    # ImageStream layout hypothesis: one page per object with every channel tiled side by
+    # side, so the page width is a multiple of the channel count; a uint16 page (image)
+    # is followed by a uint8 page (mask) of the same size.
+    real = [(w, h, dt) for (w, h, _, dt, _) in sig if w and w > 1]
+    for nch in (12, 6):
+        hit = sum(1 for w, _, _ in real if w % nch == 0)
+        print("  widths divisible by %2d: %d of %d real pages%s" % (
+            nch, hit, len(real), "   -> %d channels tiled, each %d..%d px wide" % (
+                nch, min(w for w, _, _ in real) // nch, max(w for w, _, _ in real) // nch) if hit == len(real) and real else ""))
+    pairs = sum(1 for a, b in zip(sig, sig[1:]) if a[3] == "uint16" and b[3] == "uint8" and a[:2] == b[:2])
+    print("  uint16 page followed by a same-size uint8 page: %d times in %d pages   <- image + mask pairs" % (pairs, len(sig)))
+    comps = sorted({c for (_, _, _, _, c) in sig if c is not None})
+    print("  compression codes: %s%s" % (comps, "   (30817/30818 are Amnis-private, not a public codec)"
+                                          if any(c in (30817, 30818) for c in comps) else ""))
 
 
 def survey_text(path, nbytes=4096):
