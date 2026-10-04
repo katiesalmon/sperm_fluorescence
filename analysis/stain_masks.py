@@ -25,6 +25,18 @@ from make_sheet import load_run  # noqa: E402
 from prepare_generalist import ISX_TGT  # noqa: E402
 
 FRACS = np.array([0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0])
+REL = np.array([0.05, 0.08, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7])
+
+
+def pred_mask(p, rule, valid=None):
+    """Threshold one predicted channel. rule = ("abs", t): fixed value in cache units;
+    ("rel", f): f x the object's own 99.5th percentile, which follows IDEAS in scaling the
+    mask to each cell rather than to the population (a faint halo on a dim sperm head is
+    below 20% of its peak, but above a population-wide cut)."""
+    kind, v = rule
+    thr = v if kind == "abs" else v * max(float(np.percentile(p[valid > 0] if valid is not None else p, 99.5)), 1e-6)
+    m = p > thr
+    return m & (valid > 0) if valid is not None else m
 
 
 def mask_from_image(img, valid, sigma=1.0, k=5.0, rel=0.15, min_px=4, peak_frac=0.0):
@@ -124,10 +136,13 @@ def main():
         rows = [r for r in cal if inst_of[r[0]] == inst]
         for k in range(tr.cout):
             if not any(k in r[5] for r in rows): continue
-            best = max(FRACS, key=lambda f: np.mean([iou(r[4][k] > f * unit[k], r[5][k]) for r in rows if k in r[5]]))
-            thr[(inst, k)] = float(best * unit[k])
-    print("thresholds (fraction of the channel's mean |y|):")
-    for (inst, k), t in sorted(thr.items()): print("  %-4s %-11s %.2f" % (inst, T.NAMES[k], t / unit[k]))
+            rk = [r for r in rows if k in r[5]]
+            cands = [("abs", float(f * unit[k])) for f in FRACS] + [("rel", float(f)) for f in REL]
+            scored = [(np.mean([iou(pred_mask(r[4][k], c, r[3]), r[5][k]) for r in rk]), c) for c in cands]
+            thr[(inst, k)] = max(scored, key=lambda t: t[0])[1]
+    print("thresholds: abs = fraction of the channel's mean |y|, rel = fraction of the object's own peak")
+    for (inst, k), (kind, v) in sorted(thr.items()):
+        print("  %-4s %-11s %s %.2f" % (inst, T.NAMES[k], kind, v / unit[k] if kind == "abs" else v))
 
     # ---- held-out score ----
     pick = [int(i) for c in te_cls for i in rng.choice(np.flatnonzero(te.classes == c), min(a.limit, (te.classes == c).sum()), replace=False)]
@@ -140,14 +155,14 @@ def main():
         for k in range(te.cout):
             rk = [r for r in rows if k in r[5]]
             if not rk: continue
-            pm = [r[4][k] > thr[(inst, k)] for r in rk]; rm = [r[5][k] for r in rk]
+            pm = [pred_mask(r[4][k], thr[(inst, k)], r[3]) for r in rk]; rm = [r[5][k] for r in rk]
             ious = [iou(p, t) for p, t in zip(pm, rm)]; dcs = [dice(p, t) for p, t in zip(pm, rm)]
             det = float(np.mean([(p.any() == t.any()) for p, t in zip(pm, rm)]))
             alt = [iou(r[6][k], r[5][k]) for r in rk if r[6] is not None]
             table[(inst, T.NAMES[k])] = {"n": len(rk), "iou": float(np.mean(ious)), "dice": float(np.mean(dcs)), "detect": det,
-                                         "truth_rule_vs_ideas_iou": float(np.mean(alt)) if alt else None, "threshold": thr[(inst, k)]}
+                                         "truth_rule_vs_ideas_iou": float(np.mean(alt)) if alt else None, "threshold": list(thr[(inst, k)])}
             print("%-4s %-11s %6d %6.3f %6.3f %7.3f   %s" % (inst, T.NAMES[k], len(rk), np.mean(ious), np.mean(dcs), det, ("%.3f" % np.mean(alt)) if alt else ""))
-    json.dump({"thresholds": {"%s:%s" % (i, T.NAMES[k]): t for (i, k), t in thr.items()}, "held_out": {"%s:%s" % k: v for k, v in table.items()}},
+    json.dump({"thresholds": {"%s:%s" % (i, T.NAMES[k]): list(t) for (i, k), t in thr.items()}, "held_out": {"%s:%s" % k: v for k, v in table.items()}},
               open(os.path.join(a.run, "masks.json"), "w"), indent=1)
 
     # ---- sheet: BF with outlines, then per marker the reference and predicted masks ----
@@ -166,10 +181,11 @@ def main():
             c = np.asarray(render.color_for(T.NAMES[k], k), np.float32)
             if k not in refs:
                 panels += [np.zeros(bf.shape, np.float32)] * 2; continue
-            t = refs[k]; q = p[k] > thr[(inst, k)]
+            t = refs[k]; q = pred_mask(p[k], thr[(inst, k)], m)
             lo, hi = 0.0, max(float(np.percentile(y[k][m > 0], 99.5)), 1e-4)
+            # same convention everywhere: white = reference mask, bright colour = predicted mask
             tp = render.colorize(y[k], c, lo, hi) * 0.6; tp[outline(t)] = 1.0
-            pp = render.colorize(np.clip(p[k], 0, None), c, lo, hi) * 0.6; pp[outline(q)] = 1.0; pp[outline(t) & ~outline(q)] = c * 0.5
+            pp = render.colorize(np.clip(p[k], 0, None), c, lo, hi) * 0.6; pp[outline(t)] = 1.0; pp[outline(q)] = np.minimum(c + 0.25, 1.0)
             panels += [tp, pp]
             bf[outline(t)] = 1.0; bf[outline(q)] = c
         panels = [bf] + panels + [render.grey(x[0])]
