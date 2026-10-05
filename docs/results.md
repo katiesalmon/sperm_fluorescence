@@ -23,9 +23,20 @@ masked out of the loss, validation and scoring for that instrument.*
 | A8 scratch | A8 only | 20 | — | 0.66 / 0.34 / 0.78 | 0.19 / 0.22 / 0.45 | 0.83 / 0.55 / 0.90 |
 | ISX only | ISX only | 15 | 0.968 / 0.965 / 0.888 / 0.934 | — | — | — |
 | A8 fine-tune | A8, from the ISX-only checkpoint | 20 | — | 0.65 / 0.34 / 0.78 | 0.13 / 0.20 / 0.39 | 0.23 / 0.55 / 0.89 |
-| joint | both | 15 | *(running)* | | | |
+| joint | both | 15 | 0.957 / 0.953 / 0.906 / 0.858 | 0.10 / 0.34 / −0.03 | −0.05 / 0.20 / −0.16 | 0.58 / 0.49 / 0.79 |
 
-**Fine-tuning from the ISX checkpoint does not help the A8** on this sample: every
+**Joint training hurts the A8 badly at this scale.** The ISX side comes out within a few
+hundredths of the ISX-only run (DAPI even gains, TOMM20 loses 0.08), but on the A8 the
+within-well numbers for LDHC/AKAP4 and ACRV1 collapse to zero and CD45 drops 0.1–0.25.
+The sheet shows why: on A8 sperm the joint model paints ACRV1 along the tail and CD45 on
+the head — ISX anatomy and a round-cell prior carried across instruments. Two one-hot
+planes are not enough to keep the instruments apart when one contributes 9,500 clean
+objects per epoch and the other 480 noisy ones repeated six times; the shared decoder
+settles on the ISX's answer. Pooled event r (0.94 / 0.95 / 0.91 / 0.86 / 0.82) hides all of
+this, because it is earned by telling instruments and cell types apart. The P:S ratio
+makes the same point: LDHC predicted 2.0 against a true 0.72.
+
+**Fine-tuning from the ISX checkpoint does not help the A8** on this sample either: every
 within-well number lands on the scratch run's within noise (the CD45-in-S drop is a
 handful of CD45-positive events in a sperm well, not a trend). With 600 A8 training
 objects and 20 epochs the pretrained features are simply overwritten; whether the
@@ -59,9 +70,28 @@ IDEAS outline.
 
 A8 has no instrument mask, so its reference is the thresholded truth (a rule that scores
 0.62–0.70 against IDEAS on ISX, above). A8 held-out, 600 objects: LDHC/AKAP4 IoU 0.63–0.64,
-CD45 0.61, ACRV1 0.40, for scratch and fine-tuned alike. The predicted masks are cleaner
+CD45 0.61, ACRV1 0.40, for scratch and fine-tuned alike; the joint model drops to 0.50 /
+0.50 / 0.27. On the ISX the joint model's masks are the best of the three (LDHC/AKAP4 0.75,
+DAPI 0.75, ACRV1 0.66, TOMM20 0.59), consistent with its ISX event r. The predicted masks are cleaner
 than the A8 truth masks because the network averages the A8 noise away, which costs IoU
 against a noisy reference even where the shape is right.
+
+### Where this leaves the generalist
+
+One model for both instruments is not free. At laptop scale the options are, in order:
+(1) **per-instrument models**, which is what the A8 scratch run already is, and the
+only configuration where the A8 holds its own; (2) **ISX-pretrain then A8 fine-tune**,
+which cost nothing here but gained nothing either, and deserves one run at full A8 scale
+on the server before it is dismissed; (3) **joint training**, which needs either a
+balanced A8 share (the full 57,000-event A8 set, not 600) or instrument-specific decoder
+heads before it is worth another run. The generalist cache and the availability masking
+are the right scaffolding for all three and are kept.
+
+Two practical notes from running this on a 16 GB laptop. Ragged batches give the caching
+allocator a block per distinct (H, W); with two instruments' worth of shapes the MPS cache
+reached 25 GB and the process stalled in swap. The trainer now returns cached device memory
+after every epoch and every 20 evaluation batches, and evaluates at batch 64. Training
+epochs still peak near 13 GB; the server's 48 GB card will not notice.
 
 ### Why the A8 images are what they are
 
