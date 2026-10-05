@@ -308,6 +308,17 @@ def target_scale(tr, channel_scale):
     return np.where(scale_vec > 0, scale_vec, 1.0).astype(np.float32)
 
 
+def release_device_memory(dev):
+    """Return the caching allocator's free blocks. With ragged batches every distinct
+    (H, W) gets its own cached block, and on MPS, where device memory is the laptop's RAM,
+    the cache grew to 25 GB on a 16 GB machine during the joint run and the process
+    thrashed in swap instead of training."""
+    import gc, torch
+    gc.collect()
+    if dev.type == "mps": torch.mps.empty_cache()
+    elif dev.type == "cuda": torch.cuda.empty_cache()
+
+
 def build_model(width, cin=3, cout=3):
     import torch, torch.nn as nn, torch.nn.functional as F
 
@@ -515,6 +526,7 @@ def train(args):
                 vch += per; vm = vm + cnt
                 vl += (per.sum() / max(cnt.sum(), 1.0)); vn += 1
         vl /= max(vn, 1); vch = vch / np.maximum(np.asarray(vm, dtype=np.float64), 1.0)
+        release_device_memory(dev)
         # Each marker keeps its own best epoch: a shared trunk's best moment differs per
         # marker, and one checkpoint cannot serve all of them.
         for k, nm in enumerate(NAMES):
@@ -522,6 +534,7 @@ def train(args):
                 best_ch[k] = vch[k]; best_ep[k] = ep
                 torch.save(model.state_dict(), os.path.join(args.out, "best_%s.pt" % nm.replace("/", "_")))
         res, _ = evaluate(model, te, wte, scale, dev) if (ep % args.eval_every == 0 or ep == args.epochs) else ({}, None)
+        release_device_memory(dev)
         lw.writerow([ep, tot / nb, vl] + [res[n][k] if res else "" for n in NAMES for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
         line = "epoch %3d  train %.4f  val %.4f" % (ep, tot / nb, vl)
         if res: line += "   test event r: " + "  ".join("%s %s" % (n, "%.3f" % res[n]["event_r"] if res[n]["event_r"] is not None else "n/a") for n in NAMES)
