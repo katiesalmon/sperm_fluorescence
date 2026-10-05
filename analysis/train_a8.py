@@ -379,7 +379,7 @@ def predict(model, x, tta=False):
     return torch.stack(outs).mean(0)
 
 
-def evaluate(model, ds, wells, scale, dev, bs=256, idx=None, tta=False):
+def evaluate(model, ds, wells, scale, dev, bs=64, idx=None, tta=False):
     """Score on `idx` (default: everything); `wells` is already that subset's wells. Native
     size on a ragged cache: predictions are made per object, pixel r pooled over valid
     pixels, event r over per-object sums. Returns (res, preds) with preds[i] = (C, h, w)."""
@@ -389,14 +389,18 @@ def evaluate(model, ds, wells, scale, dev, bs=256, idx=None, tta=False):
     preds = [None] * len(idx); trues = [None] * len(idx); masks = [None] * len(idx)
     pos = {int(j): q for q, j in enumerate(idx)}
     with torch.no_grad():
-        for b in make_batches(ds, idx, bs):
+        for nb, b in enumerate(make_batches(ds, idx, bs)):
             x, y, m = ds.batch(b)
             p = (predict(model, x.to(dev), tta).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
+            # Every shape bucket is a new allocation size; the allocator cached them all
+            # (22 GB during one evaluation of 10,600 ragged objects on MPS). Hand them back.
+            if nb % 20 == 19: release_device_memory(dev)
             H, W = p.shape[-2:]
             for q, j in enumerate(b):
                 # crop back to the object's own size: a batch is padded to its largest member
                 h, w = ds.shape(int(j)); t, l = (H - h) // 2, (W - w) // 2
                 preds[pos[int(j)]] = p[q][:, t:t + h, l:l + w]; trues[pos[int(j)]] = y[q][:, t:t + h, l:l + w]; masks[pos[int(j)]] = m[q][t:t + h, l:l + w]
+    release_device_memory(dev)
     res = {}
     av = _avail_of(ds, idx).numpy() > 0
     for k, n in enumerate(NAMES):
