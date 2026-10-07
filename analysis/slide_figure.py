@@ -40,7 +40,7 @@ def window(x, y, m, p, size):
     return x[:, t:t + sh, l:l + sw], y[:, t:t + sh, l:l + sw], m[t:t + sh, l:l + sw], p[:, t:t + sh, l:l + sw]
 
 
-def pick(ds, wells, P, idx, n, want_well=None):
+def pick(ds, wells, P, idx, n, want_well=None, population="any"):
     """Indices into `idx` of the best candidates by the rule in the module docstring."""
     av = ds.avail if ds.avail is not None else np.ones((len(ds), ds.cout), bool)
     ev = np.full((len(idx), ds.cout), np.nan); r = np.full((len(idx), ds.cout), np.nan)
@@ -53,6 +53,14 @@ def pick(ds, wells, P, idx, n, want_well=None):
             r[q, k] = np.corrcoef(a, b)[0, 1] if a.std() > 0 and b.std() > 0 else 0.0
     ok = np.ones(len(idx), bool)
     if want_well is not None: ok &= wells == want_well
+    if population != "any":
+        # ISX only: the DAPI scalar splits the tube into DAPI-low fragments (~38%), sperm,
+        # and a DAPI-bright round population (4-6%, > 4x the sperm median; likely immature
+        # germ cells). See results.md.
+        d = np.asarray(ds.scalars).reshape(len(ds.scalars), -1)[idx, 0]; sperm_med = np.nanmedian(d[d > np.nanpercentile(d, 45)])
+        if population == "round": ok &= d > 4 * sperm_med
+        elif population == "sperm": ok &= (d > 0.25 * sperm_med) & (d < 4 * sperm_med)
+        elif population == "dim": ok &= d < 0.25 * sperm_med
     # the stained object must sit inside the frame: a truth that runs off the edge makes a
     # confusing slide (a tail cut at the border looks like a prediction error)
     for q, i in enumerate(idx):
@@ -120,6 +128,7 @@ def main():
     ap.add_argument("--um-per-px", type=float, default=0.0); ap.add_argument("--approx-scale", action="store_true")
     ap.add_argument("--well", default=None, help="restrict candidates to one well type (e.g. S)")
     ap.add_argument("--crop", type=int, default=0, help="show a square window of this many px around the cell")
+    ap.add_argument("--population", default="any", choices=["any", "sperm", "round", "dim"], help="ISX: pick by the DAPI scalar")
     ap.add_argument("--sample", type=int, default=600); ap.add_argument("--n", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -127,7 +136,7 @@ def main():
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
     _, P = T.evaluate(model, te, wte[idx], scale, dev, idx=idx)
-    best, r = pick(te, wte[idx], P, idx, a.n, a.well)
+    best, r = pick(te, wte[idx], P, idx, a.n, a.well, a.population)
     os.makedirs(a.out, exist_ok=True)
     avail_k = te.avail[idx[best[0]]] if te.avail is not None else np.ones(te.cout, bool)
     objs, rs = [], []

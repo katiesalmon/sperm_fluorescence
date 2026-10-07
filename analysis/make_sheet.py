@@ -23,7 +23,7 @@ def load_run(run, cache, test, include=None, checkpoint="best.pt"):
     classes = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(cache, "*_x.npy"))})
     if include: classes = [c for c in classes if c in include.split(",")]
     te_cls = [c for c in classes if c[0] in test]
-    te, wte, _ = T.open_cache(cache, te_cls)
+    te, wte, scal = T.open_cache(cache, te_cls); te.scalars = scal   # ISX: DAPI intensity; NaN on the A8
     dev = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
     model = T.build_model(res.get("width", 32), te.cin, te.cout).to(dev)
     model.load_state_dict(torch.load(os.path.join(run, checkpoint), map_location=dev)); model.eval()
