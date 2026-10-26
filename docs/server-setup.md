@@ -125,9 +125,11 @@ Defaults: width 64, A8 40 epochs, ISX 30 epochs, batch 32, role dropout 0.3, che
 selected on validation event r, TTA at evaluation. On the A6000 expect roughly 2 hours for
 the A8 and 1 hour for the ISX.
 
-What to copy back to the laptop (small): `runs\srv_a8_stems\*.json`, `runs\srv_a8_stems\*.png`,
-the same for `runs\srv_isx_stems`, and `figures\srv_*`. Checkpoints (`*.pt`) and caches stay
-on the server; the laptop can redraw anything from the JSON and PNGs.
+At the end the script zips everything worth carrying back into `server_results_<timestamp>.zip`
+in the repo folder: the JSON, PNG, CSV and log files of both runs, `figures\srv_*`, the commit
+hash and the torch/CUDA versions. A few tens of MB. Copy that one file to the laptop and unzip
+it in the repo folder (`unzip -o server_results_*.zip`). Checkpoints (`*.pt`) and caches stay on
+the server.
 
 ## If pip cannot reach the internet
 
