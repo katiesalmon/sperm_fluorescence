@@ -6,7 +6,7 @@
   sheet                redraw a run's IDEAS-style sheet             masks           stain masks, scored against IDEAS / thresholded truth
   slides               presentation panels for one object          accuracy        scatter, event-r bars, mask IoU bars
   subset               re-score a run on DAPI-defined subsets       ablate          score a stems model under role subsets
-  predict-cytpix       run an ISX model on CytPix crops
+  views                inputs beside outputs, per input subset     predict-cytpix  run an ISX model on CytPix crops
   spectral             plot a spectral_export.py JSON
 
 Every command takes --help.
@@ -25,6 +25,7 @@ COMMANDS = {
     "accuracy": ("sperm_fluorescence.eval.accuracy", "main"),
     "subset": ("sperm_fluorescence.eval.subset", "main"),
     "ablate": ("sperm_fluorescence.eval.ablate", "main"),
+    "views": ("sperm_fluorescence.eval.views", "main"),
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
