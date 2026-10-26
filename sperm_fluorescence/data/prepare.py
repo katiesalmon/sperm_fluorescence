@@ -70,7 +70,68 @@ def isx_records(cfg, source, daf, limit=0):
         yield cls, items
 
 
-READERS = {"a8_bundle": a8_records, "isx_cif": isx_records}
+def a8_run_records(cfg, source, limit=0):
+    """Yield (cls, items) for a full A8 run folder on the server: <stem>.fcs beside
+    <stem>_images/**/*_<row>.tiff per sample. Spillover is estimated from a deterministic
+    draw of the S and P wells (io.a8.spillover) and the scan-line streak removed
+    (prepare_a8.destreak), as the fixed-frame server runs did. If a sample has no .fcs the
+    images are still read (rows from the filenames; no FCS scalars)."""
+    import glob
+    from ..io.fcs import fcs_data, fcs_probe
+    from .prepare_a8 import CLASS_RE, INDEX_RE, destreak
+    skip = set(cfg["classes"].get("skip", [])); zoom = float(cfg.get("zoom_to_reference", 1.0))
+    roles = cfg["roles"]; stains = cfg["stains"]
+    samples = {}
+    for d in sorted(glob.glob(os.path.join(source, "*_images"))):
+        stem = os.path.basename(d)[:-len("_images")]; m = CLASS_RE.search(stem)
+        if m and m.group("cls").upper() not in skip: samples[m.group("cls").upper()] = stem
+    if not samples: raise SystemExit("no <sample>_images folders under %s" % source)
+
+    class _Mini:
+        def __init__(self): self.imgs = {}
+        def image(self, c, r): return a8_io.read_stack(open(self.imgs[c][r], "rb").read())[0]
+        def events(self, classes):
+            good = []
+            for c in classes:
+                for r, path in list(self.imgs.get(c, {}).items()):
+                    try: a8_io.read_stack(open(path, "rb").read())
+                    except Exception: del self.imgs[c][r]; continue
+                    good.append((c, r))
+            return good
+    mini = _Mini()
+    for cls in ("2S", "3S", "2P", "3P"):
+        if cls not in samples: continue
+        paths = sorted(glob.glob(os.path.join(source, samples[cls] + "_images", "**", "*.tif*"), recursive=True))
+        paths = paths[::max(1, len(paths) // 200)]
+        mini.imgs[cls] = {int(INDEX_RE.search(os.path.basename(p)).group("idx")): p for p in paths}
+    M, fits = a8_io.spillover(mini)
+    print("spillover:", {k: round(v[0], 3) for k, v in fits.items()})
+    for cls, stem in samples.items():
+        paths = {}
+        for p in glob.iglob(os.path.join(source, stem + "_images", "**", "*.tif*"), recursive=True):
+            paths[int(INDEX_RE.search(os.path.basename(p)).group("idx"))] = p
+        fcs_path = os.path.join(source, stem + ".fcs"); n_fcs = None
+        if os.path.exists(fcs_path):
+            raw = open(fcs_path, "rb").read(); kw = fcs_probe.read_text_segment(raw[: 1024 * 1024]); _, _, n_fcs = fcs_data.read_matrix(raw, kw)
+        rows = sorted(r for r in paths if n_fcs is None or r < n_fcs)
+        if limit: rows = rows[:limit]
+        items = []; bad = 0; t0 = time.time()
+        for r in rows:
+            try:
+                st, _ = a8_io.read_stack(open(paths[r], "rb").read())
+                st = destreak(a8_io.unmix(st, M))
+            except Exception:
+                bad += 1; continue
+            if zoom != 1.0: st = ndi.zoom(st, (1, zoom, zoom), order=1).astype(np.float32)
+            x = standardise(np.stack([st[p] for p in roles.values()]))
+            y = np.stack([st[p] for p in stains.values()]).astype(np.float32)
+            items.append((x, y, np.nan))
+            if len(items) % 5000 == 0: print("  %s %d / %d  (%.0fs)" % (cls, len(items), len(rows), time.time() - t0))
+        if bad: print("  %s: skipped %d unreadable file(s)" % (cls, bad))
+        yield cls, items
+
+
+READERS = {"a8_bundle": a8_records, "a8_run": a8_run_records, "isx_cif": isx_records}
 
 
 def main(argv=None):
@@ -79,6 +140,7 @@ def main(argv=None):
     ap.add_argument("--source", action="append", required=True, help="one per --instrument: bundle zip, .cif, ...")
     ap.add_argument("--daf", action="append", default=[], help="ImageStream .daf (features), one per isx instrument")
     ap.add_argument("--cache", required=True); ap.add_argument("--limit", type=int, default=0, help="events per class (0 = all)")
+    ap.add_argument("--reader", default=None, help="override the config's reader, e.g. a8_run for a full run folder on the server")
     a = ap.parse_args(argv)
     if len(a.source) != len(a.instrument): ap.error("one --source per --instrument")
     cfgs = [registry.instrument(n) for n in a.instrument]
@@ -93,10 +155,10 @@ def main(argv=None):
         present = [r in cfg["roles"] for r in roles]; avail = [m in cfg["stains"] for m in markers]
         rk = [list(cfg["roles"]).index(r) if r in cfg["roles"] else None for r in roles]
         mk = [list(cfg["stains"]).index(m) if m in cfg["stains"] else None for m in markers]
-        reader = READERS[cfg["reader"]]
-        gen = reader(cfg, src, dafs.pop(0) if cfg["reader"] == "isx_cif" and dafs else None, a.limit) if cfg["reader"] == "isx_cif" else reader(cfg, src, a.limit)
-        raw = {}
-        for cls, items in gen:
+        rname = a.reader or cfg["reader"]; reader = READERS[rname]
+        def run_reader(limit):
+            return reader(cfg, src, dafs[0] if rname == "isx_cif" and dafs else None, limit) if rname == "isx_cif" else reader(cfg, src, limit)
+        def widen(items):
             full = []
             for x, y, s in items:
                 X = np.zeros((len(roles),) + x.shape[1:], np.float32); Y = np.zeros((len(markers),) + y.shape[1:], np.float32)
@@ -105,17 +167,20 @@ def main(argv=None):
                 for j, k in enumerate(mk):
                     if k is not None: Y[j] = y[k]
                 full.append((X, Y, s))
-            raw[cls] = full
-            print("%s %s: %d objects" % (inst, cls, len(full)))
-        # per-instrument, per-marker scale to unit mean |y| from the training-digit classes (fallback: all)
-        tr = [c for c in raw if c[0] == "2"] or list(raw)
+            return full
+        # pass 1: the per-marker scale (unit mean |y|) from a short draw of the training-digit classes
+        draw = {cls: widen(items) for cls, items in run_reader(300)}
+        tr = [c for c in draw if c[0] == "2"] or list(draw)
         scale = np.ones(len(markers), np.float32)
         for j in range(len(markers)):
             if avail[j]:
-                vals = np.concatenate([np.abs(y[j]).ravel()[::7] for c in tr for _, y, _ in raw[c][:300]])
+                vals = np.concatenate([np.abs(y[j]).ravel()[::7] for c in tr for _, y, _ in draw[c]])
                 scale[j] = max(float(vals.mean()), 1e-6)
-        meta["scales"][inst] = scale.tolist()
-        for cls, full in raw.items():
+        meta["scales"][inst] = scale.tolist(); del draw
+        # pass 2: stream, one class in memory at a time
+        for cls, items in run_reader(a.limit):
+            full = widen(items); del items
+            print("%s %s: %d objects" % (inst, cls, len(full)))
             out = []
             for X, Y, _ in full:
                 fx, m = to_multiple(X); fy, _ = to_multiple(Y / scale[:, None, None]); out.append((fx, fy, m))
@@ -126,6 +191,8 @@ def main(argv=None):
             np.save(os.path.join(a.cache, cls + "_scalars.npy"), np.array([s for _, _, s in full], np.float32)[:, None])
             meta["classes"][cls] = {"instrument": inst, "family": cfg.get("family"), "avail": avail, "present": present, "repeat": int(cfg["classes"].get("repeat", 1))}
             print("wrote %s: %d objects, roles %s, markers %s" % (cls, len(out), [r for r, p in zip(roles, present) if p], [m for m, v in zip(markers, avail) if v]))
+            del full, out
+        if rname == "isx_cif" and dafs: dafs.pop(0)
     json.dump(meta, open(os.path.join(a.cache, "meta.json"), "w"), indent=1)
     print("cache %s: roles %s, markers %s" % (a.cache, roles, markers))
     return 0

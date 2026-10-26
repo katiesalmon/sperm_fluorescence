@@ -95,6 +95,40 @@ Then `analysis/train_a8.py prepare` once (reads every image off the share, write
 ~16 GB cache to a **local** disk — not `Z:` — so training never touches the network),
 and `train` per fold. Both are documented in the script's header.
 
+## The stems models at full scale (`scripts\server_stems.ps1`)
+
+One script runs the whole chain for both instruments: cache from the run folder / the
+`.cif`, train the modular (stems, role-dropout) model, then `ablate`, `views`, `sheet`,
+`masks`, `accuracy` and `slides`. Once, after the torch install above:
+
+```powershell
+.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+```powershell
+.venv\Scripts\python -c "import torch, skimage, tifffile, matplotlib; import tomllib" 2>$null; if ($LASTEXITCODE) { .venv\Scripts\python -m pip install tomli }
+```
+
+A short smoke run first (2,000 events per class, ~20 minutes), then the full one:
+
+```powershell
+.\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" -IsxCif "Z:\<isx-folder>\ALL_1_400_1.cif" -IsxDaf "Z:\<isx-folder>\ALL_1_400_1.daf" -Cache D:\sf_cache -Limit 2000 -A8Epochs 5 -IsxEpochs 5
+```
+
+```powershell
+.\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" -IsxCif "Z:\<isx-folder>\ALL_1_400_1.cif" -IsxDaf "Z:\<isx-folder>\ALL_1_400_1.daf" -Cache D:\sf_cache
+```
+
+`-Cache` must be a local disk: the A8 cache is ~20 GB (every event at native size, 1.25x
+resampled) and training reads it continuously. `-SkipPrepare` reuses caches already there.
+Defaults: width 64, A8 40 epochs, ISX 30 epochs, batch 32, role dropout 0.3, checkpoint
+selected on validation event r, TTA at evaluation. On the A6000 expect roughly 2 hours for
+the A8 and 1 hour for the ISX.
+
+What to copy back to the laptop (small): `runs\srv_a8_stems\*.json`, `runs\srv_a8_stems\*.png`,
+the same for `runs\srv_isx_stems`, and `figures\srv_*`. Checkpoints (`*.pt`) and caches stay
+on the server; the laptop can redraw anything from the JSON and PNGs.
+
 ## If pip cannot reach the internet
 
 Institutional servers often block it. Two ways round:
