@@ -6,6 +6,42 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Baseline: the plain fixed-channel U-Net against the role stems, 10 epochs, both instruments
+
+*2026-10-26 · `--arch stack` (the architecture of every earlier run) vs `--arch stems` with all
+views and no dropout, same caches, splits, seed and 10-epoch budget. A8: the laptop bundle
+(600 / 600). ISX: 4,000 / 4,000 objects of the one tube (`data/isx_roles`, first/second
+half). Both ISX runs are under-trained at this budget (TOMM20 ~0.2 where 15 epochs on
+9,500 objects reached 0.93), so the comparison is between equals, not against the best.*
+
+Within-population event r (A8: sperm / mixed well; ISX: sperm by the DAPI scalar):
+
+| | LDHC/AKAP4 | ACRV1 | CD45 | DAPI | TOMM20 |
+|---|---|---|---|---|---|
+| A8 stack | 0.69 / 0.69 | 0.18 / 0.45 | 0.80 / 0.88 | — | — |
+| A8 stems | 0.66 / 0.64 | 0.04 / 0.46 | 0.75 / 0.88 | — | — |
+| ISX stack | 0.87 | 0.69 | — | 0.63 | 0.26 |
+| ISX stems | 0.84 | 0.64 | — | 0.56 | 0.14 |
+
+**The stems trail the plain stack at 10 epochs**, by 0.03 to 0.05 on most cells and by 0.07
+on ISX DAPI and 0.12 on ISX TOMM20. At 20 epochs on the A8 the gap had closed (stems with
+all views 0.68 / 0.44 / 0.88 vs the stack's 0.66 / 0.45 / 0.90 within-well numbers from the
+generalist scratch run), so this reads as slower convergence rather than a lower ceiling:
+the stems add a layer per role and average the result, and the trunk sees a mean of three
+feature maps instead of the three raw pages, which takes longer to disentangle. Where the
+training budget is short, the plain stack is the stronger baseline; where it is adequate,
+the two are equivalent and only the stems can serve a subset of views.
+
+**ImageStream input ablation at 12 epochs (provisional, under-trained).** Brightfield alone
+carries LDHC/AKAP4 within sperm (0.85 of a 0.87 best) because camera brightfield shows the
+tail; the second camera adds ~0.14 to ACRV1 and DAPI; darkfield adds nothing and alone
+reaches 0.68 on LDHC/AKAP4. The ISX's side-scatter image is a blurred blob, the opposite of
+the A8 where SSC is the sharpest view. Figures: `figures/ablation_views_isx.png`,
+`figures/views_isx_dropout.png`. A 30-epoch rerun was started and stopped at the user's
+request; these numbers stand until a converged rerun replaces them.
+
+---
+
 ## Input ablation on the A8: what each label-free view is worth, and one modular model for all of them
 
 *2026-10-26 · `python -m sperm_fluorescence train --arch stems`, `ablate`. Laptop, A8 sample
