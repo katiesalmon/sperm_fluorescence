@@ -60,6 +60,7 @@ Full detail, including the guards worth knowing about, is in
 | `docs/results.md` | **Measured results**, newest first |
 | `docs/paths.md` | Three costed paths forward, and which to run first |
 | `docs/framework.md` | Design sketch for per-marker stain predictors, and the contract they share |
+| `docs/plan_modular.md` | **Proposal**: per-marker models with modular label-free inputs, and the package restructure to get there |
 | `docs/sampling.md` | How to survey the archives and cut a working subset |
 | `docs/server-setup.md` | What has to be installed where (for sampling: nothing) |
 | `scripts/survey_tree.py` | Summarise an unfamiliar directory tree: files per kind per folder, sizes, names, TIFF headers |
