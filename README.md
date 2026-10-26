@@ -51,6 +51,20 @@ python3 scripts/make_bundle.py --verify bundle_seed0.zip
 Full detail, including the guards worth knowing about, is in
 [docs/sampling.md](docs/sampling.md).
 
+Train and evaluate on the laptop (or the server GPU) with the package:
+
+```bash
+.venv/bin/python -m stainless prepare --instrument a8 --source data/a8_bundle_seed0.zip --cache data/a8_roles
+```
+
+```bash
+.venv/bin/python -m stainless train --cache data/a8_roles --train 2 --test 3 --epochs 20 --width 32 --channel-scale --full-frame --aug 1 --arch stems --role-dropout 0.3 --out runs/a8_stems
+```
+
+```bash
+.venv/bin/python -m stainless ablate runs/a8_stems --cache data/a8_roles --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc"
+```
+
 ## Layout
 
 | Path | What it is |
@@ -60,7 +74,8 @@ Full detail, including the guards worth knowing about, is in
 | `docs/results.md` | **Measured results**, newest first |
 | `docs/paths.md` | Three costed paths forward, and which to run first |
 | `docs/framework.md` | Design sketch for per-marker stain predictors, and the contract they share |
-| `docs/plan_modular.md` | **Proposal**: per-marker models with modular label-free inputs, and the package restructure to get there |
+| `docs/plan_modular.md` | The plan: per-marker models with modular label-free inputs, and the package restructure |
+| `docs/ARCHITECTURE.md` | **Map of the `stainless` package**: commands, modules, roles and markers, how to add things |
 | `docs/sampling.md` | How to survey the archives and cut a working subset |
 | `docs/server-setup.md` | What has to be installed where (for sampling: nothing) |
 | `scripts/survey_tree.py` | Summarise an unfamiliar directory tree: files per kind per folder, sizes, names, TIFF headers |
@@ -72,16 +87,11 @@ Full detail, including the guards worth knowing about, is in
 | `scripts/fcs_data.py` | FCS DATA segment: the event matrix |
 | `scripts/tiff_probe.py` | TIFF headers — pages, dtype, channels — without decoding pixels |
 | `scripts/cytpix.py` | Shared helpers: class tokens, archive opening, sizes |
-| `analysis/explore_targets.py` | Which tubes were stained, spillover, replicate disagreement |
-| `analysis/feature_baseline.py` | Predict each marker from the instrument's morphology columns |
-| `analysis/pilot_unet.py` | Pilot U-Net, three label-free pages → three unmixed stain pages, held out by replicate |
-| `analysis/pilot_floor.py` | The per-pixel linear floor the pilot has to clear |
-| `analysis/prepare_isx.py` | Cache an ImageStream `.cif` for `train_a8.py` |
-| `analysis/eval_subset.py` | Re-score a run within nucleated sperm vs DAPI-low fragments |
-| `analysis/isx_daf.py` | Read IDEAS's per-object features from a `.daf` — used to validate the decode at r ≈ 1.000 |
-| `analysis/isx_io.py` | Decode Amnis ImageStream `.cif`/`.rif` directly: 12-channel images and masks, no IDEAS needed |
-| `analysis/a8_io.py` | Load A8 six-page stacks and targets from a bundle; constrained imaging spillover + per-pixel unmix |
-| `analysis/explore_masks.py` | Render events with the instrument's segmentation drawn on |
+| `stainless/` | **The package.** `python -m stainless <command>`: prepare caches, train, sheets, masks, slides, accuracy, ablate. Map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| `configs/instruments/` | One TOML per instrument: label-free roles and stain pages (A8/S8, ImageStream, CytPix) |
+| `configs/markers/` | One TOML per marker: name, colour, localisation, selection population |
+| `tests/` | Synthetic-event tests for the cache, role selection, stems and native-size evaluation |
+| `analysis/archive/` | The exploration scripts that led here (targets, masks, feature baseline, pilots) |
 | `data/` | Archives, bundles, unpacked samples — **gitignored** |
 
 Nothing under `data/` is ever committed.
@@ -91,7 +101,7 @@ Nothing under `data/` is ever committed.
 - **Everything under `scripts/` is standard library Python 3.8+**, so it runs on the
   imaging server with no install. Keep it that way — that constraint is why the survey and
   the sampler can be run by whoever has access to the data rather than whoever has admin
-  rights. `analysis/` is where numpy and friends are allowed.
+  rights. `stainless/` is where numpy, torch and friends are allowed.
 - **Replicate is the held-out axis.** Train on 2, test on 3. Random event-level splits
   share an acquisition's gain, focus and noise floor; on LDHC that difference is 0.66
   against 0.38.
