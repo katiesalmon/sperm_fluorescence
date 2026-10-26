@@ -1,7 +1,7 @@
 """Stain masks from a trained model: threshold each predicted channel into a binary mask
 and score it against a reference mask, the way IDEAS draws a per-channel mask.
 
-    python analysis/stain_masks.py runs/gen_joint --cache data/gen_cache --test 3 --isx data/isx/ALL_1_400_1.cif
+    python -m stainless masks runs/gen_joint --cache data/gen_cache --test 3 --isx data/isx/ALL_1_400_1.cif
 
 Reference mask per object and channel:
   ISX  the IDEAS mask stored in the .cif for that channel (M02, M03, M07, M11).
@@ -12,17 +12,17 @@ Predicted mask: the prediction thresholded at one value per channel and instrume
 on a sample of training objects to maximise mean IoU against the reference. Reports IoU,
 Dice and detection agreement on the held-out set, and draws an outline sheet.
 """
-import argparse, json, os, sys
+import argparse, json, os
 
 import numpy as np
 from scipy import ndimage as ndi
 
-sys.path.insert(0, os.path.dirname(__file__))
-import train_a8 as T  # noqa: E402
-import render  # noqa: E402
-import isx_io  # noqa: E402
-from make_sheet import load_run  # noqa: E402
-from prepare_generalist import ISX_TGT  # noqa: E402
+from ..data.cache import open_cache
+from ..data.prepare_generalist import ISX_TGT
+from ..io import isx as isx_io
+from . import render
+from .load import load_run
+from .metrics import evaluate
 
 FRACS = np.array([0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0])
 REL = np.array([0.05, 0.08, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7])
@@ -87,16 +87,16 @@ def outline(m):
     return m & ~ndi.binary_erosion(m)
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="stainless masks")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--isx", default=None, help=".cif the ISX classes were cut from, for the IDEAS masks")
     ap.add_argument("--limit", type=int, default=600, help="held-out objects per class to score")
     ap.add_argument("--calib", type=int, default=200, help="training objects per class to pick thresholds on")
     ap.add_argument("--per-well", type=int, default=3); ap.add_argument("--seed", type=int, default=0)
-    a = ap.parse_args()
-    model, dev, scale, te, wte, te_cls, res = load_run(a.run, a.cache, a.test, a.include, a.checkpoint)
+    a = ap.parse_args(argv)
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); model, dev, scale, te, wte, te_cls, res, names = R.model, R.dev, R.scale, R.te, R.wte, R.te_cls, R.res, R.names
     meta = json.load(open(os.path.join(a.cache, "meta.json")))
     inst_of = {c: v["instrument"] for c, v in meta["classes"].items()}
     cif = isx_io.CIF(a.isx) if a.isx else None
@@ -116,7 +116,7 @@ def main():
 
     def collect(ds, wells, pick):
         """Predictions and per-channel reference masks for the objects `pick`."""
-        _, P = T.evaluate(model, ds, wells, scale, dev, idx=np.array(pick))
+        _, P = evaluate(model, ds, wells, scale, dev, names, idx=np.array(pick))
         out = []
         for j, i in enumerate(pick):
             x, y, m = ds.item(i); cls = str(ds.classes[i]); av = ds.avail[i] if ds.avail is not None else np.ones(ds.cout, bool)
@@ -127,7 +127,7 @@ def main():
 
     # ---- thresholds, from training objects ----
     tr_cls = [c for c in res["train"]]
-    tr, wtr, _ = T.open_cache(a.cache, tr_cls)
+    tr, wtr, _ = open_cache(a.cache, tr_cls)
     pick = [int(i) for c in tr_cls for i in rng.choice(np.flatnonzero(tr.classes == c), min(a.calib, (tr.classes == c).sum()), replace=False)]
     cal = collect(tr, wtr[pick], pick)
     unit = scale.view(-1).numpy() / 10.0             # the channel's mean |y| in cache units
@@ -142,7 +142,7 @@ def main():
             thr[(inst, k)] = max(scored, key=lambda t: t[0])[1]
     print("thresholds: abs = fraction of the channel's mean |y|, rel = fraction of the object's own peak")
     for (inst, k), (kind, v) in sorted(thr.items()):
-        print("  %-4s %-11s %s %.2f" % (inst, T.NAMES[k], kind, v / unit[k] if kind == "abs" else v))
+        print("  %-4s %-11s %s %.2f" % (inst, names[k], kind, v / unit[k] if kind == "abs" else v))
 
     # ---- held-out score ----
     pick = [int(i) for c in te_cls for i in rng.choice(np.flatnonzero(te.classes == c), min(a.limit, (te.classes == c).sum()), replace=False)]
@@ -159,10 +159,10 @@ def main():
             ious = [iou(p, t) for p, t in zip(pm, rm)]; dcs = [dice(p, t) for p, t in zip(pm, rm)]
             det = float(np.mean([(p.any() == t.any()) for p, t in zip(pm, rm)]))
             alt = [iou(r[6][k], r[5][k]) for r in rk if r[6] is not None]
-            table[(inst, T.NAMES[k])] = {"n": len(rk), "iou": float(np.mean(ious)), "dice": float(np.mean(dcs)), "detect": det,
+            table[(inst, names[k])] = {"n": len(rk), "iou": float(np.mean(ious)), "dice": float(np.mean(dcs)), "detect": det,
                                          "truth_rule_vs_ideas_iou": float(np.mean(alt)) if alt else None, "threshold": list(thr[(inst, k)])}
-            print("%-4s %-11s %6d %6.3f %6.3f %7.3f   %s" % (inst, T.NAMES[k], len(rk), np.mean(ious), np.mean(dcs), det, ("%.3f" % np.mean(alt)) if alt else ""))
-    json.dump({"thresholds": {"%s:%s" % (i, T.NAMES[k]): list(t) for (i, k), t in thr.items()}, "held_out": {"%s:%s" % k: v for k, v in table.items()}},
+            print("%-4s %-11s %6d %6.3f %6.3f %7.3f   %s" % (inst, names[k], len(rk), np.mean(ious), np.mean(dcs), det, ("%.3f" % np.mean(alt)) if alt else ""))
+    json.dump({"thresholds": {"%s:%s" % (i, names[k]): list(t) for (i, k), t in thr.items()}, "held_out": {"%s:%s" % k: v for k, v in table.items()}},
               open(os.path.join(a.run, "masks.json"), "w"), indent=1)
 
     # ---- sheet: BF with outlines, then per marker the reference and predicted masks ----
@@ -178,7 +178,7 @@ def main():
         inst = inst_of[cls]; bf = render.grey(x[0]).copy()
         panels = []
         for k in shown_k:
-            c = np.asarray(render.color_for(T.NAMES[k], k), np.float32)
+            c = np.asarray(render.color_for(names[k], k), np.float32)
             if k not in refs:
                 panels += [np.zeros(bf.shape, np.float32)] * 2; continue
             t = refs[k]; q = pred_mask(p[k], thr[(inst, k)], m)
@@ -193,7 +193,7 @@ def main():
             ax.imshow(img, interpolation="nearest"); ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values(): sp.set_edgecolor("#444")
             if i == 0:
-                heads = ["BF + outlines"] + [h % T.NAMES[k] for k in shown_k for h in ("%s mask", "%s mask pred")] + ["BF"]
+                heads = ["BF + outlines"] + [h % names[k] for k in shown_k for h in ("%s mask", "%s mask pred")] + ["BF"]
                 ax.set_title(heads[c_], fontsize=7, color="white")
         axes[i, 0].set_ylabel("%s (%s)" % (cls.lstrip("123"), inst), fontsize=7, color="white")
     fig.suptitle("%s: stain masks. white = reference (IDEAS on ISX, thresholded truth on A8), colour = predicted" % os.path.basename(a.run.rstrip("/")),

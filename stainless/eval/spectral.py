@@ -1,6 +1,6 @@
 """Plot the raw spectral detector signal exported by scripts/spectral_export.py.
 
-    python analysis/spectral_plot.py spectral.json --out figures/spectral
+    python -m stainless spectral spectral.json --out figures/spectral
 
 signature.png  one line per FCS file: median per detector with the p10-p90 band, detectors
                grouped by laser in wavelength order, asinh y axis.
@@ -27,10 +27,10 @@ def well_of(fname):
     return (m.group(1), m.group(2)) if m else ("?", "?")
 
 
-def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("json"); ap.add_argument("--out", required=True)
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="stainless spectral"); ap.add_argument("json"); ap.add_argument("--out", required=True)
     ap.add_argument("--title", default="A8 spectral detectors")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     data = json.load(open(a.json)); os.makedirs(a.out, exist_ok=True)
     files = sorted(data, key=lambda f: (well_of(f)[1], well_of(f)[0]))

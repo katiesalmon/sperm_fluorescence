@@ -14,7 +14,7 @@ against; the output is a sheet, predictions only, on the ISX display ranges.
 
 Example
 -------
-  .venv/bin/python analysis/predict_cytpix.py runs/isx_pilot --cache data/isx_cache --sample <dir with 1S/ 1P/ 1SP/> --n 6
+  .venv/bin/python python -m stainless predict-cytpix runs/isx_pilot --cache data/isx_cache --sample <dir with 1S/ 1P/ 1SP/> --n 6
 """
 
 import argparse
@@ -28,20 +28,20 @@ import torch
 from PIL import Image
 from scipy import ndimage as ndi
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import render  # noqa: E402
-import train_a8 as T  # noqa: E402
+from .data.cache import open_cache
+from .eval import render
+from .models.unet import build_model
+from .train.losses import target_scale
 
 
 def load_model(run, cache, dev):
     res = json.load(open(os.path.join(run, "results.json")))
     meta = json.load(open(os.path.join(cache, "meta.json")))
     names = [res["target"]] if res.get("target") else meta["target_names"]
-    T.NAMES = names
-    tr, _, _ = T.open_cache(cache, res["train"])
+    tr, _, _ = open_cache(cache, res["train"])
     ysample = tr.sample_targets(200)
-    scale_vec = np.abs(ysample).mean(axis=(0, 2, 3)) * 10 if res.get("channel_scale") else np.full(ysample.shape[1], np.abs(ysample).mean() * 10, np.float32)
-    model = T.build_model(res["width"], tr.cin, tr.cout).to(dev)
+    scale_vec = np.array(res["scale"], np.float32) if res.get("scale") else target_scale(tr, res.get("channel_scale"))
+    model = build_model(res["width"], tr.cin, tr.cout).to(dev)
     model.load_state_dict(torch.load(os.path.join(run, "best.pt"), map_location=dev)); model.eval()
     # display ranges from real ISX truth, so a dim prediction reads as dim
     ranges = render.ranges([np.asarray(ysample[0, :, :, 0])[:, :, None]], None)

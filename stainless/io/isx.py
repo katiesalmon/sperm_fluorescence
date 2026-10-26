@@ -25,7 +25,8 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+from .. import SCRIPTS  # noqa: E402
+if SCRIPTS not in sys.path: sys.path.insert(0, SCRIPTS)
 import tiff_probe  # noqa: E402
 
 GREYSCALE, BITMASK = 30817, 30818

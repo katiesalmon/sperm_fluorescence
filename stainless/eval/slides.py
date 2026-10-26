@@ -1,9 +1,9 @@
 """Presentation figures: one object, its label-free input, and for every marker the true
 stain beside the prediction, with the all-channel overlay at the end.
 
-    python analysis/slide_figure.py runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
+    python -m stainless slides runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
         --title "ImageStream (60x)" --input-name "Brightfield" --um-per-px 0.333 --out figures/isx
-    python analysis/slide_figure.py runs/gen_a8_scratch --cache data/gen_cache --test 3 --include 2S,2P,2SP,3S,3P,3SP \\
+    python -m stainless slides runs/gen_a8_scratch --cache data/gen_cache --test 3 --include 2S,2P,2SP,3S,3P,3SP \\
         --title "BD FACSDiscover A8" --input-name "Light loss" --um-per-px 0.333 --approx-scale --out figures/a8
 
 Candidates are held-out objects whose truth is clearly stained on every available marker
@@ -11,14 +11,13 @@ Candidates are held-out objects whose truth is clearly stained on every availabl
 averaged over markers, is in the top of that set -- representative good cases, chosen by
 a stated rule rather than by eye. Writes one PNG per candidate and a stacked version.
 """
-import argparse, os, sys
+import argparse, os
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(__file__))
-import train_a8 as T  # noqa: E402
-import render  # noqa: E402
-from make_sheet import load_run  # noqa: E402
+from . import render
+from .load import load_run
+from .metrics import evaluate
 
 
 def crop(ds, i):
@@ -120,8 +119,8 @@ def draw(path, objs, names, avail_k, title, input_name, um_per_px, approx, rs):
     fig.savefig(path, dpi=250, facecolor="white"); plt.close(fig)
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="stainless slides")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--title", required=True); ap.add_argument("--input-name", required=True)
@@ -131,11 +130,11 @@ def main():
     ap.add_argument("--population", default="any", choices=["any", "sperm", "round", "dim"], help="ISX: pick by the DAPI scalar")
     ap.add_argument("--sample", type=int, default=600); ap.add_argument("--n", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--out", required=True)
-    a = ap.parse_args()
-    model, dev, scale, te, wte, _, _ = load_run(a.run, a.cache, a.test, a.include, a.checkpoint)
+    a = ap.parse_args(argv)
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); model, dev, scale, te, wte, names = R.model, R.dev, R.scale, R.te, R.wte, R.names
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
-    _, P = T.evaluate(model, te, wte[idx], scale, dev, idx=idx)
+    _, P = evaluate(model, te, wte[idx], scale, dev, names, idx=idx)
     best, r = pick(te, wte[idx], P, idx, a.n, a.well, a.population)
     os.makedirs(a.out, exist_ok=True)
     avail_k = te.avail[idx[best[0]]] if te.avail is not None else np.ones(te.cout, bool)
@@ -145,10 +144,10 @@ def main():
         if a.crop: x, y, m, pq = window(x, y, m, pq, a.crop)
         objs.append((x, y, m, pq)); rs.append(r[q])
         print("candidate %d: object %d well %s  per-marker pixel r %s" % (len(objs), idx[q], wte[idx[q]],
-              "  ".join("%s %.2f" % (T.NAMES[k], r[q][k]) for k in range(te.cout) if avail_k[k])))
+              "  ".join("%s %.2f" % (names[k], r[q][k]) for k in range(te.cout) if avail_k[k])))
     for n_, (ob, rr) in enumerate(zip(objs, rs), 1):
-        draw(os.path.join(a.out, "candidate_%d.png" % n_), [ob], T.NAMES, avail_k, a.title, a.input_name, a.um_per_px, a.approx_scale, [rr])
-    draw(os.path.join(a.out, "stacked.png"), objs, T.NAMES, avail_k, a.title, a.input_name, a.um_per_px, a.approx_scale, rs)
+        draw(os.path.join(a.out, "candidate_%d.png" % n_), [ob], names, avail_k, a.title, a.input_name, a.um_per_px, a.approx_scale, [rr])
+    draw(os.path.join(a.out, "stacked.png"), objs, names, avail_k, a.title, a.input_name, a.um_per_px, a.approx_scale, rs)
     print("wrote", a.out)
 
 

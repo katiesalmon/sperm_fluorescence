@@ -1,8 +1,8 @@
 """Accuracy figures for a finished run, from its checkpoint, on held-out objects.
 
-    python analysis/accuracy_figures.py runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
+    python -m stainless accuracy runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
         --title "ImageStream, held-out half of the tube" --sample 3000 --out figures/acc_isx
-    python analysis/accuracy_figures.py runs/gen_a8_scratch --cache data/gen_cache --test 3 \\
+    python -m stainless accuracy runs/gen_a8_scratch --cache data/gen_cache --test 3 \\
         --include 2S,2P,2SP,3S,3P,3SP --title "BD FACSDiscover A8, held-out replicate" --out figures/acc_a8
 
 Writes
@@ -13,14 +13,13 @@ Writes
   masks.png     mask IoU per marker from the run's masks*.json, if present, with the
                 thresholded-truth-vs-IDEAS ceiling where it exists.
 """
-import argparse, glob, json, os, sys
+import argparse, glob, json, os
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(__file__))
-import train_a8 as T  # noqa: E402
-import render  # noqa: E402
-from make_sheet import load_run  # noqa: E402
+from . import render
+from .load import load_run
+from .metrics import evaluate
 
 GROUP_COLOURS = {"sperm": "#1f77b4", "round": "#d62728", "dim": "#9e9e9e", "S": "#1f77b4", "P": "#d62728", "SP": "#2ca02c", "I": "#1f77b4"}
 GROUP_NAMES = {"sperm": "sperm", "round": "round cells (DAPI-bright)", "dim": "DAPI-dim fragments",
@@ -42,18 +41,18 @@ def r_of(a, b):
     return float(np.corrcoef(a, b)[0, 1]) if len(a) > 2 and a.std() > 0 and b.std() > 0 else np.nan
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="stainless accuracy")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--title", required=True); ap.add_argument("--sample", type=int, default=3000)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--out", required=True)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-    model, dev, scale, te, wte, _, res = load_run(a.run, a.cache, a.test, a.include, a.checkpoint)
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); model, dev, scale, te, wte, res, names = R.model, R.dev, R.scale, R.te, R.wte, R.res, R.names
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
-    _, P = T.evaluate(model, te, wte[idx], scale, dev, idx=idx)
+    _, P = evaluate(model, te, wte[idx], scale, dev, names, idx=idx)
     av = te.avail[idx] if te.avail is not None else np.ones((len(idx), te.cout), bool)
     ks = [k for k in range(te.cout) if av[:, k].any()]
     ev_t = np.full((len(idx), te.cout), np.nan); ev_p = np.full((len(idx), te.cout), np.nan)
@@ -77,14 +76,14 @@ def main():
             if sel.any(): ax.scatter(t[sel], p[sel], s=5, alpha=0.45, color=GROUP_COLOURS[grp], label=GROUP_NAMES[grp], linewidths=0, rasterized=True)
         ax.plot([lo, lim], [lo, lim], color="black", lw=0.8, ls="--")
         ax.set_xlim(lo, lim); ax.set_ylim(lo, lim); ax.set_aspect("equal")
-        c = render.color_for(T.NAMES[k], k); ax.set_title(T.NAMES[k], fontsize=14, fontweight="bold", color=tuple(0.75 * v for v in c))
+        c = render.color_for(names[k], k); ax.set_title(names[k], fontsize=14, fontweight="bold", color=tuple(0.75 * v for v in c))
         ax.set_xlabel("measured intensity per event", fontsize=10); ax.set_ylabel("predicted intensity per event", fontsize=10)
         ax.tick_params(labelsize=8); ax.ticklabel_format(style="sci", scilimits=(-2, 3))
-        lines = ["r = %.2f  (all, n=%d)" % (r_of(t, p), len(t))]; rtab[T.NAMES[k]] = {"all": r_of(t, p)}
+        lines = ["r = %.2f  (all, n=%d)" % (r_of(t, p), len(t))]; rtab[names[k]] = {"all": r_of(t, p)}
         for grp in order:
             sel = gg == grp
             if sel.sum() > 10:
-                rr = r_of(t[sel], p[sel]); rtab[T.NAMES[k]][grp] = rr; lines.append("r = %.2f  within %s" % (rr, GROUP_NAMES[grp]))
+                rr = r_of(t[sel], p[sel]); rtab[names[k]][grp] = rr; lines.append("r = %.2f  within %s" % (rr, GROUP_NAMES[grp]))
         ax.text(0.03, 0.97, "\n".join(lines), transform=ax.transAxes, fontsize=8.5, va="top", ha="left",
                 bbox=dict(facecolor="white", alpha=0.85, edgecolor="#cccccc", pad=4))
         for sp in ax.spines.values(): sp.set_color("#888888")
@@ -94,17 +93,17 @@ def main():
     fig.tight_layout(rect=(0, 0.01, 1, 0.9)); fig.savefig(os.path.join(a.out, "scatter.png"), dpi=220, facecolor="white"); plt.close(fig)
 
     # ---- event r bars ----
-    cols = ["all"] + [x for x in order if any(x in rtab[T.NAMES[k]] for k in ks)]
+    cols = ["all"] + [x for x in order if any(x in rtab[names[k]] for k in ks)]
     fig, ax = plt.subplots(figsize=(1.6 * len(ks) * len(cols) / 2 + 3, 4.4), facecolor="white")
     w = 0.8 / len(cols); xs = np.arange(len(ks))
     for j, grp in enumerate(cols):
-        vals = [rtab[T.NAMES[k]].get(grp, np.nan) for k in ks]
+        vals = [rtab[names[k]].get(grp, np.nan) for k in ks]
         colour = "#444444" if grp == "all" else GROUP_COLOURS[grp]
         bars = ax.bar(xs + (j - (len(cols) - 1) / 2) * w, vals, w, color=colour, label="all objects" if grp == "all" else "within " + GROUP_NAMES[grp], edgecolor="white")
         for b, v in zip(bars, vals):
             if np.isfinite(v): ax.text(b.get_x() + b.get_width() / 2, max(v, 0) + 0.015, "%.2f" % v, ha="center", va="bottom", fontsize=8)
-    ax.set_xticks(xs); ax.set_xticklabels([T.NAMES[k] for k in ks], fontsize=11)
-    for lab, k in zip(ax.get_xticklabels(), ks): lab.set_color(tuple(0.7 * v for v in render.color_for(T.NAMES[k], k))); lab.set_fontweight("bold")
+    ax.set_xticks(xs); ax.set_xticklabels([names[k] for k in ks], fontsize=11)
+    for lab, k in zip(ax.get_xticklabels(), ks): lab.set_color(tuple(0.7 * v for v in render.color_for(names[k], k))); lab.set_fontweight("bold")
     ax.set_ylim(min(0, np.nanmin([v for d in rtab.values() for v in d.values()]) - 0.05), 1.05); ax.axhline(0, color="black", lw=0.6)
     ax.set_ylabel("Pearson r, per-event intensity", fontsize=11); ax.legend(fontsize=9, frameon=False, loc="upper right" if len(cols) < 4 else "lower right")
     for sp in ("top", "right"): ax.spines[sp].set_visible(False)
@@ -118,8 +117,8 @@ def main():
         for f in mfiles:
             for key, v in json.load(open(f))["held_out"].items():
                 inst, nm = key.split(":"); rows.setdefault(inst, {})[nm] = v
-        inst = next(i for i in rows if any(T.NAMES[k] in rows[i] for k in ks))
-        names = [T.NAMES[k] for k in ks if T.NAMES[k] in rows[inst]]
+        inst = next(i for i in rows if any(names[k] in rows[i] for k in ks))
+        names = [names[k] for k in ks if names[k] in rows[inst]]
         fig, ax = plt.subplots(figsize=(1.5 * len(names) + 3.5, 4.6), facecolor="white")
         xs = np.arange(len(names)); iou = [rows[inst][n]["iou"] for n in names]; dc = [rows[inst][n]["dice"] for n in names]
         b1 = ax.bar(xs - 0.2, iou, 0.38, color="#1f77b4", label="IoU, predicted mask vs reference"); b2 = ax.bar(xs + 0.2, dc, 0.38, color="#9ecae1", label="Dice")

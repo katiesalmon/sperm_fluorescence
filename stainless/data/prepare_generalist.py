@@ -17,7 +17,7 @@ so 600 A8 events are not drowned by 10,000 ISX ones.
 
 Example
 -------
-  python analysis/prepare_generalist.py --isx data/isx/ALL_1_400_1.cif --isx-daf data/isx/ALL_1_400_1.daf \\
+  python -m stainless prepare-generalist --isx data/isx/ALL_1_400_1.cif --isx-daf data/isx/ALL_1_400_1.daf \\
       --a8 data/a8_bundle_seed0.zip --cache data/gen_cache
 """
 
@@ -30,11 +30,10 @@ import time
 import numpy as np
 from scipy import ndimage as ndi
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import a8_io  # noqa: E402
-import isx_daf  # noqa: E402
-import isx_io  # noqa: E402
-from prepare_isx import to_multiple, write_ragged  # noqa: E402
+from ..io import a8 as a8_io
+from ..io import isx as isx_io
+from ..io import isx_daf
+from .cache import to_multiple, write_ragged
 
 TARGETS = ["LDHC/AKAP4", "ACRV1", "DAPI", "TOMM20", "CD45"]
 ISX_IN = [0, 8, 5]; ISX_TGT = {0: 1, 1: 2, 2: 6, 3: 10}             # target k -> ISX channel index
@@ -126,4 +125,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
