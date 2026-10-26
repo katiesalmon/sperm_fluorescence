@@ -16,6 +16,16 @@ predict-cytpix  an ISX model on CytPix crops           spectral  plot a scripts/
 prepare-a8 / prepare-isx / prepare-generalist          the earlier fixed-layout caches (legacy)
 ```
 
+## Diagrams
+
+![One marker model](diagrams/model.png)
+
+![From instrument files to a marker model](diagrams/pipeline.png)
+
+![One model per marker and input family](diagrams/models_per_marker.png)
+
+Rendered by `docs/diagrams/make_diagrams.py` (PNG and SVG beside it).
+
 ## Layout
 
 | module | job |
