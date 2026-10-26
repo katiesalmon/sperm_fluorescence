@@ -6,6 +6,53 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Input ablation on the A8: what each label-free view is worth, and one modular model for all of them
+
+*2026-10-26 · `python -m sperm_fluorescence train --arch stems`, `ablate`. Laptop, A8 sample
+bundle (600 training objects in replicate 2, 600 held out in replicate 3, three markers),
+width 32, 20 epochs, `--channel-scale --full-frame --aug 1`, one seed. Four models that
+differ only in the label-free pages they see; the fourth is trained with role dropout
+(p = 0.3) and then scored under each subset without retraining.*
+
+| model trained on | LDHC/AKAP4 within S | ACRV1 within SP | CD45 within SP | CD45 within S |
+|---|---|---|---|---|
+| light loss only | 0.37 | 0.33 | 0.83 | 0.80 |
+| light loss + FSC | 0.61 | 0.39 | 0.86 | 0.44 |
+| light loss + FSC + SSC | 0.68 | 0.44 | 0.88 | 0.61 |
+| all three, role dropout, scored with all three | 0.70 | 0.48 | 0.88 | 0.77 |
+| … scored with light loss + FSC | 0.65 | 0.42 | 0.81 | 0.37 |
+| … scored with light loss only | 0.47 | 0.41 | 0.78 | 0.31 |
+| … scored with FSC + SSC (no light loss) | 0.69 | 0.48 | 0.88 | 0.80 |
+| … scored with SSC only | 0.67 | 0.37 | 0.87 | 0.70 |
+
+**Light loss alone loses the tail.** LDHC/AKAP4 within sperm falls from 0.68 to 0.37 when
+FSC and SSC are removed, and the pooled event r from 0.66 to 0.29. The marker lives on the
+flagellum, and the light-loss page barely shows the flagellum (A8 pages figure); the
+scatter views do. ACRV1 and CD45, both head or whole-cell signals, lose little.
+
+**FSC carries most of the gain, SSC the rest.** Adding FSC recovers LDHC/AKAP4 to 0.61;
+adding SSC takes it to 0.68 and lifts every marker a few hundredths. SSC on its own
+(from the dropout model) already gives LDHC/AKAP4 0.67 and CD45 0.87: for these
+markers, side scatter is the single most informative view and light loss the least.
+
+**One modular model matches the specialised ones.** The role-dropout model, trained once,
+equals or beats the fixed three-view model with all views (0.70 / 0.48 / 0.88 vs 0.68 /
+0.44 / 0.88) and matches the fixed two-view model when FSC is withheld (0.65 vs 0.61).
+With light loss alone it is better than the model trained only on light loss on LDHC/AKAP4
+(0.47 vs 0.37) and ACRV1, and slightly worse on CD45. The averaging stems do not cost
+accuracy at this width.
+
+**A fixed model cannot be ablated after the fact.** Withholding SSC from the fixed
+three-view model drops its CD45 to −0.13: it never learned to work without that channel
+and a zero image is not "absent". This is the case for role dropout: the modular model is
+the only one that can honestly answer "what if this instrument had fewer views".
+
+Caveats: 600 training objects and one seed, so differences under ~0.05 are noise; the CD45
+within-S column is a handful of CD45-positive events in a sperm well and swings the most.
+The server run at full scale is the confirmation. Figure: `figures/ablation_views.png`.
+
+---
+
 ## Generalist A8 + ISX on the laptop: one model, two instruments, and masks IDEAS would draw
 
 *2026-10-05 · `analysis/prepare_generalist.py`, `analysis/train_a8.py` (availability
