@@ -79,11 +79,11 @@ def main():
     start = 0
     for g, n in groups:
         if start: ax.axvline(start - 0.5, color="white", lw=0.8)
-        ax.text(start + n / 2 - 0.5, -0.01, LASER.get(g, g), transform=ax.get_xaxis_transform(), ha="center", va="bottom", fontsize=8, color="#444")
+        ax.text(start + n / 2 - 0.5, 1.005, LASER.get(g, g), transform=ax.get_xaxis_transform(), ha="center", va="bottom", fontsize=8, color="#444")
         start += n
     ax.set_yticks(ticks); ax.set_yticklabels(tl, fontsize=8); ax.set_xticks(x); ax.set_xticklabels([d[:-2] for d in dets], rotation=90, fontsize=7)
     cb = fig.colorbar(im, ax=ax, fraction=0.02, pad=0.01); cb.set_label("asinh(signal / 1000)", fontsize=9)
-    ax.set_title(a.title + " — every subsampled event (rows, brightest first within each file) x every detector", fontsize=12, fontweight="bold", pad=18)
+    ax.set_title(a.title + " — every subsampled event (rows, brightest first within each file) x every detector", fontsize=12, fontweight="bold", pad=24)
     fig.tight_layout(); fig.savefig(os.path.join(a.out, "heatmap.png"), dpi=200, facecolor="white"); plt.close(fig)
     print("wrote", a.out, "| files:", ", ".join(files), "| detectors:", len(dets))
 
