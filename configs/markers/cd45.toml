@@ -1,0 +1,4 @@
+name = "CD45"
+colour = [1.00, 0.40, 0.85]
+localisation = "leukocyte marker; absent on sperm, a filled disc on PBMCs"
+select_population = "P"     # the within-population event r that picks the checkpoint

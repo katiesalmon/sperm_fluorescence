@@ -1,0 +1,4 @@
+name = "TOMM20"
+colour = [1.00, 0.30, 0.30]
+localisation = "mitochondria, the midpiece sheath"
+select_population = "sperm"     # the within-population event r that picks the checkpoint

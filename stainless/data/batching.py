@@ -9,15 +9,30 @@ def avail_of(ds, idx):
     return torch.tensor(ds.avail[np.asarray(idx)].astype(np.float32))
 
 
+def present_of(ds, idx, as_tensor=True):
+    """(B, R) bool: which input roles each object has (all True when the cache predates roles)."""
+    import torch
+    idx = np.asarray(idx)
+    if getattr(ds, "present", None) is None:
+        p = np.ones((len(idx), ds.cin), bool)
+    else:
+        p = ds.present[idx][:, ds.role_idx] if getattr(ds, "role_idx", None) is not None else ds.present[idx]
+    return torch.tensor(p) if as_tensor else p
+
+
 class Cached:
     """Fixed-frame cache: index several (N, C, H, W) memmaps as one dataset."""
     ragged = False
     avail = None
+    present = None
+    role_idx = None
 
     def __init__(self, xs, ys, ms):
         self.xs, self.ys, self.ms = xs, ys, ms
         self.offsets = np.cumsum([0] + [len(x) for x in xs])
         self.cin, self.cout = xs[0].shape[1], ys[0].shape[1]
+    def select_roles(self, idx):
+        self.role_idx = list(idx); self.cin = len(self.role_idx)
     def __len__(self): return int(self.offsets[-1])
     def shape(self, i):
         k = np.searchsorted(self.offsets, i, side="right") - 1
@@ -31,7 +46,9 @@ class Cached:
         out = [[], [], []]
         for i in idx:
             k = np.searchsorted(self.offsets, i, side="right") - 1; j = i - self.offsets[k]
-            out[0].append(self.xs[k][j]); out[1].append(self.ys[k][j]); out[2].append(self.ms[k][j])
+            x = self.xs[k][j]
+            if self.role_idx is not None: x = x[self.role_idx]
+            out[0].append(x); out[1].append(self.ys[k][j]); out[2].append(self.ms[k][j])
         return (torch.tensor(np.stack(out[0]).astype(np.float32)), torch.tensor(np.stack(out[1]).astype(np.float32)),
                 torch.tensor(np.stack(out[2])[:, None].astype(np.float32)))
 
@@ -42,18 +59,24 @@ class RaggedCached:
     Nothing is cropped at any point, so evaluation is on whole objects."""
     ragged = True
     avail = None
+    present = None
+    role_idx = None
 
     def __init__(self, xs, ys, ms, extra, target_k=None):
         self.xs, self.ys, self.ms, self.target_k = xs, ys, ms, target_k
         self.shapes = np.concatenate([e[0] for e in extra]); self.per_class = extra
         self.counts = np.cumsum([0] + [len(e[0]) for e in extra])
-        self.cin = xs[0].shape[0]; self.cout = 1 if target_k is not None else ys[0].shape[0]
+        self.cin_all = xs[0].shape[0]
+        self.cin = self.cin_all; self.cout = 1 if target_k is not None else ys[0].shape[0]
+    def select_roles(self, idx):
+        self.role_idx = list(idx); self.cin = len(self.role_idx)
     def __len__(self): return int(self.counts[-1])
     def shape(self, i): return tuple(int(v) for v in self.shapes[i])
     def item(self, i):
         k = np.searchsorted(self.counts, i, side="right") - 1; j = i - self.counts[k]
         shapes, offsets = self.per_class[k]; h, w = shapes[j]; a, b = offsets[j], offsets[j + 1]
-        x = np.asarray(self.xs[k][:, a:b]).reshape(self.cin, h, w).astype(np.float32)
+        x = np.asarray(self.xs[k][:, a:b]).reshape(self.cin_all, h, w).astype(np.float32)
+        if self.role_idx is not None: x = x[self.role_idx]
         y = np.asarray(self.ys[k][:, a:b]).reshape(-1, h, w).astype(np.float32)
         if self.target_k is not None: y = y[self.target_k:self.target_k + 1]
         return x, y, np.asarray(self.ms[k][a:b]).reshape(h, w)

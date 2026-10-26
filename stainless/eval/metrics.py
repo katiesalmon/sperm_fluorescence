@@ -1,20 +1,23 @@
 """Native-size evaluation: pixel r, per-event r, within-population r, P:S ratios."""
 import numpy as np
 
-from ..data.batching import avail_of, make_batches
+from ..data.batching import avail_of, make_batches, present_of
 from ..train.device import release_device_memory
 
 
-def predict(model, x, tta=False):
-    """Model output, optionally averaged over the four flips (test-time augmentation)."""
+def predict(model, x, tta=False, present=None):
+    """Model output, optionally averaged over the four flips (test-time augmentation).
+    `present` (B, R) bool marks the input roles to use (stems architecture)."""
     import torch
+    from ..models.stems import call
+    f = lambda t: call(model, t, present)
     if not tta:
-        return model(x)
-    outs = [model(x), model(x.flip(-1)).flip(-1), model(x.flip(-2)).flip(-2), model(x.flip(-1).flip(-2)).flip(-2).flip(-1)]
+        return f(x)
+    outs = [f(x), f(x.flip(-1)).flip(-1), f(x.flip(-2)).flip(-2), f(x.flip(-1).flip(-2)).flip(-2).flip(-1)]
     return torch.stack(outs).mean(0)
 
 
-def evaluate(model, ds, wells, scale, dev, names, bs=64, idx=None, tta=False):
+def evaluate(model, ds, wells, scale, dev, names, bs=64, idx=None, tta=False, roles_mask=None):
     """Score on `idx` (default: everything); `wells` is already that subset's wells. Native
     size on a ragged cache: predictions are made per object, pixel r pooled over valid
     pixels, event r over per-object sums. Returns (res, preds) with preds[i] = (C, h, w)."""
@@ -26,7 +29,10 @@ def evaluate(model, ds, wells, scale, dev, names, bs=64, idx=None, tta=False):
     with torch.no_grad():
         for nb, b in enumerate(make_batches(ds, idx, bs)):
             x, y, m = ds.batch(b)
-            p = (predict(model, x.to(dev), tta).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
+            present = present_of(ds, b)
+            if roles_mask is not None:            # evaluate with a subset of the roles (ablation)
+                present = present & torch.tensor(np.asarray(roles_mask, bool))[None, :]
+            p = (predict(model, x.to(dev), tta, present.to(dev)).float().cpu() * scale).numpy(); y = y.numpy(); m = m.numpy()[:, 0]
             # Every shape bucket is a new allocation size; the allocator cached them all
             # (22 GB during one evaluation of 10,600 ragged objects on MPS). Hand them back.
             if nb % 20 == 19: release_device_memory(dev)

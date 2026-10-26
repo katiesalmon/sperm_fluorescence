@@ -10,6 +10,7 @@
 
 A fixed-frame cache ((N, C, H, W) arrays, no _shapes) is still read, for the older A8 runs.
 """
+import json
 import os
 
 import numpy as np
@@ -57,7 +58,7 @@ def write_ragged(cls, items, cache):
 def load_cache(cache, classes):
     """Open the per-class arrays. Returns (xs, ys, ms, wells, scalars, extra): extra is None
     for a fixed-frame cache and [(shapes, offsets), ...] for a ragged one."""
-    xs, ys, ms, wells, scal, extra, avail, clsarr = [], [], [], [], [], [], [], []
+    xs, ys, ms, wells, scal, extra, avail, clsarr, present = [], [], [], [], [], [], [], [], []
     for cls in classes:
         p = os.path.join(cache, cls + "_x.npy")
         if not os.path.exists(p): continue
@@ -72,14 +73,26 @@ def load_cache(cache, classes):
         scal.append(np.load(os.path.join(cache, cls + "_scalars.npy")))
         ap_ = os.path.join(cache, cls + "_avail.npy")
         avail.append(np.load(ap_) if os.path.exists(ap_) else None)
+        pp_ = os.path.join(cache, cls + "_present.npy")
+        present.append(np.load(pp_) if os.path.exists(pp_) else None)
     avail = np.concatenate(avail) if avail and all(a is not None for a in avail) else None
-    return xs, ys, ms, np.array(wells), np.concatenate(scal), (extra if extra else None), avail, np.array(clsarr)
+    present = np.concatenate(present) if present and all(p is not None for p in present) else None
+    return xs, ys, ms, np.array(wells), np.concatenate(scal), (extra if extra else None), avail, np.array(clsarr), present
 
 
-def open_cache(cache, classes, target_k=None):
+def cache_roles(cache):
+    """The x channel names of a cache: meta 'roles' (new), 'inputs' (generalist), or None."""
+    p = os.path.join(cache, "meta.json")
+    if not os.path.exists(p): return None
+    meta = json.load(open(p))
+    return list(meta.get("roles") or meta.get("inputs") or []) or None
+
+
+def open_cache(cache, classes, target_k=None, roles=None):
     """A dataset plus its per-object wells, scalars, and class names. `ds.avail` is an
-    (N, C) bool of which target channels each object actually has, or None for all."""
-    xs, ys, ms, wells, scal, extra, avail, clsarr = load_cache(cache, classes)
+    (N, C) bool of which target channels each object actually has, or None for all;
+    `ds.present` the same for input roles. `roles`: names to keep, in that order."""
+    xs, ys, ms, wells, scal, extra, avail, clsarr, present = load_cache(cache, classes)
     if extra is None:
         if target_k is not None:
             ys = [y[:, target_k:target_k + 1] for y in ys]
@@ -88,6 +101,12 @@ def open_cache(cache, classes, target_k=None):
         ds = RaggedCached(xs, ys, ms, extra, target_k)
     if avail is not None and target_k is not None:
         avail = avail[:, target_k:target_k + 1]
-    ds.avail = avail; ds.classes = clsarr
+    ds.avail = avail; ds.classes = clsarr; ds.present = present
+    all_roles = cache_roles(cache)
+    ds.roles = list(all_roles) if all_roles else ["ch%d" % i for i in range(ds.cin)]
+    if roles:
+        missing = [r for r in roles if r not in ds.roles]
+        if missing: raise SystemExit("roles %s not in this cache (has %s)" % (missing, ds.roles))
+        ds.select_roles([ds.roles.index(r) for r in roles]); ds.roles = list(roles)
     return ds, wells, scal
 

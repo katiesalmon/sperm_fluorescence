@@ -1,0 +1,4 @@
+name = "LDHC/AKAP4"
+colour = [0.35, 1.00, 0.35]
+localisation = "midpiece and principal piece (LDHC) with the fibrous sheath (AKAP4); diffuse in round cells"
+select_population = "sperm"     # the within-population event r that picks the checkpoint

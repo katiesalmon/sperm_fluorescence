@@ -10,11 +10,11 @@ import time
 import numpy as np
 
 from ..data.augment import augment
-from ..data.batching import avail_of, make_batches
+from ..data.batching import avail_of, make_batches, present_of
 from ..data.cache import open_cache
 from ..eval.metrics import evaluate
 from ..eval.sheets import progression_sheet, sheet, snapshot_sheet
-from ..models.unet import build_model
+from ..models import stems
 from .device import pick_device, release_device_memory
 from .losses import grad_loss, target_scale
 
@@ -40,8 +40,9 @@ def train(args):
         keep = {c.strip() for c in args.include.split(",")}
         all_cls = [c for c in all_cls if c in keep]
     tr_cls = [c for c in all_cls if c[0] in args.train]; te_cls = [c for c in all_cls if c[0] in args.test]
-    tr, wtr, _ = open_cache(args.cache, tr_cls, target_k)
-    te, wte, _ = open_cache(args.cache, te_cls, target_k)
+    roles = [r.strip() for r in args.roles.split(",")] if args.roles else None
+    tr, wtr, _ = open_cache(args.cache, tr_cls, target_k, roles)
+    te, wte, _ = open_cache(args.cache, te_cls, target_k, roles)
     if target_k is not None:
         names = [args.target]
     # hold a slice of the training replicate out for model selection; the test replicate is never used for it
@@ -62,7 +63,8 @@ def train(args):
              "/".join("%.4f" % v for v in scale_vec), args.select_on))
 
     cin, cout = tr.cin, tr.cout
-    model = build_model(args.width, cin, cout).to(dev)
+    model = stems.build(args.arch, tr.roles, args.width, cin, cout).to(dev)
+    print("arch %s   roles %s%s" % (args.arch, tr.roles, "   role dropout %.2f" % args.role_dropout if args.role_dropout else ""))
     if args.init:
         state = torch.load(args.init, map_location=dev)
         missing = model.load_state_dict(state, strict=False)
@@ -106,10 +108,16 @@ def train(args):
                 # ISX progression sheets). The validity mask still scopes the metrics.
                 m = torch.ones_like(m) * avail_of(tr, b).to(dev)[:, :, None, None]
             x, y, m = augment(x, y, m, args.aug)
+            present = present_of(tr, b)
+            if args.role_dropout > 0:
+                # drop each present role with probability p, never all of an object's roles
+                keep = torch.rand(present.shape) >= args.role_dropout
+                keep[torch.arange(len(b)), torch.multinomial(present.float(), 1)[:, 0]] = True
+                present = present & keep
             # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
             amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
             with amp:
-                out = model(x)
+                out = stems.call(model, x, present.to(dev))
                 loss = (F.l1_loss(out, y, reduction="none") * m).sum() / m.sum() / out.shape[1]
                 if args.grad_loss > 0:
                     loss = loss + args.grad_loss * grad_loss(out, y, m)
@@ -124,7 +132,7 @@ def train(args):
                 x, y, m = val_ds.batch(b); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
                 if args.full_frame: m = torch.ones_like(m)
                 m = m * avail_of(val_ds, b).to(dev)[:, :, None, None]
-                per = (F.l1_loss(model(x), y, reduction="none") * m).sum(dim=(0, 2, 3)).cpu().numpy()
+                per = (F.l1_loss(stems.call(model, x, present_of(val_ds, b).to(dev)), y, reduction="none") * m).sum(dim=(0, 2, 3)).cpu().numpy()
                 cnt = m.sum(dim=(0, 2, 3)).cpu().numpy()
                 vch += per; vm = vm + cnt
                 vl += (per.sum() / max(cnt.sum(), 1.0)); vn += 1
@@ -162,7 +170,7 @@ def train(args):
         if args.snapshot and (ep % args.snapshot == 0 or ep == 1 or ep == args.epochs):
             model.eval()
             with torch.no_grad():
-                sp = (model(torch.tensor(snap_x).to(dev)).float().cpu() * scale).numpy()
+                sp = (stems.call(model, torch.tensor(snap_x).to(dev), present_of(te, snap_idx).to(dev)).float().cpu() * scale).numpy()
             snap_preds[ep] = sp
             np.savez_compressed(os.path.join(args.out, "epoch_%02d.npz" % ep), pred=sp, true=snap_y, x=snap_x, mask=snap_m, idx=np.array(snap_idx))
             snapshot_sheet(args.out, ep, snap_x, snap_y, sp, snap_m, wte[snap_idx], names, avail_of(te, snap_idx).numpy() > 0)
@@ -203,6 +211,7 @@ def train(args):
                "aug": args.aug, "grad_loss": args.grad_loss, "tta": args.tta, "seed": args.seed,
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res,
                "scale": [float(v) for v in scale_vec], "include": args.include, "init": args.init,
+               "arch": args.arch, "roles": list(tr.roles), "role_dropout": args.role_dropout,
                "per_marker_checkpoint": per_marker},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 
@@ -243,4 +252,8 @@ def main(argv=None):
     t.add_argument("--grad-loss", type=float, default=0.0, metavar="W",
                    help="Weight of a gradient-difference term beside the L1, for sharper edges (try 0.5)")
     t.add_argument("--tta", action="store_true", help="Average predictions over the four flips at evaluation")
+    t.add_argument("--arch", choices=["stack", "stems"], default="stack",
+                   help="stack: fixed input channels (default). stems: one stem per input role, any subset at inference")
+    t.add_argument("--roles", default=None, metavar="R,R", help="Input roles to use, by cache name (default: all)")
+    t.add_argument("--role-dropout", type=float, default=0.0, metavar="P", help="stems: drop each role with probability P in training")
     return train(ap.parse_args(argv))

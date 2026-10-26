@@ -12,7 +12,7 @@ import numpy as np
 
 from ..data.batching import avail_of
 from ..data.cache import open_cache
-from ..models.unet import build_model
+from ..models import stems
 from ..train.device import pick_device
 from ..train.losses import target_scale
 from .metrics import evaluate
@@ -28,9 +28,9 @@ def load_run(run, cache, test, include=None, checkpoint="best.pt"):
     classes = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(cache, "*_x.npy"))})
     if include: classes = [c for c in classes if c in include.split(",")]
     te_cls = [c for c in classes if c[0] in test]
-    te, wte, scal = open_cache(cache, te_cls); te.scalars = scal   # ISX: DAPI intensity; NaN on the A8
+    te, wte, scal = open_cache(cache, te_cls, roles=res.get("roles") if res.get("roles") and res.get("arch") else None); te.scalars = scal   # ISX: DAPI intensity; NaN on the A8
     dev = pick_device()
-    model = build_model(res.get("width", 32), te.cin, te.cout).to(dev)
+    model = stems.build(res.get("arch", "stack"), te.roles, res.get("width", 32), te.cin, te.cout).to(dev)
     model.load_state_dict(torch.load(os.path.join(run, checkpoint), map_location=dev)); model.eval()
     if "scale" in res:
         scale_vec = np.array(res["scale"], np.float32)

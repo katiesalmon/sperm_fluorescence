@@ -1,0 +1,4 @@
+name = "DAPI"
+colour = [0.65, 0.35, 0.95]
+localisation = "nucleus; spectral-only on the A8 (no image), imaged on the ImageStream"
+select_population = "sperm"     # the within-population event r that picks the checkpoint

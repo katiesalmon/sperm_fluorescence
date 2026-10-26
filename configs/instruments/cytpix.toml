@@ -1,0 +1,11 @@
+# Thermo Attune CytPix: one camera brightfield image per event, no stain images (stains are FCS scalars).
+name = "cytpix"
+family = "camera"
+pixel_um = 0.33                # a sperm head spans ~10 px, close to the ImageStream
+zoom_to_reference = 1.0
+reader = "cytpix_sample"       # a sample_* folder from the sperm_pbmc sampler
+
+[roles]
+brightfield = 0
+
+[stains]                       # none: targets exist only as per-event scalars in the FCS

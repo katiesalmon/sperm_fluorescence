@@ -1,0 +1,20 @@
+# BD FACSDiscover A8 (and S8: same CellView imaging block). Six co-registered pages per event.
+name = "a8"
+family = "cellview"            # the input family: light loss + FSC + SSC from one 488 nm imaging laser
+pixel_um = 0.42                # nominal; a sperm head spans ~8 px here vs ~10 px on the ImageStream
+zoom_to_reference = 1.25       # resample to the ImageStream pitch so one model sees one scale
+reader = "a8_bundle"           # an a8_bundle_*.zip from scripts/make_a8_bundle.py
+
+[roles]                        # label-free input roles -> source page
+lightloss = 0
+fsc = 1
+ssc = 2
+
+[stains]                       # marker -> raw filter page; unmixed with the triangular spillover (io.a8.spillover)
+"LDHC/AKAP4" = 3
+"CD45" = 4
+"ACRV1" = 5
+
+[classes]                      # sample classes in the bundle; the digit is the replicate (1 = unstained control)
+skip = ["1S", "1P", "1SP"]
+repeat = 6                     # oversample per epoch when mixed with a larger instrument

@@ -1,0 +1,4 @@
+name = "ACRV1"
+colour = [1.00, 1.00, 0.30]
+localisation = "acrosomal cap; the acrosome-integrity marker, dimmest dye on the A8 (PerCP-eF710)"
+select_population = "sperm"     # the within-population event r that picks the checkpoint

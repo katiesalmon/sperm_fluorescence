@@ -1,0 +1,22 @@
+# Amnis ImageStream X Mk II, 60x, 12 channels tiled in the .cif.
+name = "isx"
+family = "camera"              # the input family: camera brightfield (two cameras) + side scatter / darkfield
+pixel_um = 0.333
+zoom_to_reference = 1.0
+reader = "isx_cif"
+
+[roles]                        # label-free input roles -> 0-based channel index (Ch01 = 0)
+brightfield = 0                # Ch01
+brightfield2 = 8               # Ch09, the second camera
+darkfield = 5                  # Ch06, side scatter
+
+[stains]                       # marker -> channel index, background (median outside the IDEAS mask) subtracted
+"LDHC/AKAP4" = 1               # Ch02
+"ACRV1" = 2                    # Ch03
+"DAPI" = 6                     # Ch07
+"TOMM20" = 10                  # Ch11
+
+[classes]
+split = "halves"               # one tube: class 2I = first half of the objects, 3I = second half
+repeat = 1
+scalar = "Intensity_MC_Ch07"   # per-event DAPI from the .daf, for population labels

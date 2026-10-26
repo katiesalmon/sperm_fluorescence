@@ -1,10 +1,12 @@
 """Command line: python -m stainless <command> [args]
 
-  prepare-a8           cache an A8 run (fixed frames)              prepare-isx     cache an ImageStream .cif (ragged)
+  prepare              cache any instrument by its config (roles + markers; the modular path)
+  prepare-a8           cache an A8 run (fixed frames, legacy)      prepare-isx     cache an ImageStream .cif (ragged, legacy)
   prepare-generalist   one ragged cache from ISX + A8 bundle        train           train a model on a cache
   sheet                redraw a run's IDEAS-style sheet             masks           stain masks, scored against IDEAS / thresholded truth
   slides               presentation panels for one object          accuracy        scatter, event-r bars, mask IoU bars
-  subset               re-score a run on DAPI-defined subsets       predict-cytpix  run an ISX model on CytPix crops
+  subset               re-score a run on DAPI-defined subsets       ablate          score a stems model under role subsets
+  predict-cytpix       run an ISX model on CytPix crops
   spectral             plot a spectral_export.py JSON
 
 Every command takes --help.
@@ -12,6 +14,7 @@ Every command takes --help.
 import sys
 
 COMMANDS = {
+    "prepare": ("stainless.data.prepare", "main"),
     "prepare-a8": ("stainless.data.prepare_a8", "main"),
     "prepare-isx": ("stainless.data.prepare_isx", "main"),
     "prepare-generalist": ("stainless.data.prepare_generalist", "main"),
@@ -21,6 +24,7 @@ COMMANDS = {
     "slides": ("stainless.eval.slides", "main"),
     "accuracy": ("stainless.eval.accuracy", "main"),
     "subset": ("stainless.eval.subset", "main"),
+    "ablate": ("stainless.eval.ablate", "main"),
     "predict-cytpix": ("stainless.predict_cytpix", "main"),
     "spectral": ("stainless.eval.spectral", "main"),
 }
