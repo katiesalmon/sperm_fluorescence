@@ -13,6 +13,7 @@ import os
 
 import numpy as np
 
+from .accuracy import groups_for
 from .load import load_run
 from .metrics import evaluate
 
@@ -33,10 +34,22 @@ def main(argv=None):
         bad = [r for r in want if r not in roles]
         if bad: raise SystemExit("roles %s not in the model (%s)" % (bad, roles))
         mask = np.array([r in want for r in roles], bool)
-        res, _ = evaluate(R.model, R.te, R.wte, R.scale, R.dev, R.names, tta=a.tta, roles_mask=mask)
+        res, P = evaluate(R.model, R.te, R.wte, R.scale, R.dev, R.names, tta=a.tta, roles_mask=mask)
+        # within-population r (ISX: sperm / round / dim by the DAPI scalar; A8: the well types are already the populations)
+        idx = np.arange(len(R.te)); g = groups_for(R.te, R.wte, idx); pops = {}
+        for k, n in enumerate(R.names):
+            if res[n]["event_r"] is None: continue
+            av = R.te.avail[:, k] if R.te.avail is not None else np.ones(len(R.te), bool)
+            et = np.array([(R.te.item(i)[1][k] * R.te.item(i)[2]).sum() if av[i] else np.nan for i in idx])
+            ep = np.array([(P[q][k] * R.te.item(i)[2]).sum() if av[i] else np.nan for q, i in enumerate(idx)])
+            pops[n] = {}
+            for grp in sorted(set(g)):
+                sel = (g == grp) & np.isfinite(et)
+                if sel.sum() > 10: pops[n][str(grp)] = float(np.corrcoef(et[sel], ep[sel])[0, 1])
+            res[n]["within_population_event_r"] = pops[n]
         out[sub] = res
         print("input %-28s" % sub + "  ".join("%s ev %s (%s)" % (n, "%.3f" % res[n]["event_r"] if res[n]["event_r"] is not None else "n/a",
-              " ".join("%s %.2f" % (k, v) for k, v in res[n]["within_well_event_r"].items() if v is not None)) for n in R.names))
+              " ".join("%s %.2f" % (k, v) for k, v in res[n].get("within_population_event_r", {}).items())) for n in R.names))
     json.dump(out, open(os.path.join(a.run, "ablate.json"), "w"), indent=1)
     print("wrote", os.path.join(a.run, "ablate.json"))
     return 0
