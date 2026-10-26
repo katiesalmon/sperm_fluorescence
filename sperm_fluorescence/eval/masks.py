@@ -102,9 +102,17 @@ def main(argv=None):
     cif = isx_io.CIF(a.isx) if a.isx else None
     rng = np.random.default_rng(a.seed)
 
+    rows_by_cls = {}
     def source_index(cls, row):
-        # prepare_generalist cuts the ISX into first/second half; A8 rows are the bundle order
-        return int(row) if cls == "2I" else len(cif) // 2 + int(row)
+        """The object's index in the .cif. New caches store it (<cls>_rows.npy, meta source_rows);
+        legacy caches wrote arange, with 3I = the objects after the 2I half."""
+        if cls not in rows_by_cls:
+            p_ = os.path.join(a.cache, cls + "_rows.npy"); rows_by_cls[cls] = np.load(p_) if os.path.exists(p_) else None
+        if meta.get("source_rows") and rows_by_cls[cls] is not None:
+            return int(rows_by_cls[cls][int(row)])
+        p2 = os.path.join(a.cache, "2I_shapes.npy")
+        n2i = len(np.load(p2)) if os.path.exists(p2) else len(cif) // 2
+        return int(row) if cls == "2I" else n2i + int(row)
 
     def reference(ds, cls, i, k, y, valid):
         if inst_of[cls] == "isx" and cif is not None:

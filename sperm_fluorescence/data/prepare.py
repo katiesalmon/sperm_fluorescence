@@ -47,7 +47,7 @@ def a8_records(cfg, source, limit=0):
             if zoom != 1.0: st = ndi.zoom(st, (1, zoom, zoom), order=1).astype(np.float32)
             x = standardise(np.stack([st[p] for p in roles.values()]))
             y = np.stack([st[p] for p in stains.values()]).astype(np.float32)
-            items.append((x, y, np.nan))
+            items.append((x, y, np.nan, int(r)))
         yield cls, items
 
 
@@ -65,7 +65,7 @@ def isx_records(cfg, source, daf, limit=0):
             x = standardise(np.stack([img[ch] for ch in roles.values()]))
             y = np.stack([img[ch] - bg[ch] for ch in stains.values()]).astype(np.float32)
             s = float(F[i, col[scal_name]]) if F is not None else np.nan
-            items.append((x, y, s))
+            items.append((x, y, s, int(i)))
         print("isx %s: %d objects decoded (%.0fs)" % (cls, len(items), time.time() - t0))
         yield cls, items
 
@@ -125,7 +125,7 @@ def a8_run_records(cfg, source, limit=0):
             if zoom != 1.0: st = ndi.zoom(st, (1, zoom, zoom), order=1).astype(np.float32)
             x = standardise(np.stack([st[p] for p in roles.values()]))
             y = np.stack([st[p] for p in stains.values()]).astype(np.float32)
-            items.append((x, y, np.nan))
+            items.append((x, y, np.nan, int(r)))
             if len(items) % 5000 == 0: print("  %s %d / %d  (%.0fs)" % (cls, len(items), len(rows), time.time() - t0))
         if bad: print("  %s: skipped %d unreadable file(s)" % (cls, bad))
         yield cls, items
@@ -148,7 +148,7 @@ def main(argv=None):
     for cfg in cfgs:
         roles += [r for r in cfg["roles"] if r not in roles]; markers += [m for m in cfg["stains"] if m not in markers]
     os.makedirs(a.cache, exist_ok=True)
-    meta = {"layout": "ragged", "roles": roles, "target_names": markers, "classes": {}, "scales": {}, "instruments": {}}
+    meta = {"layout": "ragged", "roles": roles, "target_names": markers, "classes": {}, "scales": {}, "instruments": {}, "source_rows": True}
     dafs = list(a.daf)
     for cfg, src in zip(cfgs, a.source):
         inst = cfg["name"]; meta["instruments"][inst] = {"family": cfg.get("family"), "pixel_um": cfg.get("pixel_um"), "zoom_to_reference": cfg.get("zoom_to_reference", 1.0)}
@@ -160,13 +160,13 @@ def main(argv=None):
             return reader(cfg, src, dafs[0] if rname == "isx_cif" and dafs else None, limit) if rname == "isx_cif" else reader(cfg, src, limit)
         def widen(items):
             full = []
-            for x, y, s in items:
+            for x, y, s, row in items:
                 X = np.zeros((len(roles),) + x.shape[1:], np.float32); Y = np.zeros((len(markers),) + y.shape[1:], np.float32)
                 for j, k in enumerate(rk):
                     if k is not None: X[j] = x[k]
                 for j, k in enumerate(mk):
                     if k is not None: Y[j] = y[k]
-                full.append((X, Y, s))
+                full.append((X, Y, s, row))
             return full
         # pass 1: the per-marker scale (unit mean |y|) from a short draw of the training-digit classes
         draw = {cls: widen(items) for cls, items in run_reader(300)}
@@ -174,7 +174,7 @@ def main(argv=None):
         scale = np.ones(len(markers), np.float32)
         for j in range(len(markers)):
             if avail[j]:
-                vals = np.concatenate([np.abs(y[j]).ravel()[::7] for c in tr for _, y, _ in draw[c]])
+                vals = np.concatenate([np.abs(y[j]).ravel()[::7] for c in tr for _, y, _, _ in draw[c]])
                 scale[j] = max(float(vals.mean()), 1e-6)
         meta["scales"][inst] = scale.tolist(); del draw
         # pass 2: stream, one class in memory at a time
@@ -182,13 +182,13 @@ def main(argv=None):
             full = widen(items); del items
             print("%s %s: %d objects" % (inst, cls, len(full)))
             out = []
-            for X, Y, _ in full:
+            for X, Y, _, _ in full:
                 fx, m = to_multiple(X); fy, _ = to_multiple(Y / scale[:, None, None]); out.append((fx, fy, m))
             write_ragged(cls, out, a.cache)
             np.save(os.path.join(a.cache, cls + "_avail.npy"), np.tile(np.array(avail, bool), (len(out), 1)))
             np.save(os.path.join(a.cache, cls + "_present.npy"), np.tile(np.array(present, bool), (len(out), 1)))
-            np.save(os.path.join(a.cache, cls + "_rows.npy"), np.arange(len(out)))
-            np.save(os.path.join(a.cache, cls + "_scalars.npy"), np.array([s for _, _, s in full], np.float32)[:, None])
+            np.save(os.path.join(a.cache, cls + "_rows.npy"), np.array([row for _, _, _, row in full], np.int64))   # source object index
+            np.save(os.path.join(a.cache, cls + "_scalars.npy"), np.array([s for _, _, s, _ in full], np.float32)[:, None])
             meta["classes"][cls] = {"instrument": inst, "family": cfg.get("family"), "avail": avail, "present": present, "repeat": int(cfg["classes"].get("repeat", 1))}
             print("wrote %s: %d objects, roles %s, markers %s" % (cls, len(out), [r for r, p in zip(roles, present) if p], [m for m, v in zip(markers, avail) if v]))
             del full, out
