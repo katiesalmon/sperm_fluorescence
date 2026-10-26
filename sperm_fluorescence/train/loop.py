@@ -52,6 +52,9 @@ def train(args):
     # a class may ask to be seen several times per epoch (meta.json "repeat"), so a small
     # instrument is not drowned by a large one
     repeats = {c: int(v.get("repeat", 1)) for c, v in meta.get("classes", {}).items()} if isinstance(meta.get("classes"), dict) else {}
+    # the repeat exists to balance instruments; with one instrument in the training classes it only multiplies the epoch
+    instruments = {meta["classes"][c].get("instrument") for c in tr_cls if c in meta.get("classes", {})}
+    if len(instruments) < 2: repeats = {}
     if any(r > 1 for r in repeats.values()):
         fit_idx = np.concatenate([np.repeat(fit_idx[tr.classes[fit_idx] == c], repeats.get(c, 1)) for c in np.unique(tr.classes[fit_idx])])
     scale_vec = target_scale(tr, args.channel_scale)
