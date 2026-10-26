@@ -112,11 +112,11 @@ One script runs the whole chain for both instruments: cache from the run folder 
 A short smoke run first (2,000 events per class, ~20 minutes), then the full one:
 
 ```powershell
-.\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" -IsxCif "Z:\<isx-folder>\ALL_1_400_1.cif" -IsxDaf "Z:\<isx-folder>\ALL_1_400_1.daf" -Cache D:\sf_cache -Limit 2000 -A8Epochs 5 -IsxEpochs 5
+.\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" -IsxCif "Z:\<isx-folder>\ALL_1_400_1.cif" -IsxDaf "Z:\<isx-folder>\ALL_1_400_1.daf" -Cache C:\sf_cache -Limit 2000 -A8Epochs 5 -IsxEpochs 5
 ```
 
 ```powershell
-.\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" -IsxCif "Z:\<isx-folder>\ALL_1_400_1.cif" -IsxDaf "Z:\<isx-folder>\ALL_1_400_1.daf" -Cache D:\sf_cache
+.\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" -IsxCif "Z:\<isx-folder>\ALL_1_400_1.cif" -IsxDaf "Z:\<isx-folder>\ALL_1_400_1.daf" -Cache C:\sf_cache
 ```
 
 `-Cache` must be a local disk: the A8 cache is ~20 GB (every event at native size, 1.25x

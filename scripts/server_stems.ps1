@@ -3,7 +3,7 @@
 #
 #   .\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" `
 #                              -IsxCif "Z:\...\260813_Blair_Sperm_ISX\ALL_1_400_1.cif" -IsxDaf "Z:\...\ALL_1_400_1.daf" `
-#                              -Cache D:\sf_cache -Width 64
+#                              -Cache C:\sf_cache -Width 64        (any LOCAL disk; default <repo>\data\server_cache)
 #
 # Caches go to a LOCAL disk (-Cache), never Z:. Outputs: runs\srv_a8_stems, runs\srv_isx_stems (results.json,
 # ablate.json, masks.json, sheet/masks/views PNGs) and figures\srv_* (accuracy, slides). Copy runs\*\*.json,
@@ -12,7 +12,7 @@ param(
     [string]$A8Run = "",
     [string]$IsxCif = "",
     [string]$IsxDaf = "",
-    [string]$Cache = "D:\sf_cache",
+    [string]$Cache = "",          # local disk; default: <repo>\data\server_cache (data\ is gitignored)
     [int]$Width = 64,
     [int]$A8Epochs = 40,
     [int]$IsxEpochs = 30,
@@ -21,11 +21,13 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $py = ".venv\Scripts\python.exe"
+if ($Cache -eq "") { $Cache = Join-Path (Split-Path $PSScriptRoot -Parent) "data\server_cache" }
+New-Item -ItemType Directory -Force -Path $Cache | Out-Null
 $common = @("--train", "2", "--test", "3", "--batch", "32", "--width", "$Width", "--channel-scale", "--full-frame", "--aug", "1",
             "--eval-every", "5", "--arch", "stems", "--role-dropout", "0.3", "--select-on", "val_event_r", "--tta")
 
 if ($A8Run -ne "") {
-    $a8cache = Join-Path $Cache "a8_roles"
+    $a8cache = "$Cache\a8_roles"
     if (-not $SkipPrepare) {
         & $py -m sperm_fluorescence prepare --instrument a8 --reader a8_run --source $A8Run --cache $a8cache --limit $Limit
     }
@@ -39,7 +41,7 @@ if ($A8Run -ne "") {
 }
 
 if ($IsxCif -ne "") {
-    $isxcache = Join-Path $Cache "isx_roles"
+    $isxcache = "$Cache\isx_roles"
     if (-not $SkipPrepare) {
         & $py -m sperm_fluorescence prepare --instrument isx --source $IsxCif --daf $IsxDaf --cache $isxcache --limit $Limit
     }
