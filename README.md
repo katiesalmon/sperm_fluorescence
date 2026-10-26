@@ -54,15 +54,15 @@ Full detail, including the guards worth knowing about, is in
 Train and evaluate on the laptop (or the server GPU) with the package:
 
 ```bash
-.venv/bin/python -m stainless prepare --instrument a8 --source data/a8_bundle_seed0.zip --cache data/a8_roles
+.venv/bin/python -m sperm_fluorescence prepare --instrument a8 --source data/a8_bundle_seed0.zip --cache data/a8_roles
 ```
 
 ```bash
-.venv/bin/python -m stainless train --cache data/a8_roles --train 2 --test 3 --epochs 20 --width 32 --channel-scale --full-frame --aug 1 --arch stems --role-dropout 0.3 --out runs/a8_stems
+.venv/bin/python -m sperm_fluorescence train --cache data/a8_roles --train 2 --test 3 --epochs 20 --width 32 --channel-scale --full-frame --aug 1 --arch stems --role-dropout 0.3 --out runs/a8_stems
 ```
 
 ```bash
-.venv/bin/python -m stainless ablate runs/a8_stems --cache data/a8_roles --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc"
+.venv/bin/python -m sperm_fluorescence ablate runs/a8_stems --cache data/a8_roles --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc"
 ```
 
 ## Layout
@@ -75,7 +75,7 @@ Train and evaluate on the laptop (or the server GPU) with the package:
 | `docs/paths.md` | Three costed paths forward, and which to run first |
 | `docs/framework.md` | Design sketch for per-marker stain predictors, and the contract they share |
 | `docs/plan_modular.md` | The plan: per-marker models with modular label-free inputs, and the package restructure |
-| `docs/ARCHITECTURE.md` | **Map of the `stainless` package**: commands, modules, roles and markers, how to add things |
+| `docs/ARCHITECTURE.md` | **Map of the `sperm_fluorescence` package**: commands, modules, roles and markers, how to add things |
 | `docs/sampling.md` | How to survey the archives and cut a working subset |
 | `docs/server-setup.md` | What has to be installed where (for sampling: nothing) |
 | `scripts/survey_tree.py` | Summarise an unfamiliar directory tree: files per kind per folder, sizes, names, TIFF headers |
@@ -87,7 +87,7 @@ Train and evaluate on the laptop (or the server GPU) with the package:
 | `scripts/fcs_data.py` | FCS DATA segment: the event matrix |
 | `scripts/tiff_probe.py` | TIFF headers — pages, dtype, channels — without decoding pixels |
 | `scripts/cytpix.py` | Shared helpers: class tokens, archive opening, sizes |
-| `stainless/` | **The package.** `python -m stainless <command>`: prepare caches, train, sheets, masks, slides, accuracy, ablate. Map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| `sperm_fluorescence/` | **The package.** `python -m sperm_fluorescence <command>`: prepare caches, train, sheets, masks, slides, accuracy, ablate. Map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | `configs/instruments/` | One TOML per instrument: label-free roles and stain pages (A8/S8, ImageStream, CytPix) |
 | `configs/markers/` | One TOML per marker: name, colour, localisation, selection population |
 | `tests/` | Synthetic-event tests for the cache, role selection, stems and native-size evaluation |
@@ -101,7 +101,7 @@ Nothing under `data/` is ever committed.
 - **Everything under `scripts/` is standard library Python 3.8+**, so it runs on the
   imaging server with no install. Keep it that way — that constraint is why the survey and
   the sampler can be run by whoever has access to the data rather than whoever has admin
-  rights. `stainless/` is where numpy, torch and friends are allowed.
+  rights. `sperm_fluorescence/` is where numpy, torch and friends are allowed.
 - **Replicate is the held-out axis.** Train on 2, test on 3. Random event-level splits
   share an acquisition's gain, focus and noise floor; on LDHC that difference is 0.66
   against 0.38.

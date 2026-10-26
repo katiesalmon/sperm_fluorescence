@@ -1,4 +1,4 @@
-# The `stainless` package
+# The `sperm_fluorescence` package
 
 Label-free in, stain out. One trained model per fluorescence marker; the input is whatever
 label-free views the instrument has; the output is that marker's fluorescence image, from
@@ -6,7 +6,7 @@ which a per-event intensity and an IDEAS-style mask follow. The design and the r
 it are in [plan_modular.md](plan_modular.md); this page is the map of the code.
 
 ```
-python -m stainless <command>        every command takes --help
+python -m sperm_fluorescence <command>        every command takes --help
 
 prepare      cache any instrument by its config        train     fit one model (any cache)
 sheet        IDEAS-style true/predicted sheet          masks     binary stain masks, scored against IDEAS
@@ -30,11 +30,11 @@ Rendered by `docs/diagrams/make_diagrams.py` (PNG and SVG beside it).
 
 | module | job |
 |---|---|
-| `stainless/io/` | readers: `a8` (bundle zips, spillover, unmix), `isx` (.cif decode), `isx_daf`, `fcs` (re-exports the stdlib readers under `scripts/`) |
-| `stainless/data/` | `prepare` (config-driven cache writer), `cache` (ragged layout, load/open), `batching` (datasets, shape-bucketed batches, role selection, presence), `augment` |
-| `stainless/models/` | `stems` (per-role input stems + `build`/`call` for both architectures), `unet` (the trunk), `registry` (TOML configs) |
-| `stainless/train/` | `loop` (the training loop and `train` CLI), `losses` (masked L1, gradient term, target scale), `device` |
-| `stainless/eval/` | `metrics` (native-size evaluate), `sheets`/`render` (IDEAS-style figures), `load` (load a run; `sheet`), `masks`, `slides`, `accuracy`, `subset`, `ablate`, `spectral` |
+| `sperm_fluorescence/io/` | readers: `a8` (bundle zips, spillover, unmix), `isx` (.cif decode), `isx_daf`, `fcs` (re-exports the stdlib readers under `scripts/`) |
+| `sperm_fluorescence/data/` | `prepare` (config-driven cache writer), `cache` (ragged layout, load/open), `batching` (datasets, shape-bucketed batches, role selection, presence), `augment` |
+| `sperm_fluorescence/models/` | `stems` (per-role input stems + `build`/`call` for both architectures), `unet` (the trunk), `registry` (TOML configs) |
+| `sperm_fluorescence/train/` | `loop` (the training loop and `train` CLI), `losses` (masked L1, gradient term, target scale), `device` |
+| `sperm_fluorescence/eval/` | `metrics` (native-size evaluate), `sheets`/`render` (IDEAS-style figures), `load` (load a run; `sheet`), `masks`, `slides`, `accuracy`, `subset`, `ablate`, `spectral` |
 | `configs/instruments/` | one TOML per instrument: label-free **roles** → source page, **stains** → page, pixel pitch, class rules |
 | `configs/markers/` | one TOML per marker: name, colour, localisation, the population its checkpoint is selected on |
 | `scripts/` | standard-library tools for the Windows server (survey, bundles, FCS, spectral export); unchanged |
@@ -55,7 +55,7 @@ those. `--target NAME` trains a one-output model for one marker.
 **Architectures.** `--arch stack` is the fixed-channel U-Net (every earlier run; old
 checkpoints load). `--arch stems` adds one small stem per role, summed with a learned role
 bias into the same trunk, so absent roles contribute nothing; `--role-dropout P` trains one
-model to serve any subset, and `stainless ablate` scores it under each.
+model to serve any subset, and `sperm_fluorescence ablate` scores it under each.
 
 **Cache.** Ragged: every object at its own size, padded to a multiple of 8 with its own
 background, stored flat with shapes and offsets; batches are built from like-shaped objects
@@ -73,7 +73,7 @@ cannot be earned by recognising the cell type.
 - **A marker:** write `configs/markers/<name>.toml`, make sure the instrument config maps it
   to a page, `prepare` a cache, `train --target NAME`. Nothing else changes.
 - **An instrument:** write `configs/instruments/<name>.toml` with its roles and stains, add a
-  reader in `stainless/data/prepare.py` (`READERS`) that yields `(cls, [(x, y, scalar), ...])`,
+  reader in `sperm_fluorescence/data/prepare.py` (`READERS`) that yields `(cls, [(x, y, scalar), ...])`,
   and it joins every command.
 - **An input family model:** `prepare` the family's instruments into one cache and train
   with `--arch stems --role-dropout 0.3`; `ablate` reports what each view is worth.

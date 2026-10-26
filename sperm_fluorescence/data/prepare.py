@@ -2,9 +2,9 @@
 targets from the instrument config, and write a ragged cache the trainer can select roles
 and markers from.
 
-    python -m stainless prepare --instrument a8  --source data/a8_bundle_seed0.zip --cache data/a8_roles
-    python -m stainless prepare --instrument isx --source data/isx/ALL_1_400_1.cif --daf data/isx/ALL_1_400_1.daf --cache data/isx_roles
-    python -m stainless prepare --instrument a8 --source ... --instrument isx --source ... --daf ... --cache data/both_roles
+    python -m sperm_fluorescence prepare --instrument a8  --source data/a8_bundle_seed0.zip --cache data/a8_roles
+    python -m sperm_fluorescence prepare --instrument isx --source data/isx/ALL_1_400_1.cif --daf data/isx/ALL_1_400_1.daf --cache data/isx_roles
+    python -m sperm_fluorescence prepare --instrument a8 --source ... --instrument isx --source ... --daf ... --cache data/both_roles
 
 The cache layout is data/cache.py's. meta.json carries:
     roles          the x channel names, in order (union over instruments; a role an instrument
@@ -74,7 +74,7 @@ READERS = {"a8_bundle": a8_records, "isx_cif": isx_records}
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless prepare", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence prepare", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--instrument", action="append", required=True, help="config name (a8, isx, ...) or path; repeat for several")
     ap.add_argument("--source", action="append", required=True, help="one per --instrument: bundle zip, .cif, ...")
     ap.add_argument("--daf", action="append", default=[], help="ImageStream .daf (features), one per isx instrument")

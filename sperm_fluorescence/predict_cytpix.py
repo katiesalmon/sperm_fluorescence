@@ -14,7 +14,7 @@ against; the output is a sheet, predictions only, on the ISX display ranges.
 
 Example
 -------
-  .venv/bin/python python -m stainless predict-cytpix runs/isx_pilot --cache data/isx_cache --sample <dir with 1S/ 1P/ 1SP/> --n 6
+  .venv/bin/python python -m sperm_fluorescence predict-cytpix runs/isx_pilot --cache data/isx_cache --sample <dir with 1S/ 1P/ 1SP/> --n 6
 """
 
 import argparse

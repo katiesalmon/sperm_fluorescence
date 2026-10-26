@@ -1,4 +1,4 @@
-"""stainless: label-free in, stain out.
+"""sperm_fluorescence: label-free in, stain out -- virtual staining for sperm / ejaculate samples.
 
 Per-marker virtual-stain models for imaging cytometers (BD FACSDiscover A8/S8 CellView,
 Amnis ImageStream, Attune CytPix). See docs/plan_modular.md for the design.

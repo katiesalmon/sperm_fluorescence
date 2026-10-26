@@ -1,5 +1,5 @@
 """Synthetic-event tests: cache round trip, role selection, stems forward, native-size eval.
-Run with `python -m pytest tests` or `python tests/test_stainless.py`."""
+Run with `python -m pytest tests` or `python tests/test_sperm_fluorescence.py`."""
 import json
 import os
 import sys
@@ -8,9 +8,9 @@ import tempfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from stainless.data.cache import open_cache, to_multiple, write_ragged  # noqa: E402
-from stainless.data.batching import make_batches, present_of  # noqa: E402
-from stainless.models import stems  # noqa: E402
+from sperm_fluorescence.data.cache import open_cache, to_multiple, write_ragged  # noqa: E402
+from sperm_fluorescence.data.batching import make_batches, present_of  # noqa: E402
+from sperm_fluorescence.models import stems  # noqa: E402
 
 
 def make_cache(root, roles=("lightloss", "fsc", "ssc"), markers=("A", "B"), n=12, seed=0):
@@ -65,7 +65,7 @@ def test_stems_ignore_absent_roles_and_match_shape():
 
 def test_native_size_evaluate_crops_to_object():
     import torch
-    from stainless.eval.metrics import evaluate
+    from sperm_fluorescence.eval.metrics import evaluate
     with tempfile.TemporaryDirectory() as d:
         make_cache(d, n=6)
         ds, wells, _ = open_cache(d, ["3S"])

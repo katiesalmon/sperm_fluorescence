@@ -1,8 +1,8 @@
 """Accuracy figures for a finished run, from its checkpoint, on held-out objects.
 
-    python -m stainless accuracy runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
+    python -m sperm_fluorescence accuracy runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
         --title "ImageStream, held-out half of the tube" --sample 3000 --out figures/acc_isx
-    python -m stainless accuracy runs/gen_a8_scratch --cache data/gen_cache --test 3 \\
+    python -m sperm_fluorescence accuracy runs/gen_a8_scratch --cache data/gen_cache --test 3 \\
         --include 2S,2P,2SP,3S,3P,3SP --title "BD FACSDiscover A8, held-out replicate" --out figures/acc_a8
 
 Writes
@@ -42,7 +42,7 @@ def r_of(a, b):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless accuracy")
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence accuracy")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--title", required=True); ap.add_argument("--sample", type=int, default=3000)

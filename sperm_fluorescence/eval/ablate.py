@@ -1,6 +1,6 @@
 """Score one trained model under several input-role subsets (the stems architecture).
 
-    python -m stainless ablate runs/a8_stems_dropout --cache data/a8_roles --test 3 \\
+    python -m sperm_fluorescence ablate runs/a8_stems_dropout --cache data/a8_roles --test 3 \\
         --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc"
 
 For each subset the roles outside it are marked absent for every object, and the held-out
@@ -18,7 +18,7 @@ from .metrics import evaluate
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless ablate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence ablate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--subsets", required=True, help="semicolon-separated role lists, e.g. 'lightloss; lightloss,fsc; lightloss,fsc,ssc'")

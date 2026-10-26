@@ -36,7 +36,7 @@ def save(fig, name):
 def model_diagram():
     fig, ax = plt.subplots(figsize=(13, 6.8), facecolor="white"); ax.set_xlim(0, 13); ax.set_ylim(-0.2, 6.8); ax.axis("off")
     ax.text(0.2, 6.6, "One marker model: modular label-free input, fixed stain output", fontsize=14, fontweight="bold", va="top")
-    ax.text(0.2, 6.2, "stainless --arch stems    (the trunk is the same 4-level U-Net every earlier run used)", fontsize=9.5, color=GREY, va="top")
+    ax.text(0.2, 6.2, "sperm_fluorescence --arch stems    (the trunk is the same 4-level U-Net every earlier run used)", fontsize=9.5, color=GREY, va="top")
     roles = [("light loss", "A8 / S8"), ("FSC", "A8 / S8"), ("SSC", "A8 / S8"), ("brightfield", "ImageStream / CytPix"), ("brightfield 2", "ImageStream"), ("darkfield", "ImageStream")]
     ys = [4.6, 3.9, 3.2, 2.5, 1.8, 1.1]
     ax.text(1.05, 5.05, "input roles\n(any subset)", ha="center", fontsize=9, color=GREY)
@@ -78,14 +78,14 @@ def pipeline_diagram():
     srcs = [("A8 / S8 bundle\n6-page TIFFs + FCS", 5.0), ("ImageStream .cif + .daf\n12 channels + IDEAS masks", 4.0), ("CytPix sample\nbrightfield only", 3.0)]
     for t, y in srcs: box(ax, 0.2, y - 0.35, 2.2, 0.7, t, C_DATA, fs=8.5)
     box(ax, 0.2, 1.6, 2.2, 0.9, "configs/instruments/*.toml\nroles → pages\nstains → pages", C_CFG, fs=8)
-    box(ax, 3.1, 3.5, 1.6, 1.0, "stainless\nprepare", "#ffffff", fs=10, bold=True)
+    box(ax, 3.1, 3.5, 1.6, 1.0, "sperm_fluorescence\nprepare", "#ffffff", fs=10, bold=True)
     for _, y in srcs: arrow(ax, (2.4, y), (3.1, 4.0), lw=1.1)
     arrow(ax, (2.4, 2.05), (3.4, 3.5), lw=1.1, dashed=True)
     box(ax, 5.2, 3.1, 2.7, 1.8, "", C_DATA)
     ax.text(6.55, 4.65, "ragged cache", ha="center", fontsize=10, fontweight="bold")
     ax.text(6.55, 4.35, "objects at native size\nx: named roles,  y: named markers\npresent / avail tables\nmeta: roles, markers, scales", ha="center", va="top", fontsize=7.5, color=GREY)
     arrow(ax, (4.7, 4.0), (5.2, 4.0))
-    box(ax, 9.0, 3.5, 1.5, 1.0, "stainless\ntrain", "#ffffff", fs=10, bold=True)
+    box(ax, 9.0, 3.5, 1.5, 1.0, "sperm_fluorescence\ntrain", "#ffffff", fs=10, bold=True)
     arrow(ax, (7.9, 4.0), (9.0, 4.0))
     ax.text(8.45, 4.12, "--roles  --target\n--arch stems", ha="center", va="bottom", fontsize=7.5, color=GREY)
     box(ax, 8.75, 1.6, 2.0, 0.9, "configs/markers/*.toml\nname, colour,\nselection population", C_CFG, fs=8)
@@ -98,7 +98,7 @@ def pipeline_diagram():
     evals = ["sheet", "masks", "accuracy", "slides", "ablate", "subset"]
     for i, e in enumerate(evals):
         box(ax, 3.1 + i * 1.6, 0.3, 1.4, 0.5, e, C_POST, fs=8.5)
-    ax.text(3.1, 0.95, "stainless <eval command>  — each loads a run by its results.json and scores it on the held-out replicate", fontsize=8, color=GREY, va="bottom")
+    ax.text(3.1, 0.95, "sperm_fluorescence <eval command>  — each loads a run by its results.json and scores it on the held-out replicate", fontsize=8, color=GREY, va="bottom")
     arrow(ax, (11.95, 3.05), (11.95, 0.8), lw=1.1)
     ax.text(0.2, -0.2, "server (stdlib scripts/): survey, bundle, FCS, spectral export    →    laptop / GPU box: everything above", fontsize=8, color=GREY)
     save(fig, "pipeline")

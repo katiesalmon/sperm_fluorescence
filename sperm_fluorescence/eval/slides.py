@@ -1,9 +1,9 @@
 """Presentation figures: one object, its label-free input, and for every marker the true
 stain beside the prediction, with the all-channel overlay at the end.
 
-    python -m stainless slides runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
+    python -m sperm_fluorescence slides runs/gen_isx_only --cache data/gen_cache --test 3 --include 2I,3I \\
         --title "ImageStream (60x)" --input-name "Brightfield" --um-per-px 0.333 --out figures/isx
-    python -m stainless slides runs/gen_a8_scratch --cache data/gen_cache --test 3 --include 2S,2P,2SP,3S,3P,3SP \\
+    python -m sperm_fluorescence slides runs/gen_a8_scratch --cache data/gen_cache --test 3 --include 2S,2P,2SP,3S,3P,3SP \\
         --title "BD FACSDiscover A8" --input-name "Light loss" --um-per-px 0.333 --approx-scale --out figures/a8
 
 Candidates are held-out objects whose truth is clearly stained on every available marker
@@ -120,7 +120,7 @@ def draw(path, objs, names, avail_k, title, input_name, um_per_px, approx, rs):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless slides")
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence slides")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--title", required=True); ap.add_argument("--input-name", required=True)

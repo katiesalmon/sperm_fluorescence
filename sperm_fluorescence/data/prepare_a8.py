@@ -6,7 +6,7 @@ full-scale server runs used. One cache per sample class:
     <cache>/<cls>_m.npy   (N, 80, 104)    bool      valid region
     <cache>/<cls>_rows.npy, <cls>_scalars.npy        FCS row and the unmixed scalars
 
-    python -m stainless prepare-a8 "Z:\\...\\260709_Blair_Sperm_A8\\260709" --cache D:\\a8_cache
+    python -m sperm_fluorescence prepare-a8 "Z:\\...\\260709_Blair_Sperm_A8\\260709" --cache D:\\a8_cache
 """
 import argparse
 import glob
@@ -131,7 +131,7 @@ def prepare(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless prepare-a8", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence prepare-a8", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p = ap; p.add_argument("run_folder"); p.add_argument("--cache", required=True)
     p.add_argument("--classes", nargs="+"); p.add_argument("--limit", type=int, default=0, help="events per sample (0 = all)")
     p.add_argument("--no-destreak", dest="destreak", action="store_false")

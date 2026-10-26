@@ -17,7 +17,7 @@ so 600 A8 events are not drowned by 10,000 ISX ones.
 
 Example
 -------
-  python -m stainless prepare-generalist --isx data/isx/ALL_1_400_1.cif --isx-daf data/isx/ALL_1_400_1.daf \\
+  python -m sperm_fluorescence prepare-generalist --isx data/isx/ALL_1_400_1.cif --isx-daf data/isx/ALL_1_400_1.daf \\
       --a8 data/a8_bundle_seed0.zip --cache data/gen_cache
 """
 

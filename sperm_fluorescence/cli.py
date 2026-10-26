@@ -1,4 +1,4 @@
-"""Command line: python -m stainless <command> [args]
+"""Command line: python -m sperm_fluorescence <command> [args]
 
   prepare              cache any instrument by its config (roles + markers; the modular path)
   prepare-a8           cache an A8 run (fixed frames, legacy)      prepare-isx     cache an ImageStream .cif (ragged, legacy)
@@ -14,19 +14,19 @@ Every command takes --help.
 import sys
 
 COMMANDS = {
-    "prepare": ("stainless.data.prepare", "main"),
-    "prepare-a8": ("stainless.data.prepare_a8", "main"),
-    "prepare-isx": ("stainless.data.prepare_isx", "main"),
-    "prepare-generalist": ("stainless.data.prepare_generalist", "main"),
-    "train": ("stainless.train.loop", "main"),
-    "sheet": ("stainless.eval.load", "main"),
-    "masks": ("stainless.eval.masks", "main"),
-    "slides": ("stainless.eval.slides", "main"),
-    "accuracy": ("stainless.eval.accuracy", "main"),
-    "subset": ("stainless.eval.subset", "main"),
-    "ablate": ("stainless.eval.ablate", "main"),
-    "predict-cytpix": ("stainless.predict_cytpix", "main"),
-    "spectral": ("stainless.eval.spectral", "main"),
+    "prepare": ("sperm_fluorescence.data.prepare", "main"),
+    "prepare-a8": ("sperm_fluorescence.data.prepare_a8", "main"),
+    "prepare-isx": ("sperm_fluorescence.data.prepare_isx", "main"),
+    "prepare-generalist": ("sperm_fluorescence.data.prepare_generalist", "main"),
+    "train": ("sperm_fluorescence.train.loop", "main"),
+    "sheet": ("sperm_fluorescence.eval.load", "main"),
+    "masks": ("sperm_fluorescence.eval.masks", "main"),
+    "slides": ("sperm_fluorescence.eval.slides", "main"),
+    "accuracy": ("sperm_fluorescence.eval.accuracy", "main"),
+    "subset": ("sperm_fluorescence.eval.subset", "main"),
+    "ablate": ("sperm_fluorescence.eval.ablate", "main"),
+    "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
+    "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
 
 

@@ -1,7 +1,7 @@
 """Stain masks from a trained model: threshold each predicted channel into a binary mask
 and score it against a reference mask, the way IDEAS draws a per-channel mask.
 
-    python -m stainless masks runs/gen_joint --cache data/gen_cache --test 3 --isx data/isx/ALL_1_400_1.cif
+    python -m sperm_fluorescence masks runs/gen_joint --cache data/gen_cache --test 3 --isx data/isx/ALL_1_400_1.cif
 
 Reference mask per object and channel:
   ISX  the IDEAS mask stored in the .cif for that channel (M02, M03, M07, M11).
@@ -88,7 +88,7 @@ def outline(m):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless masks")
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence masks")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--isx", default=None, help=".cif the ISX classes were cut from, for the IDEAS masks")

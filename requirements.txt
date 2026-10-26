@@ -13,4 +13,4 @@ tifffile
 imagecodecs   # required: the replicate-1 TIFs are LZW, which tifffile cannot decode alone
 Pillow
 fcsparser     # only if the marker signal turns out to be a cytometer measurement
-tomli; python_version < '3.11'   # TOML configs for the stainless package
+tomli; python_version < '3.11'   # TOML configs for the sperm_fluorescence package

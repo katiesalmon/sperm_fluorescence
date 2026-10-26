@@ -8,7 +8,7 @@ which is the ImageStream analogue of the A8's within-well-type number.
 
 Example
 -------
-  python python -m stainless subset runs/isx_pilot --cache data/isx_cache --dapi-min 25119
+  python python -m sperm_fluorescence subset runs/isx_pilot --cache data/isx_cache --dapi-min 25119
 """
 
 import argparse
@@ -26,7 +26,7 @@ from .metrics import evaluate
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless subset", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence subset", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run"); ap.add_argument("--cache", required=True)
     ap.add_argument("--dapi-min", type=float, default=25119.0, help="IDEAS Intensity_MC_Ch07 threshold (default: the trough between the two modes)")
     ap.add_argument("--dapi-max", type=float, default=None,

@@ -1,6 +1,6 @@
-"""Load a finished run from its checkpoint, and redraw its IDEAS-style sheet (`stainless sheet`).
+"""Load a finished run from its checkpoint, and redraw its IDEAS-style sheet (`sperm_fluorescence sheet`).
 
-    python -m stainless sheet runs/gen_a8_scratch --cache data/gen_cache --test 3 [--per-well 3] [--seed 0]
+    python -m sperm_fluorescence sheet runs/gen_a8_scratch --cache data/gen_cache --test 3 [--per-well 3] [--seed 0]
 
 Rows are held-out objects, a few per well type; columns are BF, each marker true and
 predicted in its colour, then the true and predicted all-channel overlay. Channels the
@@ -43,7 +43,7 @@ def load_run(run, cache, test, include=None, checkpoint="best.pt"):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stainless sheet")
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence sheet")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--per-well", type=int, default=3); ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--include", default=None, help="Restrict to these cache classes (comma list)")

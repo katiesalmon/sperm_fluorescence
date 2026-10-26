@@ -230,7 +230,7 @@ def train(args):
 
 def main(argv=None):
     import argparse
-    ap = argparse.ArgumentParser(prog="stainless train", description="Train on a cache; one replicate (or class set) fits, another is held out.")
+    ap = argparse.ArgumentParser(prog="sperm_fluorescence train", description="Train on a cache; one replicate (or class set) fits, another is held out.")
     t = ap; t.add_argument("--cache", required=True); t.add_argument("--train", default="2"); t.add_argument("--test", default="3")
     t.add_argument("--epochs", type=int, default=40); t.add_argument("--batch", type=int, default=64); t.add_argument("--width", type=int, default=48)
     t.add_argument("--lr", type=float, default=2e-3); t.add_argument("--eval-every", type=int, default=5); t.add_argument("--seed", type=int, default=0)

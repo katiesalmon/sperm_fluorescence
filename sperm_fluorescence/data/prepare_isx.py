@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Cache an ImageStream .cif in the layout `stainless train` trains from.
+"""Cache an ImageStream .cif in the layout `sperm_fluorescence train` trains from.
 
 Inputs are the three label-free channels -- Ch01 and Ch09 (brightfield, two cameras)
 and Ch06 (side scatter) -- normalised per event. Targets are the four stained channels,
@@ -9,13 +9,13 @@ at its native size, padded only to a multiple of 8 with its own background (`rag
 layout); `--layout fixed` gives 112 x 80 frames with centre-crop for the few larger ones.
 
 There is one sample, so the cache is split into two pseudo-replicates by acquisition
-order: class `1H` is the first half of the objects, `2H` the second. `stainless train`'s
+order: class `1H` is the first half of the objects, `2H` the second. `sperm_fluorescence train`'s
 `--train 1 --test 2` then holds out the second half. That is a weaker split than a true
 replicate and results from it should say so.
 
 Example
 -------
-  python -m stainless prepare-isx data/isx/ALL_1_400_1.cif data/isx/ALL_1_400_1.daf --cache data/isx_cache
+  python -m sperm_fluorescence prepare-isx data/isx/ALL_1_400_1.cif data/isx/ALL_1_400_1.daf --cache data/isx_cache
 """
 
 import argparse
