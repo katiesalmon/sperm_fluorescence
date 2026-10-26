@@ -6,8 +6,8 @@
 #                              -Cache C:\sf_cache -Width 64        (any LOCAL disk; default <repo>\data\server_cache)
 #
 # Caches go to a LOCAL disk (-Cache), never Z:. Outputs: runs\srv_a8_stems, runs\srv_isx_stems (results.json,
-# ablate.json, masks.json, sheet/masks/views PNGs) and figures\srv_* (accuracy, slides). Copy runs\*\*.json,
-# runs\*\*.png and figures\ back to the laptop; leave the caches and checkpoints on the server.
+# ablate.json, masks.json, sheet/masks/views PNGs) and figures\srv_* (accuracy, slides). At the end everything
+# worth carrying back is zipped into server_results_<timestamp>.zip in the repo folder (no checkpoints, no caches).
 param(
     [string]$A8Run = "",
     [string]$IsxCif = "",
@@ -53,4 +53,22 @@ if ($IsxCif -ne "") {
     & $py -m sperm_fluorescence accuracy runs\srv_isx_stems --cache $isxcache --test 3 --title "ImageStream, held-out half of the tube (full run)" --sample 5000 --out figures\srv_isx_accuracy
     & $py -m sperm_fluorescence slides runs\srv_isx_stems --cache $isxcache --test 3 --population sperm --title "ImageStream (60x): four markers predicted from brightfield" --input-name "Brightfield" --um-per-px 0.333 --n 4 --out figures\srv_isx_slides
 }
-Write-Host "ALL DONE"
+# ---- one zip to carry back: every JSON, PNG, CSV and log from the two runs, plus figures\srv_* (no checkpoints, no caches)
+$stamp = Get-Date -Format "yyyyMMdd_HHmm"
+$zip = "server_results_$stamp.zip"
+$staging = Join-Path $env:TEMP "sf_results_$stamp"
+New-Item -ItemType Directory -Force -Path $staging | Out-Null
+foreach ($run in @("runs\srv_a8_stems", "runs\srv_isx_stems")) {
+    if (Test-Path $run) {
+        $dest = Join-Path $staging $run
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Get-ChildItem $run -File | Where-Object { $_.Extension -in ".json", ".png", ".csv", ".log" } | Copy-Item -Destination $dest
+    }
+}
+Get-ChildItem figures -Directory -Filter "srv_*" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $staging "figures\$($_.Name)") -Recurse -Force }
+Get-ChildItem figures -File -Filter "srv_*" -ErrorAction SilentlyContinue | ForEach-Object { New-Item -ItemType Directory -Force -Path (Join-Path $staging "figures") | Out-Null; Copy-Item $_.FullName -Destination (Join-Path $staging "figures") -Force }
+& $py -c "import torch, sys; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" | Out-File (Join-Path $staging "environment.txt")
+git rev-parse HEAD | Out-File (Join-Path $staging "commit.txt")
+Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
+Remove-Item $staging -Recurse -Force
+Write-Host "ALL DONE -- copy $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB) back to the laptop"
