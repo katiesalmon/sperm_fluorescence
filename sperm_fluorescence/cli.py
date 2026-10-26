@@ -7,7 +7,7 @@
   slides               presentation panels for one object          accuracy        scatter, event-r bars, mask IoU bars
   subset               re-score a run on DAPI-defined subsets       ablate          score a stems model under role subsets
   views                inputs beside outputs, per input subset     predict-cytpix  run an ISX model on CytPix crops
-  spectral             plot a spectral_export.py JSON
+  spectral             plot a spectral_export.py JSON              denoised        pixel r against a denoised measurement
 
 Every command takes --help.
 """
@@ -26,6 +26,7 @@ COMMANDS = {
     "subset": ("sperm_fluorescence.eval.subset", "main"),
     "ablate": ("sperm_fluorescence.eval.ablate", "main"),
     "views": ("sperm_fluorescence.eval.views", "main"),
+    "denoised": ("sperm_fluorescence.eval.denoised", "main"),
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
