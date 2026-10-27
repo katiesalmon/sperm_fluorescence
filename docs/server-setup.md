@@ -138,6 +138,21 @@ kept and is what `runs/srv_a8_stems` reports. bfloat16 has fp32's exponent range
 overflow that way; a batch whose loss is still non-finite is skipped and reported, never
 stepped into the weights.
 
+### Relabelling the ImageStream run after the ACRV1/TOMM20 swap (2026-10-27)
+
+Caches and runs made before 2026-10-27 call Ch03 "ACRV1" and Ch11 "TOMM20"; it is the other
+way round. The image columns are right, only the names are wrong, so swap the names in place
+and redraw the figures from the existing checkpoints instead of retraining:
+
+```powershell
+git pull
+.venv\Scripts\python.exe scripts\relabel_markers.py --swap ACRV1 TOMM20 data\server_cache\isx_roles runs\srv_isx_stems figures\srv_isx_accuracy
+.\scripts\server_stems.ps1 -IsxCif "Z:\Blair_Main\2026\081226\260813_Blair_Sperm_ISX\ALL_1_400_1.cif" -IsxDaf "Z:\Blair_Main\2026\081226\260813_Blair_Sperm_ISX\ALL_1_400_1.daf" -SkipTrain
+```
+
+`-SkipTrain` runs only `views`, `sheet`, `masks`, `accuracy` and `slides` and then zips the
+results as usual. The relabel refuses to run twice on the same directory.
+
 ## If pip cannot reach the internet
 
 Institutional servers often block it. Two ways round:

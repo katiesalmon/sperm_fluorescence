@@ -18,7 +18,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from ..data.cache import open_cache
-from ..data.prepare_generalist import ISX_TGT
+from ..models import registry
 from ..io import isx as isx_io
 from . import render
 from .load import load_run
@@ -100,6 +100,7 @@ def main(argv=None):
     meta = json.load(open(os.path.join(a.cache, "meta.json")))
     inst_of = {c: v["instrument"] for c, v in meta["classes"].items()}
     cif = isx_io.CIF(a.isx) if a.isx else None
+    isx_stains = registry.instrument("isx")["stains"]     # marker name -> .cif channel index (M<ch> mask)
     rng = np.random.default_rng(a.seed)
 
     rows_by_cls = {}
@@ -116,7 +117,7 @@ def main(argv=None):
 
     def reference(ds, cls, i, k, y, valid):
         if inst_of[cls] == "isx" and cif is not None:
-            return ideas_mask(cif, source_index(cls, i - ds_offset(ds, cls)), ISX_TGT[k], y.shape[1:])
+            return ideas_mask(cif, source_index(cls, i - ds_offset(ds, cls)), isx_stains[names[k]], y.shape[1:])
         return mask_from_image(y[k], valid, **RULE[inst_of[cls]])
 
     def ds_offset(ds, cls):

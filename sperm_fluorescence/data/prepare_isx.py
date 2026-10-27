@@ -3,7 +3,7 @@
 
 Inputs are the three label-free channels -- Ch01 and Ch09 (brightfield, two cameras)
 and Ch06 (side scatter) -- normalised per event. Targets are the four stained channels,
-Ch02 LDHC/AKAP4, Ch03 ACRV1, Ch07 DAPI, Ch11 TOMM20, with each image's background
+Ch02 LDHC/AKAP4, Ch03 TOMM20, Ch07 DAPI, Ch11 ACRV1, with each image's background
 (median outside the combined mask) subtracted, in 12-bit counts. By default every object is kept
 at its native size, padded only to a multiple of 8 with its own background (`ragged`
 layout); `--layout fixed` gives 112 x 80 frames with centre-crop for the few larger ones.
@@ -32,7 +32,7 @@ from .cache import to_multiple, write_ragged  # noqa: F401
 H, W = 112, 80
 INPUTS = ["Ch01", "Ch09", "Ch06"]
 TARGETS = ["Ch02", "Ch03", "Ch07", "Ch11"]
-TARGET_NAMES = ["LDHC/AKAP4", "ACRV1", "DAPI", "TOMM20"]
+TARGET_NAMES = ["LDHC/AKAP4", "TOMM20", "DAPI", "ACRV1"]   # Ch03 is TOMM20 (PE), Ch11 ACRV1 (PerCP-eF710)
 
 
 def fit_frame(a, valid=None):

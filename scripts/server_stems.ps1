@@ -17,7 +17,8 @@ param(
     [int]$A8Epochs = 40,
     [int]$IsxEpochs = 30,
     [int]$Limit = 0,            # events per class, 0 = all; use e.g. 2000 for a first smoke run
-    [switch]$SkipPrepare
+    [switch]$SkipPrepare,
+    [switch]$SkipTrain          # reuse runs\srv_*: no prepare, train or ablate; redraw views, sheet, masks, accuracy, slides
 )
 $ErrorActionPreference = "Stop"
 $py = ".venv\Scripts\python.exe"
@@ -28,11 +29,13 @@ $common = @("--train", "2", "--test", "3", "--batch", "32", "--width", "$Width",
 
 if ($A8Run -ne "") {
     $a8cache = "$Cache\a8_roles"
-    if (-not $SkipPrepare) {
+    if (-not $SkipPrepare -and -not $SkipTrain) {
         & $py -m sperm_fluorescence prepare --instrument a8 --reader a8_run --source $A8Run --cache $a8cache --limit $Limit
     }
-    & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out runs\srv_a8_stems @common
-    & $py -m sperm_fluorescence ablate runs\srv_a8_stems --cache $a8cache --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc; ssc"
+    if (-not $SkipTrain) {
+        & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out runs\srv_a8_stems @common
+        & $py -m sperm_fluorescence ablate runs\srv_a8_stems --cache $a8cache --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc; ssc"
+    }
     & $py -m sperm_fluorescence views  runs\srv_a8_stems --cache $a8cache --test 3 --subsets "lightloss,fsc,ssc; lightloss; ssc" --per-well 2 --crop 56 --out figures\srv_a8_views.png
     & $py -m sperm_fluorescence sheet  runs\srv_a8_stems --cache $a8cache --test 3 --per-well 3
     & $py -m sperm_fluorescence masks  runs\srv_a8_stems --cache $a8cache --test 3 --limit 1000 --calib 400
@@ -42,11 +45,13 @@ if ($A8Run -ne "") {
 
 if ($IsxCif -ne "") {
     $isxcache = "$Cache\isx_roles"
-    if (-not $SkipPrepare) {
+    if (-not $SkipPrepare -and -not $SkipTrain) {
         & $py -m sperm_fluorescence prepare --instrument isx --source $IsxCif --daf $IsxDaf --cache $isxcache --limit $Limit
     }
-    & $py -m sperm_fluorescence train --cache $isxcache --epochs $IsxEpochs --roles brightfield,brightfield2,darkfield --out runs\srv_isx_stems @common
-    & $py -m sperm_fluorescence ablate runs\srv_isx_stems --cache $isxcache --test 3 --subsets "brightfield; brightfield,brightfield2; brightfield,brightfield2,darkfield; darkfield"
+    if (-not $SkipTrain) {
+        & $py -m sperm_fluorescence train --cache $isxcache --epochs $IsxEpochs --roles brightfield,brightfield2,darkfield --out runs\srv_isx_stems @common
+        & $py -m sperm_fluorescence ablate runs\srv_isx_stems --cache $isxcache --test 3 --subsets "brightfield; brightfield,brightfield2; brightfield,brightfield2,darkfield; darkfield"
+    }
     & $py -m sperm_fluorescence views  runs\srv_isx_stems --cache $isxcache --test 3 --subsets "brightfield,brightfield2,darkfield; brightfield; darkfield" --per-well 4 --out figures\srv_isx_views.png
     & $py -m sperm_fluorescence sheet  runs\srv_isx_stems --cache $isxcache --test 3 --per-well 4
     & $py -m sperm_fluorescence masks  runs\srv_isx_stems --cache $isxcache --test 3 --isx $IsxCif --limit 1000 --calib 400

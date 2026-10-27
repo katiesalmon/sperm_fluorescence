@@ -135,9 +135,10 @@ class CIF:
 
 
 ISX_CHANNELS = ["Ch%02d" % i for i in range(1, 13)]
-# '?' = the PE / PerCP-eF710 assignment is unconfirmed between the template and the gates;
-# see docs/task_brief.md. Ch04/05/08/10/12 hold spillover only; Ch06 is side scatter.
-ISX_MARKERS = {"Ch01": "BF", "Ch02": "LDHC_AF488", "Ch03": "ACRV1_PE?", "Ch06": "SSC",
-               "Ch07": "DAPI", "Ch09": "BF2", "Ch11": "TOMM20_PerCP?"}
+# Settled 2026-10-27 from the acquisition XML, the single-stain controls and the images
+# themselves (docs/task_brief.md): Ch03 is TOMM20 on PE, Ch11 (and Ch05) ACRV1 on PerCP-eF710.
+# Ch04/08/10/12 hold spillover only; Ch06 is side scatter.
+ISX_MARKERS = {"Ch01": "BF", "Ch02": "LDHC_AF488", "Ch03": "TOMM20_PE", "Ch05": "ACRV1_PerCP", "Ch06": "SSC",
+               "Ch07": "DAPI", "Ch09": "BF2", "Ch11": "ACRV1_PerCP"}
 LABEL_FREE = [0, 8, 5]            # Ch01, Ch09, Ch06
 TARGETS = [1, 2, 6, 10]           # Ch02, Ch03, Ch07, Ch11

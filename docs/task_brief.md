@@ -595,9 +595,16 @@ compensated `.cif` keeps the same layout.
 | Channels with data | Ch01 and Ch09 (two brightfield cameras), Ch02, Ch03, Ch07, Ch11. The rest sit at default display range — unused |
 | Compensation | single-stain `.rif` controls for AF488, PE, PerCP-eF710, DAPI; the `.cif` is IDEAS-compensated from them |
 
-**Channel map, confirmed by Katelynn 2026-10-04 — the gallery labels are correct and
-the template is stale:** Ch02 = LDHC/AKAP4 (AF488), **Ch03 = ACRV1 (PE)**, Ch07 = DAPI,
-**Ch11 = TOMM20 (PerCP-eF710)**. Label-free: Ch01 and Ch09 (brightfield, two cameras) and
+**Channel map, corrected 2026-10-27 — the gallery labels were wrong and the template was
+right:** Ch02 = LDHC/AKAP4 (AF488), **Ch03 = TOMM20 (PE)**, Ch07 = DAPI, **Ch11 = ACRV1
+(PerCP-eF710)**. Evidence: the acquisition XML inside the `.cif` names physical channel 2
+"TOMM20 PE" and physical channel 4 "ACRV-1 PerCP-Cy5.5" (Ch05, the same 642–745 nm band as
+Ch11 on the other camera, r = 0.91 between the two); the PE single-stain control lights Ch03
+and the DAPI control lights Ch07/Ch08 and nothing in Ch11; and the Ch03 stain sits 4 µm
+behind the nucleus along the tail (the midpiece) while the Ch11 stain caps the anterior
+head (docs/results.md, 2026-10-27). The 2026-10-04 confirmation from the gallery labels
+stood for three weeks; every ImageStream result before 2026-10-27 has the two names
+swapped. Label-free: Ch01 and Ch09 (brightfield, two cameras) and
 Ch06 (side scatter). Sample identity and donor are not known; treated as a single
 sperm-only sample.
 

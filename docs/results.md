@@ -4,6 +4,13 @@ Measured findings, newest first. Everything here is reproducible from the script
 alongside it. The plan these test is in [approach.md](approach.md); what the data turned
 out to be is in [task_brief.md](task_brief.md).
 
+> **Erratum, 2026-10-27.** In every ImageStream result dated before 2026-10-27 the labels
+> **ACRV1 and TOMM20 are swapped**: Ch03 (PE) is TOMM20 and Ch11 (PerCP-eF710) is ACRV1, not
+> the other way round (evidence in the full-scale section below and in task_brief.md). Read
+> "ACRV1" as TOMM20 and "TOMM20" as ACRV1 in the ImageStream pilot, the generalist, the
+> stain-mask, the baseline and the provisional-ablation sections. A8 results are unaffected.
+> The caches and runs on disk have been relabelled in place (`scripts/relabel_markers.py`).
+
 ---
 
 ## Full scale, both instruments: the stems models on the server
@@ -67,55 +74,65 @@ markers, which do.
 
 ### ImageStream: four markers from brightfield + brightfield 2 + darkfield, 10,000 held-out objects
 
+**The ACRV1 and TOMM20 labels were swapped in every ImageStream cache before this date.**
+What the sheets called TOMM20 sat on the head, 1 µm from the DAPI centroid, with a pixel
+correlation of 0.84 to DAPI; what they called ACRV1 was a bright short segment behind the
+head. The files settle it. The acquisition XML inside the `.cif` names physical channel 2
+(Ch03) "TOMM20 PE" and physical channel 4 (Ch05) "ACRV-1 PerCP-Cy5.5"; Ch11 is the same
+642–745 nm band on the second camera and matches Ch05 pixel for pixel (r = 0.91). The
+single-stain controls agree: the PE control lights Ch03, the DAPI control lights Ch07 and
+Ch08 and nothing in Ch11. And on 372 held-out sperm whose tail leaves the head, the Ch03
+stain centres **4.3 µm behind the nucleus along the tail** (99 % of cells), where the
+midpiece is, while the Ch11 stain centres **0.8 µm ahead of it**, where the acrosomal cap
+is (`figures/isx_ch03_vs_ch11.png`). The IDEAS gallery labels this was taken from were
+wrong; the instrument config now reads Ch03 = TOMM20, Ch11 = ACRV1, and
+`scripts/relabel_markers.py` has swapped the names in the existing caches, runs and JSON
+on disk. Every number below uses the corrected names; the server figures (`figures/srv_isx_*`,
+`runs/srv_isx_stems/*.png`) still carry the old labels until they are redrawn there
+(`server_stems.ps1 -SkipTrain`). The A8 is unaffected: its PE is CD45 and its PerCP-eF710 is
+ACRV1, the same conjugate as the ImageStream's Ch11.
+
 Within-population event r (populations by the DAPI scalar; sperm is the one that matters):
 
 | | sperm | round cells | DAPI-dim fragments | pooled event r | pixel r |
 |---|---|---|---|---|---|
 | LDHC/AKAP4 | **0.93** | 0.87 | 0.97 | 0.93 | 0.91 |
-| ACRV1 | **0.98** | 0.93 | 0.99 | 0.97 | 0.94 |
+| ACRV1 | **0.96** | 0.62 | 0.94 | 0.95 | 0.81 |
 | DAPI | **0.77** | 0.37 | 0.37 | 0.84 | 0.86 |
-| TOMM20 | **0.96** | 0.62 | 0.94 | 0.95 | 0.81 |
+| TOMM20 | **0.98** | 0.93 | 0.99 | 0.97 | 0.94 |
 
-Three of four are at the pilot's level or above (pilot, same split, plain U-Net: 0.92–0.98
-within sperm); DAPI within sperm is 0.77, which is the known case, a nuclear stain whose
-intensity varies little between sperm so that r within the population is capped by
-measurement noise. Against the laptop's 8,000-object, 12-epoch run every marker gained,
-TOMM20 most (0.23 → 0.96): the laptop run had not converged on it.
+At or above the pilot's level (same split, plain U-Net, 0.92–0.98 within sperm, names
+swapped there too). DAPI within sperm is 0.77, the known case: a nuclear stain whose
+intensity varies little between sperm, so r within the population is capped by measurement
+noise. Against the laptop's 8,000-object, 12-epoch run every marker gained, ACRV1 most
+(0.23 → 0.96): the laptop run had not converged on it.
 
 **The converged input ablation replaces the provisional one** (12 epochs, 2026-10-26, which
 said darkfield adds nothing):
 
 | views | LDHC/AKAP4 | ACRV1 | DAPI | TOMM20 |
 |---|---|---|---|---|
-| brightfield only | 0.89 | 0.95 | 0.58 | 0.30 |
-| brightfield + brightfield 2 | 0.91 | 0.98 | 0.71 | 0.37 |
-| all three | **0.93** | **0.98** | **0.77** | **0.96** |
-| darkfield only | 0.76 | 0.44 | 0.38 | 0.84 |
+| brightfield only | 0.89 | 0.30 | 0.58 | 0.95 |
+| brightfield + brightfield 2 | 0.91 | 0.37 | 0.71 | 0.98 |
+| all three | **0.93** | **0.96** | **0.77** | **0.98** |
+| darkfield only | 0.76 | 0.84 | 0.38 | 0.44 |
 
-Within sperm. Brightfield alone carries LDHC/AKAP4 and ACRV1, as before. **TOMM20 needs
-darkfield**: 0.37 from the two brightfield cameras, 0.96 with darkfield, 0.84 from darkfield
-alone. TOMM20 marks the mitochondria packed into the midpiece, and the midpiece is the one
-part of a sperm that scatters strongly, so the side-scatter image is a near-direct picture
-of the stain. DAPI gains 0.06 from darkfield for the same reason, chromatin density. The
-under-trained model had not learned to use the darkfield stem yet, which is the caveat on
-any ablation read before convergence. For a brightfield-only instrument (CytPix) this says:
-LDHC/AKAP4 and ACRV1 yes, DAPI partly, TOMM20 no.
+Within sperm. Brightfield carries LDHC/AKAP4 and TOMM20: the midpiece is a visible
+thickening directly behind the head, so the mitochondrial sheath is nearly a direct read
+of brightfield anatomy. **ACRV1 needs darkfield**: 0.30 from brightfield, 0.37 with the
+second camera, 0.96 once darkfield is given, 0.84 from darkfield alone. The acrosomal cap
+is invisible in transmitted light but changes how the anterior head scatters, and at 60×
+the side-scatter image resolves that; the A8's lower-resolution SSC reaches only 0.32 on the
+same marker. DAPI gains 0.06 from darkfield, chromatin density. The under-trained model had
+not learned to use the darkfield stem yet, which is the caveat on any ablation read before
+convergence. For a brightfield-only instrument (CytPix) this says: LDHC/AKAP4 and TOMM20
+yes, DAPI partly, ACRV1 no.
 
 **Masks against the masks IDEAS stores** (1,000 held-out objects): LDHC/AKAP4 IoU 0.73
-(thresholded truth vs IDEAS: 0.68), ACRV1 0.63 (0.70), DAPI 0.72 (0.71), TOMM20 0.60 (0.59).
-The predicted masks agree with the instrument's as well as the measured stain itself does,
-on every marker.
-
-**Where the measured TOMM20 actually sits.** On 600 held-out ISX sperm the TOMM20 centroid is
-a median 1.0 µm from the DAPI centroid (IQR 0.6–1.6 µm), 45 % of its signal lies inside the
-nuclear mask, and its within-cell pixel correlation with DAPI is 0.84 against 0.33 with the
-tail stain. A human midpiece is 4–5 µm long and starts at the base of the head, so a clean
-midpiece stain would centre 3 µm or more behind the nucleus. The bright part of this stain is
-on the head and neck, with only a faint streak down the first micrometres of tail
-(`figures/isx_tomm20_vs_dapi.png`). The model reproduces the measurement; whether the head
-signal is antibody binding to the head, cross-talk into Ch11, or midpiece folded back over
-the head in coiled cells is a question for the staining, not the model: a secondary-only
-control and a MitoTracker comparison would settle it.
+(thresholded truth vs IDEAS: 0.68), ACRV1 0.60 (0.59), DAPI 0.72 (0.71), TOMM20 0.63 (0.70).
+The predicted masks agree with the instrument's about as well as the measured stain itself
+does, on every marker. (These were computed with the IDEAS mask of the right channel by
+construction: the mask lookup went by column, and the columns were right.)
 
 ### What to run next
 
@@ -160,7 +177,7 @@ reaches 0.68 on LDHC/AKAP4. The ISX's side-scatter image is a blurred blob, the 
 the A8 where SSC is the sharpest view. Figures: `figures/ablation_views_isx.png`,
 `figures/views_isx_dropout.png`. A 30-epoch rerun was started and stopped at the user's
 request; the converged numbers are in the full-scale section above, and they reverse the
-darkfield finding (TOMM20 needs it).
+darkfield finding (ACRV1 needs it; the names here are swapped, see the erratum).
 
 ---
 

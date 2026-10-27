@@ -6,7 +6,7 @@ Channels are mapped to ROLES, not instruments, and both are resampled to the ISX
     input roles   [brightfield, second brightfield / FSC, side scatter] (+ instrument one-hot)
     targets       [LDHC/AKAP4, ACRV1, DAPI, TOMM20, CD45]
 
-    ISX  Ch01, Ch09, Ch06  ->  Ch02, Ch03, Ch07, Ch11, (none)          classes 2I (first half), 3I (second)
+    ISX  Ch01, Ch09, Ch06  ->  Ch02, Ch11, Ch07, Ch03, (none)          classes 2I (first half), 3I (second)
     A8   LightLoss, FSC, SSC (x1.25)  ->  AF488, PerCP, (none), (none), PE   classes 2S 2P 2SP / 3S 3P 3SP
 
 Each class carries an availability vector per target: the loss and the metrics only
@@ -36,7 +36,7 @@ from ..io import isx_daf
 from .cache import to_multiple, write_ragged
 
 TARGETS = ["LDHC/AKAP4", "ACRV1", "DAPI", "TOMM20", "CD45"]
-ISX_IN = [0, 8, 5]; ISX_TGT = {0: 1, 1: 2, 2: 6, 3: 10}             # target k -> ISX channel index
+ISX_IN = [0, 8, 5]; ISX_TGT = {0: 1, 1: 10, 2: 6, 3: 2}             # target k -> ISX channel index (ACRV1 = Ch11, TOMM20 = Ch03)
 A8_IN = [0, 1, 2]; A8_TGT = {0: 3, 1: 5, 4: 4}                        # target k -> A8 page (AF488, PerCP, PE)
 
 

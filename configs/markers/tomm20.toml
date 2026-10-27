@@ -1,4 +1,4 @@
 name = "TOMM20"
 colour = [1.00, 0.30, 0.30]
-localisation = "mitochondria, the midpiece sheath; on the ImageStream the measured stain centres on the head/neck, 1 um behind the nucleus (see docs/results.md)"
+localisation = "mitochondria, the midpiece sheath: on the ImageStream a bright 4-5 um segment directly behind the head (Ch03, PE)"
 select_population = "sperm"     # the within-population event r that picks the checkpoint

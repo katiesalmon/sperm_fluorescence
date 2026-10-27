@@ -11,10 +11,15 @@ brightfield2 = 8               # Ch09, the second camera
 darkfield = 5                  # Ch06, side scatter
 
 [stains]                       # marker -> channel index, background (median outside the IDEAS mask) subtracted
-"LDHC/AKAP4" = 1               # Ch02
-"ACRV1" = 2                    # Ch03
+# Ch03 = TOMM20 (PE) and Ch11 = ACRV1 (PerCP-eF710): the acquisition XML inside the .cif names
+# physical channel 2 "TOMM20 PE" and 4 "ACRV-1 PerCP-Cy5.5" (Ch05; Ch11 is the same 642-745 nm
+# band on the second camera, r = 0.91 with Ch05), the PE control lights Ch03, and the Ch03 stain
+# sits 4 um behind the nucleus (midpiece) while Ch11 caps the head. Caches made before
+# 2026-10-27 had the two names swapped: scripts/relabel_markers.py fixes them in place.
+"LDHC/AKAP4" = 1               # Ch02, AF488
+"ACRV1" = 10                   # Ch11, PerCP-eF710
 "DAPI" = 6                     # Ch07
-"TOMM20" = 10                  # Ch11
+"TOMM20" = 2                   # Ch03, PE
 
 [classes]
 split = "halves"               # one tube: class 2I = first half of the objects, 3I = second half
