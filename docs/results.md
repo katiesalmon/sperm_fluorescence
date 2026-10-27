@@ -106,6 +106,17 @@ LDHC/AKAP4 and ACRV1 yes, DAPI partly, TOMM20 no.
 The predicted masks agree with the instrument's as well as the measured stain itself does,
 on every marker.
 
+**Where the measured TOMM20 actually sits.** On 600 held-out ISX sperm the TOMM20 centroid is
+a median 1.0 µm from the DAPI centroid (IQR 0.6–1.6 µm), 45 % of its signal lies inside the
+nuclear mask, and its within-cell pixel correlation with DAPI is 0.84 against 0.33 with the
+tail stain. A human midpiece is 4–5 µm long and starts at the base of the head, so a clean
+midpiece stain would centre 3 µm or more behind the nucleus. The bright part of this stain is
+on the head and neck, with only a faint streak down the first micrometres of tail
+(`figures/isx_tomm20_vs_dapi.png`). The model reproduces the measurement; whether the head
+signal is antibody binding to the head, cross-talk into Ch11, or midpiece folded back over
+the head in coiled cells is a question for the staining, not the model: a secondary-only
+control and a MitoTracker comparison would settle it.
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing
