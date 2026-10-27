@@ -127,9 +127,16 @@ the A8 and 1 hour for the ISX.
 
 At the end the script zips everything worth carrying back into `server_results_<timestamp>.zip`
 in the repo folder: the JSON, PNG, CSV and log files of both runs, `figures\srv_*`, the commit
-hash and the torch/CUDA versions. A few tens of MB. Copy that one file to the laptop and unzip
-it in the repo folder (`unzip -o server_results_*.zip`). Checkpoints (`*.pt`) and caches stay on
-the server.
+hash and the torch/CUDA versions. A few MB. Copy that one file to the laptop and unpack it
+with `python scripts/unpack_results.py <the zip>`, which puts `runs/srv_*` and `figures/srv_*`
+where every laptop command expects them (plain `unzip` keeps the Windows backslashes in the
+names of zips made before 2026-10-27). Checkpoints (`*.pt`) and caches stay on the server.
+
+Training on CUDA runs in bfloat16 mixed precision where the GPU supports it (the A6000 does).
+The first full A8 run used fp16 and went NaN at epoch 22 of 40; the epoch-20 checkpoint was
+kept and is what `runs/srv_a8_stems` reports. bfloat16 has fp32's exponent range and cannot
+overflow that way; a batch whose loss is still non-finite is skipped and reported, never
+stepped into the weights.
 
 ## If pip cannot reach the internet
 

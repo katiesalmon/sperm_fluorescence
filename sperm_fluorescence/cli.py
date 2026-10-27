@@ -8,6 +8,7 @@
   subset               re-score a run on DAPI-defined subsets       ablate          score a stems model under role subsets
   views                inputs beside outputs, per input subset     predict-cytpix  run an ISX model on CytPix crops
   spectral             plot a spectral_export.py JSON              denoised        pixel r against a denoised measurement
+  compare              within-population event r of several runs, side by side
 
 Every command takes --help.
 """
@@ -27,6 +28,7 @@ COMMANDS = {
     "ablate": ("sperm_fluorescence.eval.ablate", "main"),
     "views": ("sperm_fluorescence.eval.views", "main"),
     "denoised": ("sperm_fluorescence.eval.denoised", "main"),
+    "compare": ("sperm_fluorescence.eval.compare", "main"),
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }

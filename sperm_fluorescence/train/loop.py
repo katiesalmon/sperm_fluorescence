@@ -74,10 +74,20 @@ def train(args):
         print("initialised from %s (%d missing, %d unexpected keys)" % (args.init, len(missing.missing_keys), len(missing.unexpected_keys)))
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * (len(fit_idx) // args.batch + 1))
+    # Mixed precision on CUDA only. bfloat16 where the GPU has it (Ampere and later): it keeps
+    # fp32's exponent range, so activations cannot overflow the way fp16 did in the first full
+    # A8 run (NaN from epoch 22 of 40; the epoch-20 checkpoint survived). fp16 with a GradScaler
+    # remains the fallback for older GPUs, and every non-finite batch is skipped, never stepped.
+    amp_dtype = None
+    if dev.type == "cuda":
+        amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        print("mixed precision: %s" % str(amp_dtype).replace("torch.", ""))
+    use_scaler = amp_dtype is torch.float16
     try:
-        scaler = torch.amp.GradScaler("cuda", enabled=(dev.type == "cuda"))
+        scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
     except (AttributeError, TypeError):
-        scaler = torch.cuda.amp.GradScaler(enabled=(dev.type == "cuda"))
+        scaler = torch.cuda.amp.GradScaler(enabled=use_scaler)
+    best_epoch = 0
     log = open(os.path.join(args.out, "log.csv"), "w", newline=""); lw = csv.writer(log)
     lw.writerow(["epoch", "train_l1", "val_l1"] + ["%s_%s" % (n, k) for n in names for k in ("pixel_r", "event_r", "pred_PS")])
     best = float("inf"); t0 = time.time()
@@ -101,7 +111,7 @@ def train(args):
         snap_preds = {}
 
     for ep in range(1, args.epochs + 1):
-        model.train(); tot = 0.0; nb = 0
+        model.train(); tot = 0.0; nb = 0; skipped = 0
         for b in make_batches(tr, fit_idx, args.batch, rng):
             x, y, m = tr.batch(b); x, y, m = x.to(dev), y.to(dev) / scale_dev, m.to(dev)
             m = m * avail_of(tr, b).to(dev)[:, :, None, None]     # (B, C, H, W): only channels this object has
@@ -118,16 +128,25 @@ def train(args):
                 keep[torch.arange(len(b)), torch.multinomial(present.float(), 1)[:, 0]] = True
                 present = present & keep
             # mixed precision on CUDA only; torch 2.2 rejects autocast on mps even when disabled
-            amp = torch.autocast("cuda") if dev.type == "cuda" else contextlib.nullcontext()
+            amp = torch.autocast("cuda", dtype=amp_dtype) if amp_dtype is not None else contextlib.nullcontext()
             with amp:
                 out = stems.call(model, x, present.to(dev))
-                loss = (F.l1_loss(out, y, reduction="none") * m).sum() / m.sum() / out.shape[1]
+                loss = (F.l1_loss(out, y, reduction="none") * m).sum() / m.sum().clamp(min=1.0) / out.shape[1]
                 if args.grad_loss > 0:
                     loss = loss + args.grad_loss * grad_loss(out, y, m)
-            opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+            opt.zero_grad(set_to_none=True)
+            if torch.isfinite(loss):
+                scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+                tot += loss.item(); nb += 1
+            else:
+                skipped += 1        # the batch is dropped; the weights never see it
             try: sched.step()
             except ValueError: pass   # OneCycle's step budget is an estimate when batches vary
-            tot += loss.item(); nb += 1
+        if skipped:
+            print("epoch %3d: %d of %d batches had a non-finite loss and were skipped" % (ep, skipped, skipped + nb))
+        if nb == 0:
+            raise SystemExit("epoch %d: every batch was non-finite; stopping. best.pt is from epoch %d" % (ep, best_epoch))
+        tot /= nb
         # validation L1 on the held-out slice of the TRAINING replicate
         model.eval(); vl = 0.0; vn = 0; vch = np.zeros(len(names)); vm = 0.0
         with torch.no_grad():
@@ -149,8 +168,8 @@ def train(args):
                 torch.save(model.state_dict(), os.path.join(args.out, "best_%s.pt" % nm.replace("/", "_")))
         res, _ = evaluate(model, te, wte, scale, dev, names) if (ep % args.eval_every == 0 or ep == args.epochs) else ({}, None)
         release_device_memory(dev)
-        lw.writerow([ep, tot / nb, vl] + [res[n][k] if res else "" for n in names for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
-        line = "epoch %3d  train %.4f  val %.4f" % (ep, tot / nb, vl)
+        lw.writerow([ep, tot, vl] + [res[n][k] if res else "" for n in names for k in ("pixel_r", "event_r", "pred_PS")]); log.flush()
+        line = "epoch %3d  train %.4f  val %.4f" % (ep, tot, vl)
         if res: line += "   test event r: " + "  ".join("%s %s" % (n, "%.3f" % res[n]["event_r"] if res[n]["event_r"] is not None else "n/a") for n in names)
         if res and "ACRV1" in res and res["ACRV1"]["within_well_event_r"].get("S") is not None:
             line += "   ACRV1 within-sperm %.3f" % res["ACRV1"]["within_well_event_r"]["S"]
@@ -169,7 +188,7 @@ def train(args):
             score, line_sel = vl, ""
         if line_sel: print("          " + line_sel.strip())
         if score < best:
-            best = score; torch.save(model.state_dict(), os.path.join(args.out, "best.pt"))
+            best = score; best_epoch = ep; torch.save(model.state_dict(), os.path.join(args.out, "best.pt"))
         if args.snapshot and (ep % args.snapshot == 0 or ep == 1 or ep == args.epochs):
             model.eval()
             with torch.no_grad():
@@ -215,6 +234,8 @@ def train(args):
                "channel_scale": args.channel_scale, "select_on": args.select_on, "results": res,
                "scale": [float(v) for v in scale_vec], "include": args.include, "init": args.init,
                "arch": args.arch, "roles": list(tr.roles), "role_dropout": args.role_dropout,
+               "n_fit": int(len(fit_idx)), "n_val": int(nval), "n_test": int(len(te)), "best_epoch": best_epoch,
+               "device": str(dev), "mixed_precision": str(amp_dtype).replace("torch.", "") if amp_dtype is not None else None,
                "per_marker_checkpoint": per_marker},
               open(os.path.join(args.out, "results.json"), "w"), indent=1)
 

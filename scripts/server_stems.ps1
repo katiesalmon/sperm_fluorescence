@@ -67,8 +67,11 @@ foreach ($run in @("runs\srv_a8_stems", "runs\srv_isx_stems")) {
 }
 Get-ChildItem figures -Directory -Filter "srv_*" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $staging "figures\$($_.Name)") -Recurse -Force }
 Get-ChildItem figures -File -Filter "srv_*" -ErrorAction SilentlyContinue | ForEach-Object { New-Item -ItemType Directory -Force -Path (Join-Path $staging "figures") | Out-Null; Copy-Item $_.FullName -Destination (Join-Path $staging "figures") -Force }
-& $py -c "import torch, sys; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" | Out-File (Join-Path $staging "environment.txt")
-git rev-parse HEAD | Out-File (Join-Path $staging "commit.txt")
-Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
+& $py -c "import torch, sys; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" | Out-File -Encoding utf8 (Join-Path $staging "environment.txt")
+git rev-parse HEAD | Out-File -Encoding utf8 (Join-Path $staging "commit.txt")
+if (Test-Path $zip) { Remove-Item $zip }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+# .NET's ZipFile writes forward-slash member names; PowerShell 5.1's Compress-Archive writes backslashes, which unzip on macOS keeps
+[System.IO.Compression.ZipFile]::CreateFromDirectory($staging, (Join-Path (Get-Location) $zip), [System.IO.Compression.CompressionLevel]::Optimal, $false)
 Remove-Item $staging -Recurse -Force
 Write-Host "ALL DONE -- copy $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB) back to the laptop"

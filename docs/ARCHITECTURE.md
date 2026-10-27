@@ -13,6 +13,8 @@ sheet        IDEAS-style true/predicted sheet          masks     binary stain ma
 slides       presentation panels, one object           accuracy  scatter, event-r bars, mask IoU bars
 subset       re-score on DAPI-defined populations      ablate    score a stems model under role subsets
 predict-cytpix  an ISX model on CytPix crops           spectral  plot a scripts/spectral_export.py JSON
+views        inputs beside outputs per input subset     denoised  pixel r against a denoised measurement
+compare      runs side by side, within-population r     
 prepare-a8 / prepare-isx / prepare-generalist          the earlier fixed-layout caches (legacy)
 ```
 
@@ -34,7 +36,7 @@ Rendered by `docs/diagrams/make_diagrams.py` (PNG and SVG beside it).
 | `sperm_fluorescence/data/` | `prepare` (config-driven cache writer), `cache` (ragged layout, load/open), `batching` (datasets, shape-bucketed batches, role selection, presence), `augment` |
 | `sperm_fluorescence/models/` | `stems` (per-role input stems + `build`/`call` for both architectures), `unet` (the trunk), `registry` (TOML configs) |
 | `sperm_fluorescence/train/` | `loop` (the training loop and `train` CLI), `losses` (masked L1, gradient term, target scale), `device` |
-| `sperm_fluorescence/eval/` | `metrics` (native-size evaluate), `sheets`/`render` (IDEAS-style figures), `load` (load a run; `sheet`), `masks`, `slides`, `accuracy`, `subset`, `ablate`, `spectral` |
+| `sperm_fluorescence/eval/` | `metrics` (native-size evaluate), `sheets`/`render` (IDEAS-style figures), `load` (load a run; `sheet`), `masks`, `slides`, `accuracy`, `subset`, `ablate`, `views`, `denoised`, `compare`, `spectral` |
 | `configs/instruments/` | one TOML per instrument: label-free **roles** → source page, **stains** → page, pixel pitch, class rules |
 | `configs/markers/` | one TOML per marker: name, colour, localisation, the population its checkpoint is selected on |
 | `scripts/` | standard-library tools for the Windows server (survey, bundles, FCS, spectral export); unchanged |

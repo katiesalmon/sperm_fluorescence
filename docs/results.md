@@ -6,6 +6,116 @@ out to be is in [task_brief.md](task_brief.md).
 
 ---
 
+## Full scale, both instruments: the stems models on the server
+
+*2026-10-27 · `scripts/server_stems.ps1` at commit 7cfe9bc on the RTX A6000, results returned as
+`server_results_20261026_2209.zip` and unpacked into `runs/srv_a8_stems`, `runs/srv_isx_stems`,
+`figures/srv_*`. Both runs: `--arch stems --role-dropout 0.3 --width 64 --channel-scale
+--full-frame --aug 1 --select-on val_event_r --tta`, ragged native-size caches from the new
+`prepare`. A8: full run 260709, train replicate 2 (wells 2P, 2S, 2SP), test replicate 3,
+40 epochs scheduled. ISX: the one tube, first half train, second half test, 30 epochs.
+Comparison charts: `figures/srv_vs_laptop_a8.png`, `figures/srv_vs_laptop_isx.png`
+(`sperm_fluorescence compare`).*
+
+**One defect first.** The A8 training went NaN at epoch 22 of 40 (`runs/srv_a8_stems/log.csv`:
+train and validation L1 are `nan` from epoch 22 on). CUDA training ran under fp16 autocast, and
+an activation overflowed; the GradScaler cannot save a forward pass that is already infinite.
+Checkpoint selection had already kept epoch 20 (per-marker bests at 15, 20 and 21), and every
+number below comes from that checkpoint. Validation L1 had flattened by then (0.0859 → 0.0856
+over epochs 15–21, as the October run also plateaued by epoch 13–25), so little was lost. The
+loop now uses bfloat16 on GPUs that have it and skips any non-finite batch; the ISX run,
+which reached epoch 30 cleanly, is unaffected.
+
+### A8: three markers from light loss + FSC + SSC, 20,000 held-out objects per well
+
+Within-well event r, the number that cannot be earned by recognising the cell:
+
+| | sperm well (S) | mixed well (SP) | PBMC well (P) | pooled event r | pixel r |
+|---|---|---|---|---|---|
+| LDHC/AKAP4 | **0.75** | 0.75 | 0.50 | 0.74 | 0.75 |
+| CD45 | 0.14 | 0.71 | **0.60** | 0.78 | 0.59 |
+| ACRV1 | **0.32** | 0.53 | 0.44 | 0.66 | 0.58 |
+
+Against the October full-scale plain U-Net (fixed frames, width 48, validation-L1 selection,
+fold 2 → 3): LDHC within sperm 0.73 → **0.75**, CD45 within PBMC 0.57 → **0.60**, ACRV1 within
+sperm 0.28 → **0.32**. Against the laptop sample of 600 (20 epochs, same architecture): LDHC
+0.70 → 0.75, ACRV1 0.18 → 0.32, and the PBMC-well numbers rose most (LDHC 0.32 → 0.50, ACRV1
+0.17 → 0.44), which is what 100× more training objects buys on the weak signals. CD45 within
+the sperm well is a null: sperm are CD45-negative, that channel is read noise plus AF488
+spillover, and the laptop's 0.77 there was a 200-object accident; 0.14 on 20,000 is the
+honest value.
+
+**What each view is worth at full scale** (`ablate.json`, the same checkpoint, views withheld
+at evaluation; within-well event r, S / SP for the sperm markers, P for CD45):
+
+| views | LDHC/AKAP4 | ACRV1 | CD45 (P) |
+|---|---|---|---|
+| light loss only | 0.56 / 0.53 | 0.19 / 0.46 | 0.26 |
+| light loss + FSC | 0.71 / 0.72 | 0.28 / 0.51 | 0.39 |
+| light loss + FSC + SSC | **0.74 / 0.74** | **0.31 / 0.51** | **0.59** |
+| SSC only | 0.70 / 0.70 | 0.18 / 0.44 | 0.51 |
+
+The laptop ablation holds: light loss alone loses the tail (LDHC 0.56 vs 0.74), FSC restores
+most of it, SSC alone is nearly the whole model for LDHC and carries CD45. The input views in
+`figures/srv_a8_views.png` show why: the SSC page is the only one on which a sperm's tail and
+a PBMC's granular interior are sharp.
+
+**Masks** (`masks.json`, 3,000 held-out objects, reference = thresholded measured stain):
+LDHC/AKAP4 IoU 0.67, CD45 0.62, ACRV1 0.43, with 97–100 % of stained objects detected. The
+A8 has no instrument mask to score against; these match the ISX numbers below for the same
+markers, which do.
+
+### ImageStream: four markers from brightfield + brightfield 2 + darkfield, 10,000 held-out objects
+
+Within-population event r (populations by the DAPI scalar; sperm is the one that matters):
+
+| | sperm | round cells | DAPI-dim fragments | pooled event r | pixel r |
+|---|---|---|---|---|---|
+| LDHC/AKAP4 | **0.93** | 0.87 | 0.97 | 0.93 | 0.91 |
+| ACRV1 | **0.98** | 0.93 | 0.99 | 0.97 | 0.94 |
+| DAPI | **0.77** | 0.37 | 0.37 | 0.84 | 0.86 |
+| TOMM20 | **0.96** | 0.62 | 0.94 | 0.95 | 0.81 |
+
+Three of four are at the pilot's level or above (pilot, same split, plain U-Net: 0.92–0.98
+within sperm); DAPI within sperm is 0.77, which is the known case, a nuclear stain whose
+intensity varies little between sperm so that r within the population is capped by
+measurement noise. Against the laptop's 8,000-object, 12-epoch run every marker gained,
+TOMM20 most (0.23 → 0.96): the laptop run had not converged on it.
+
+**The converged input ablation replaces the provisional one** (12 epochs, 2026-10-26, which
+said darkfield adds nothing):
+
+| views | LDHC/AKAP4 | ACRV1 | DAPI | TOMM20 |
+|---|---|---|---|---|
+| brightfield only | 0.89 | 0.95 | 0.58 | 0.30 |
+| brightfield + brightfield 2 | 0.91 | 0.98 | 0.71 | 0.37 |
+| all three | **0.93** | **0.98** | **0.77** | **0.96** |
+| darkfield only | 0.76 | 0.44 | 0.38 | 0.84 |
+
+Within sperm. Brightfield alone carries LDHC/AKAP4 and ACRV1, as before. **TOMM20 needs
+darkfield**: 0.37 from the two brightfield cameras, 0.96 with darkfield, 0.84 from darkfield
+alone. TOMM20 marks the mitochondria packed into the midpiece, and the midpiece is the one
+part of a sperm that scatters strongly, so the side-scatter image is a near-direct picture
+of the stain. DAPI gains 0.06 from darkfield for the same reason, chromatin density. The
+under-trained model had not learned to use the darkfield stem yet, which is the caveat on
+any ablation read before convergence. For a brightfield-only instrument (CytPix) this says:
+LDHC/AKAP4 and ACRV1 yes, DAPI partly, TOMM20 no.
+
+**Masks against the masks IDEAS stores** (1,000 held-out objects): LDHC/AKAP4 IoU 0.73
+(thresholded truth vs IDEAS: 0.68), ACRV1 0.63 (0.70), DAPI 0.72 (0.71), TOMM20 0.60 (0.59).
+The predicted masks agree with the instrument's as well as the measured stain itself does,
+on every marker.
+
+### What to run next
+
+- The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing
+  (expected) and to have a clean log. Same command after `git pull`; `-SkipPrepare` reuses the
+  caches.
+- Replicate 3 → 2 for the A8 (`--train 3 --test 2`), as in October, so the LDHC replicate
+  reversal is checked against this model too.
+
+---
+
 ## Baseline: the plain fixed-channel U-Net against the role stems, 10 epochs, both instruments
 
 *2026-10-26 · `--arch stack` (the architecture of every earlier run) vs `--arch stems` with all
@@ -38,7 +148,8 @@ tail; the second camera adds ~0.14 to ACRV1 and DAPI; darkfield adds nothing and
 reaches 0.68 on LDHC/AKAP4. The ISX's side-scatter image is a blurred blob, the opposite of
 the A8 where SSC is the sharpest view. Figures: `figures/ablation_views_isx.png`,
 `figures/views_isx_dropout.png`. A 30-epoch rerun was started and stopped at the user's
-request; these numbers stand until a converged rerun replaces them.
+request; the converged numbers are in the full-scale section above, and they reverse the
+darkfield finding (TOMM20 needs it).
 
 ---
 
