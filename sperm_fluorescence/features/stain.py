@@ -12,7 +12,7 @@ RADII_UM = (1.0, 2.0, 4.0, 8.0)
 HEAD_PREFERENCE = ("DAPI", "ACRV1", "TOMM20", "LDHC/AKAP4", "CD45")
 
 DOC = {
-    "total": "sum of the channel (clipped at 0) over the valid frame", "peak": "maximum pixel",
+    "total": "sum of the channel above its noise floor (median + 3 MAD of the frame) over the valid frame", "peak": "maximum pixel",
     "cy": "intensity-weighted centroid row, px", "cx": "intensity-weighted centroid column, px",
     "sigma_major_um": "intensity-weighted standard deviation along the channel's own major axis, um",
     "sigma_minor_um": "the same along its minor axis, um", "anisotropy": "1 - sigma_minor / sigma_major",
@@ -24,6 +24,22 @@ for r in RADII_UM: DOC["within_%gum" % r] = "fraction of the channel's intensity
 for i in range(N_AXIAL): DOC["axial_%02d" % i] = "fraction of the channel's intensity in axial bin %d of %d (-8..+8 um along the cell axis, head at the negative end)" % (i, N_AXIAL)
 X_DOC = {"axis_angle_deg": "orientation of the whole-cell intensity ellipse", "cell_sigma_major_um": "whole-cell intensity sigma along the axis, um",
          "cell_sigma_minor_um": "whole-cell intensity sigma across the axis, um"}
+
+
+NOISE_K = 3.0
+
+
+def denoise(img, valid, k=NOISE_K):
+    """The channel with its noise floor removed: pixels below median + k x MAD of the valid
+    frame are zero, the floor is subtracted from the rest. On a clean image (ImageStream)
+    this removes almost nothing; on a noisy wide frame (A8) it stops clipped read noise over
+    the whole strip from outweighing the cell in an intensity-weighted moment."""
+    v = img[valid > 0] if valid is not None else img.ravel()
+    if v.size == 0: return np.clip(img, 0, None)
+    med = float(np.median(v)); noise = 1.4826 * float(np.median(np.abs(v[v <= med] - med))) + 1e-6
+    floor = med + k * noise
+    out = np.clip(img - floor, 0, None)
+    return out * valid if valid is not None else out
 
 
 def moments(img):
@@ -46,7 +62,7 @@ def channel_features(img, valid, px_um, axis, centre):
     """DOC's keys for one channel. axis: unit vector (dy, dx) of the cell's head->tail axis;
     centre: the cell's intensity centroid (row, col)."""
     out = {k: np.nan for k in DOC}
-    w = np.clip(img, 0, None) * valid; tot, c, cov = moments(w)
+    w = denoise(img, valid); tot, c, cov = moments(w)
     out["total"] = float(tot); out["peak"] = float(w.max())
     if tot <= 0 or c is None: return out
     out["cy"], out["cx"] = c; sM, sm, ang = ellipse(cov)
@@ -67,13 +83,13 @@ def cell_axis(chans, names, valid, px_um):
     head channel (DAPI, else ACRV1, ...) lies at the negative end. Returns (axis, centre, info)."""
     acc = np.zeros(valid.shape, np.float64)
     for k, nm in enumerate(names):
-        w = np.clip(chans[k], 0, None) * valid
+        w = denoise(chans[k], valid)
         if w.sum() > 0: acc += w / w.sum()
     tot, c, cov = moments(acc)
     if tot <= 0 or c is None: return np.array([1.0, 0.0]), (valid.shape[0] / 2, valid.shape[1] / 2), {k: np.nan for k in X_DOC}
     sM, sm, ang = ellipse(cov); a = np.deg2rad(ang); axis = np.array([np.cos(a), np.sin(a)])
     head = next((names.index(h) for h in HEAD_PREFERENCE if h in names), 0)
-    _, ch, _ = moments(np.clip(chans[head], 0, None) * valid)
+    _, ch, _ = moments(denoise(chans[head], valid))
     if ch is not None and ((ch[0] - c[0]) * axis[0] + (ch[1] - c[1]) * axis[1]) > 0: axis = -axis; ang = (ang + 180) % 360 - 180
     return axis, c, {"axis_angle_deg": float(ang), "cell_sigma_major_um": sM * px_um, "cell_sigma_minor_um": sm * px_um}
 

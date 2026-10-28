@@ -127,7 +127,8 @@ def test_feature_engine_on_a_drawn_sperm():
     chans = {"DAPI": nucleus * 5.0 + rng.normal(0, 0.1, (h, w)), "ACRV1": acro * 3.0, "TOMM20": mid * 4.0, "LDHC/AKAP4": (tail | mid) * 2.0}
     bf = -3.0 * (nucleus | acro | mid | tail).astype(np.float32) + rng.normal(0, 0.3, (h, w))
     docs = {}
-    row, M, S, K, axis = compartment_features("pred", parts, chans, {"brightfield": bf}, valid, px, docs)
+    row, M, S, K, axis, region = compartment_features("pred", parts, chans, {"brightfield": bf}, valid, px, docs)
+    assert region.any() and region.sum() < valid.sum()
     assert axis is not None and axis[0][0] > 0        # the axis points head -> tail; the drawn head is at smaller rows, so the axis points down the rows
     assert set(M) >= {"nucleus", "acrosome", "head", "midpiece", "principal", "tail", "cell"}
     assert 4.0 < row["pred.nucleus.feret_max_um"] < 5.5 and 2.5 < row["pred.nucleus.feret_min_um"] < 3.6

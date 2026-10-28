@@ -13,7 +13,8 @@ Columns:  id.*   class, index, .cif row, well, DAPI scalar, population labels
           in.<role>.<mask>.<f>           the label-free inputs inside the cell and head masks
           pred.sim.<a>_<b>.r|z           similarity of two predicted channels inside the cell
           pred.x.<f>                     cross-mask geometry: delta centroids, head-midpiece angle, insertion offset, area ratios
-          preds.<channel>.<f>            the stain IMAGES, no thresholds: intensity moments, radial and axial profiles (features/stain.py)
+          preds.<channel>.<f>            the stain IMAGES, no mask: intensity moments, radial and axial profiles (features/stain.py), above the
+                                         channel's noise floor and within the brightfield object dilated by 3 um (the same region for pred and ref)
           preds.d|along.<a>_<b>          distances between channel intensity centroids, and along the cell axis
           ref.*, refs.*                  the same on the IDEAS masks / measured channels (stained cache + .cif), for validation
 Also <out>.pixels.npz: every channel (predicted stains + inputs) rotated onto the cell axis, head left,
@@ -144,10 +145,16 @@ def cross_features(M, S, K, px_um):
     return out
 
 
-def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
+REGION_UM = 3.0        # stain-image moments are taken within the brightfield object dilated by this much, the same region on both sides
+
+
+def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs, region=None):
     """All features for one object under one prefix ('pred' or 'ref'). parts: {compartment: mask};
     chans: {marker: image}; inputs: {role: image} or {}. Fills `docs` with column definitions.
-    Returns (row, masks, shape dicts, skeleton dicts, (cell axis, centre) or None)."""
+    Returns (row, masks, shape dicts, skeleton dicts, (cell axis, centre) or None, region).
+    `region`: where the stain-image moments are taken; default the brightfield object dilated
+    by REGION_UM, and the pred side's region is passed to the ref side so both measure the
+    same pixels."""
     row = {}
     M = derive_masks(parts, inputs.get("brightfield", inputs.get("lightloss")), valid)      # light loss is the A8's brightfield-like image
     S, K = {}, {}
@@ -176,13 +183,15 @@ def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
     for f, v in cross_features(M, S, K, px_um).items(): row[colname(prefix, "x", f)] = v; docs[colname(prefix, "x", f)] = X_DOC[f]
     # stain-image features, no thresholds: moments, profiles, cross-channel centroids, on the channels as images
     names_ = list(chans); imgs = np.stack([chans[n] for n in names_]) if names_ else None
+    if region is None:
+        region = ndi.binary_dilation(M["cell"], iterations=max(int(round(REGION_UM / px_um)), 1)) & valid
     if imgs is not None:
-        axis, centre, info = stn.cell_axis(imgs, names_, valid, px_um)
+        axis, centre, info = stn.cell_axis(imgs, names_, region, px_um)
         sp = prefix + "s"                                              # 'preds' / 'refs': the stain-image family
         for f, v in info.items(): row[colname(sp, "cell", f)] = v; docs[colname(sp, "cell", f)] = stn.X_DOC[f]
         cents = {}
         for k, nm in enumerate(names_):
-            feats = stn.channel_features(imgs[k], valid, px_um, axis, centre)
+            feats = stn.channel_features(imgs[k], region, px_um, axis, centre)
             for f, v in feats.items(): row[colname(sp, nm, f)] = v; docs[colname(sp, nm, f)] = "%s image: %s" % (nm, stn.DOC[f])
             cents[nm] = (feats["cy"], feats["cx"])
         for i in range(len(names_)):
@@ -195,7 +204,7 @@ def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
         axis_out = (axis, centre)
     else:
         axis_out = None
-    return row, M, S, K, axis_out
+    return row, M, S, K, axis_out, region
 
 
 def qc_features(M, K, row, valid, prefix="pred"):
@@ -255,7 +264,7 @@ def main(argv=None):
         row = {"id.class": str(st.class_of[i]), "id.index": i, "id.source_row": st.source_row(i), "id.well": str(wells[i]),
                "id.scalar": float(np.asarray(scal).reshape(len(scal), -1)[i, 0])}
         for k, nm in enumerate(names): row[colname("id", "avail", nm)] = int(av[k])
-        r, M, S, K, axis_pred = compartment_features("pred", parts, chans, inputs, valid, px_um, docs); row.update(r)
+        r, M, S, K, axis_pred, region = compartment_features("pred", parts, chans, inputs, valid, px_um, docs); row.update(r)
         row.update({colname("qc", f): v for f, v in qc_features(M, K, row, valid).items()})
         if axis_pred is not None and not a.no_pixels:
             imgs = np.stack([p[k] for k in range(len(names))] + [x[j] for j in range(len(roles))])
@@ -271,7 +280,7 @@ def main(argv=None):
             else:
                 rparts = {COMPARTMENT[nm]: mask_from_image(y[k], valid, **RULE[inst]) for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
             rchans = {nm: y[k] for k, nm in enumerate(names) if av[k]}
-            r, _, _, _, axis_ref = compartment_features("ref", rparts, rchans, {}, valid, px_um, docs); row.update(r)
+            r, _, _, _, axis_ref, _ = compartment_features("ref", rparts, rchans, {}, valid, px_um, docs, region=region); row.update(r)
             if axis_ref is not None and not a.no_pixels:
                 imgs = np.stack([y[k] for k in range(len(names))]); fill = [0.0] * len(names)
                 pixels_ref.append((i, stn.canonical_stack(imgs, valid, px_um, axis_ref[0], axis_ref[1], fill).astype(np.float16)))
