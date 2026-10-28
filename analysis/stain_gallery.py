@@ -64,8 +64,11 @@ def main(argv=None):
     gates = ", ".join("%s (%s)" % (g["gate"], g["query"].replace("`", "")) for g in s["gates"]) or "none"
     what = s["set"] if not s.get("pixels") else "pixels"
     fig.suptitle(a.title or "%s: virtual stains by cluster" % inst, fontsize=12, fontweight="bold", y=0.995)
-    fig.text(0.5, 1 - 0.42 / fig.get_figheight(), "%d of %d objects after gates: %s  ·  features: %s (%d columns, %d PCs)  ·  %s, k = %d  ·  run %s\\nvirtual stains only: %s  ·  one display range per marker across the figure" % (
-        len(t), s["n"], gates, what, len(s["columns"]), s["pca"]["n_components"], s["method"], s["k"], os.path.basename(a.run.rstrip("/")), legend), ha="center", va="top", fontsize=7.5, color="#52514e", linespacing=1.4)
+    import textwrap
+    header = "%d of %d objects after gates: %s  ·  features: %s (%d columns, %d PCs)  ·  %s, k = %d  ·  run %s" % (
+        len(t), s["n"], gates, what, len(s["columns"]), s["pca"]["n_components"], s["method"], s["k"], os.path.basename(a.run.rstrip("/")))
+    lines = textwrap.wrap(header, int(11 * a.cols)) + ["virtual stains only: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % (legend, a.store, ",".join(st.classes))]
+    fig.text(0.5, 1 - 0.42 / fig.get_figheight(), "\n".join(lines), ha="center", va="top", fontsize=7.5, color="#52514e", linespacing=1.4)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True); fig.savefig(a.out, dpi=150, facecolor="white"); plt.close(fig); print("wrote", a.out)
 
 
