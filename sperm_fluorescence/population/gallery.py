@@ -95,7 +95,7 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
             xw, _, mw, pw = window(x, y, m, np.concatenate([p, pm.astype(np.float32)]), size)
             items[i] = (xw, mw, pw[:st.cout], pw[st.cout:] > 0.5)
         hi = [max(float(np.percentile(np.concatenate([np.clip(items[i][2][k][items[i][1] > 0], 0, None) for i, _ in members]), 99.5)), 1e-4) for k in range(st.cout)]
-        fig, axes = plt.subplots(4, n, figsize=(1.15 * n, 5.6), facecolor="white", squeeze=False)
+        fig, axes = plt.subplots(4, n, figsize=(1.15 * n, 5.9), facecolor="white", squeeze=False)
         for r, (group, label) in enumerate(((near, "nearest the centre"), (far, "periphery"))):
             for j in range(n):
                 ax_bf, ax_st = axes[2 * r, j], axes[2 * r + 1, j]
@@ -114,6 +114,10 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
         legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
         inst = INSTRUMENT.get(st.meta["classes"][st.classes[0]]["instrument"], st.meta["classes"][st.classes[0]]["instrument"])
         fig.suptitle("%s  ·  cluster %d of %d  (n = %d of %d clustered)" % (inst, c, len([k for k in set(labels) if k >= 0]), len(sel), int((labels >= 0).sum())), fontsize=9.5, fontweight="bold", y=0.995)
-        fig.text(0.5, 0.955, "%s\nstore %s  ·  classes %s  ·  %s" % (context, store_path, ",".join(st.classes), os.path.basename(out_dir.rstrip("/"))), ha="center", va="top", fontsize=7, color="#52514e", linespacing=1.3)
-        fig.text(0.5, 0.905, "rows: %s with compartment outlines, then the virtual stains (%s); top pair nearest the cluster centre, bottom pair its periphery" % (bf_name, legend), ha="center", va="top", fontsize=6.8, color="#52514e")
-        fig.tight_layout(rect=(0, 0, 1, 0.89)); fig.savefig(os.path.join(out_dir, "gallery_%d.png" % c), dpi=200, facecolor="white"); plt.close(fig)
+        import textwrap
+        width = int(18 * n)
+        lines = textwrap.wrap(context, width) + textwrap.wrap("store %s  ·  classes %s  ·  run %s" % (store_path, ",".join(st.classes), os.path.basename(out_dir.rstrip("/"))), width)
+        lines += textwrap.wrap("rows: %s with compartment outlines, then the virtual stains (%s); top pair nearest the cluster centre, bottom pair its periphery" % (bf_name, legend), width)
+        fig.text(0.5, 0.962, "\n".join(lines), ha="center", va="top", fontsize=6.8, color="#52514e", linespacing=1.35)
+        top = 0.962 - 0.028 * len(lines) - 0.01
+        fig.tight_layout(rect=(0, 0, 1, top)); fig.savefig(os.path.join(out_dir, "gallery_%d.png" % c), dpi=200, facecolor="white"); plt.close(fig)
