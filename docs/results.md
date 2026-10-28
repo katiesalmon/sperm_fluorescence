@@ -374,7 +374,7 @@ features from pixels is a representation learned for invariance (an autoencoder 
 contrastive embedding on the stain stacks), not PCA; the bottleneck of a model trained to
 *paint* the stains is not that representation, it is spatial by design.
 
-### The Zhang 2023 design: a convolutional autoencoder on the stain stacks (2026-10-28)
+### A convolutional autoencoder on the stain stacks (2026-10-28)
 
 *`analysis/autoencoder_embedding.py`: four stride-2 convolutions to a latent vector (32 on the
 ImageStream, 16 on the A8), a mirrored decoder, mean-squared reconstruction loss, Adam with
@@ -382,7 +382,7 @@ cosine decay, light augmentation (±15° rotation, ±3 px shift, vertical flip, 
 jitter), trained on the aligned 7 × 48 × 48 stacks (4 virtual stains + 3 inputs; 6 × 48 × 48
 on the A8) of the held-out objects only: 4,000 for 60 epochs (MSE 0.0065), 600 for 150
 (0.019). Decoder discarded, latent clustered by Gaussian mixture with k-means
-initialisation, as in the paper. Stains and wells used only afterwards.*
+initialisation. Stains and wells used only afterwards.*
 
 | label-free representation | ISX ARI (k = 3, GMM) | ISX stability | A8 PBMC cluster (k = 2) |
 |---|---|---|---|
@@ -392,16 +392,16 @@ initialisation, as in the paper. Stains and wells used only afterwards.*
 | stain-image + intensity features | 0.78 | 0.96 | 199 PBMC, 4 S + 33 SP |
 | autoencoder latent + those features | **0.79** | 0.96 | — |
 
-The paper's recipe transfers. On the A8 the latent space alone separates sperm from PBMCs
+On the A8 the latent space alone separates sperm from PBMCs
 exactly, matching the best mask result with no feature anywhere. On the ImageStream the
 latent space reaches 0.68 against the measured side, well above any pixel representation
 (0.42–0.45) and below the summary features (0.78); GMM matters (k-means on the same latent
-gives 0.41, the latent clusters are not spherical), and adding the latent to the features
+gives 0.41: the latent clusters are not spherical), and adding the latent to the features
 gives a small gain (0.79). Stability 0.92. Caveats: the autoencoder saw only the 4,000
 held-out objects, so the latent space and the clustering share data; a model trained on the
 training half (another `predict` + `features --no-ref`) is the clean version, and more
-objects would likely close the gap to the features. Grad-CAM interpretability as in the
-paper is not built; our galleries and the discriminating-feature tables serve that purpose.
+objects would likely close the gap to the features. The galleries and the discriminating-feature
+tables are the interpretability layer.
 
 ### The same pipeline on the A8 (2026-10-28)
 

@@ -1,15 +1,13 @@
-"""The Zhang et al. 2023 design on our data: a convolutional autoencoder trained with a
-reconstruction loss on the label-free side (here the aligned virtual-stain stacks plus the
-inputs), decoder discarded, latent vectors clustered with a Gaussian mixture, stains used
-only afterwards to say what the clusters are.
+"""A convolutional autoencoder on the aligned virtual-stain stacks: trained with a
+reconstruction loss on the label-free side only (the virtual stains plus the inputs), decoder
+discarded, latent vectors clustered with a Gaussian mixture, stains and wells used only
+afterwards to say what the clusters are.
 
     python analysis/autoencoder_embedding.py data/isx_vstain/features.pixels.npz --out data/isx_vstain/emb_dcae.npz --latent 32 --epochs 60
 
-Differences from the paper, stated: their inputs were 2-D transmission and 3-D side-scatter
-images of leukocytes at 80 px; ours are 7 x 48 x 48 stacks (4 predicted stains + 3 inputs on
-the ImageStream) aligned head-left. We add light augmentation (small rotations, shifts and
-vertical flips, which keep the head on the left) so the latent space is tolerant of pose;
-they report none. Latent dimension and training length are ours; theirs are not reported.
+Inputs are 7 x 48 x 48 stacks (4 predicted stains + 3 inputs on the ImageStream, 6 channels on
+the A8) aligned head-left. Light augmentation (small rotations, shifts and vertical flips, which
+keep the head on the left) makes the latent space tolerant of pose.
 """
 import argparse
 import os

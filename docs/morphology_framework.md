@@ -5,7 +5,7 @@
 showed that fixed rules are the arm of the field that agrees worst with manual scoring, that
 IDEAS itself analyses populations by gating a large generic feature catalogue, and that
 unsupervised clustering of label-free imaging-cytometry features with stains used only as
-post-hoc truth is an established design (Zhang 2023) that nobody has applied to sperm. The
+post-hoc truth is an established design that nobody has applied to sperm. The
 "What exists" and "Facts" sections are measured; the rest is the proposal.*
 
 ## The idea
@@ -156,8 +156,7 @@ Blurred, coarsened stain images (6 × 6 per channel) cluster as well as the feat
 binary A8 call and at half their agreement on the three-way ImageStream call (results.md);
 the U-Net bottleneck is spatial by design and adds nothing. `populate --embedding` takes any
 (N, D) embedding, so a learned one slots in without further plumbing. The first learned one,
-a convolutional autoencoder on the aligned stacks after Zhang 2023 (`analysis/
-autoencoder_embedding.py`), reaches 0.68 on the ImageStream and an exact sperm/PBMC split on
+a convolutional autoencoder on the aligned stacks (`analysis/autoencoder_embedding.py`), reaches 0.68 on the ImageStream and an exact sperm/PBMC split on
 the A8 (results.md); it is the pixel-side representation to develop (train on more objects,
 a clustering-aware objective), alongside the summary features rather than instead of them.
 

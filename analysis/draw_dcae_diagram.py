@@ -1,5 +1,4 @@
-"""Draw the autoencoder architecture and two-phase pipeline (after Zhang et al. 2023) to
-figures/dcae_architecture.png."""
+"""Draw the autoencoder architecture and two-phase pipeline to figures/dcae_architecture.png."""
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from matplotlib import patches
 
@@ -24,7 +23,7 @@ def fmap(x, y, w, h, label, color, label_above=False):
     else: ax.text(x + w / 2 + 1.5, y - 1.6, label, ha="center", va="top", fontsize=7.4, color=INK)
 
 
-ax.text(3, 92.5, "Convolutional autoencoder on the virtual-stain stacks (after Zhang et al., Sci Rep 2023)", fontsize=13, fontweight="bold", color=INK)
+ax.text(3, 92.5, "Convolutional autoencoder on the virtual-stain stacks", fontsize=13, fontweight="bold", color=INK)
 ax.text(3, 89.3, "Phase 1 trains the encoder and decoder with a reconstruction loss and no labels.  Phase 2 keeps the encoder, clusters its latent vectors, and only then looks at the measured stains.", fontsize=9, color=MUTED)
 
 # ---------------- phase 1
@@ -84,6 +83,6 @@ ax.text(111, Y2 + 2.2, "clusters = sperm · weakly stained objects · bright rou
 ax.text(111, Y2 - 0.4, "agreement with the measured side  ARI 0.68   (features 0.78, raw pixels 0.42)", fontsize=7.4, color=MUTED)
 ax.text(109, Y2 - 4, "A8, 600 objects, k = 2:", fontsize=7.8, color=INK)
 ax.text(111, Y2 - 6.6, "sperm 200 / 169 / 1  vs  PBMC 0 / 31 / 199  (S / SP / P wells): exact", fontsize=7.4, color=MUTED)
-ax.text(4, 9.4, "Differences from the paper: their inputs were raw transmission and 3-D side-scatter images of leukocytes; ours are the virtual stains the U-Net paints from the label-free images, plus those images, aligned head-left.", fontsize=7.4, color=MUTED)
-ax.text(4, 7.0, "They report no augmentation, latent size or training length; those are ours. As in the paper, representation learning and clustering are separate steps and the decoder is only a training device. The stains are aligned on the cell axis at 0.667 µm/px before the stack is formed; latent vectors are scaled by median and IQR and clipped at ±5 before the mixture is fitted.", fontsize=7.4, color=MUTED)
+ax.text(4, 9.4, "Inputs are the virtual stains the U-Net paints from the label-free images, plus those images, aligned on the cell axis at 0.667 µm/px with the head to the left before the stack is formed.", fontsize=7.4, color=MUTED)
+ax.text(4, 7.0, "Representation learning and clustering are separate steps and the decoder is only a training device. Latent vectors are scaled by median and IQR and clipped at ±5 before the mixture is fitted.", fontsize=7.4, color=MUTED)
 fig.savefig("figures/dcae_architecture.png", dpi=180, facecolor="white"); print("wrote figures/dcae_architecture.png")
