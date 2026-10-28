@@ -18,7 +18,9 @@ Gates (applied in order, each reporting its loss) default to: within = id.pop_pr
 (when --within is given), single = qc.n_objects <= 1 and qc.n_nuclei <= 1, in_frame =
 qc.flagellum_edge_frac < 0.05, focus = qc.focus_gradient_rms above its 5th percentile.
 --gate adds or replaces one as name=pandas-query. Objects failing a gate are kept in the
-output table with their gate flags but excluded from reduction and clustering.
+output table with their gate flags but excluded from reduction and clustering. --join
+name=populations.csv merges an earlier run's cluster labels as `name.cluster`, so a run can be
+gated on another's population (tails within the head run's sperm cluster, say).
 
 Outputs under --out: populations.csv (ids, gate flags, PC scores, embedding, cluster),
 summary.json (gates, PCA variance, cluster sizes, stability, discriminating features,
@@ -64,10 +66,10 @@ def standardise(X):
     return (X - med) / scale, med, scale
 
 
-def reduce_pca(Z, min_components=2, max_components=20):
+def reduce_pca(Z, min_components=2, max_components=20, fixed=None):
     from sklearn.decomposition import PCA
     p = PCA().fit(Z); ev = p.explained_variance_
-    k = int(max(min_components, min(max_components, (ev > 1.0).sum())))     # Kaiser criterion, the morphometry convention
+    k = int(fixed) if fixed else int(max(min_components, min(max_components, (ev > 1.0).sum())))     # Kaiser criterion, the morphometry convention
     scores = p.transform(Z)[:, :k]
     return scores, {"n_components": k, "explained_variance_ratio": [float(v) for v in p.explained_variance_ratio_[:k]],
                     "cumulative": float(p.explained_variance_ratio_[:k].sum()), "loadings": p.components_[:k].tolist()}
@@ -83,6 +85,9 @@ def embed_2d(scores, seed):
         return TSNE(n_components=2, init="pca", perplexity=min(30, max(5, len(scores) // 50)), random_state=seed).fit_transform(scores), "tsne"
 
 
+MIN_SAMPLES = 10
+
+
 def fit_cluster(scores, method, k, seed, min_cluster_size):
     from sklearn.cluster import HDBSCAN, KMeans
     from sklearn.mixture import GaussianMixture
@@ -91,7 +96,7 @@ def fit_cluster(scores, method, k, seed, min_cluster_size):
     if method == "gmm":
         m = GaussianMixture(n_components=k, covariance_type="full", n_init=3, random_state=seed).fit(scores); return m.predict(scores), m
     if method == "hdbscan":
-        m = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=None).fit(scores); return m.labels_, m
+        m = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min(MIN_SAMPLES, min_cluster_size), cluster_selection_method="eom").fit(scores); return m.labels_, m
     raise SystemExit("unknown method %s" % method)
 
 
@@ -149,10 +154,19 @@ def main(argv=None):
     ap.add_argument("--no-gates", action="store_true"); ap.add_argument("--max-nan", type=float, default=0.3)
     ap.add_argument("--method", default="kmeans", choices=["kmeans", "gmm", "hdbscan"]); ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--min-cluster-size", type=int, default=50); ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--components", type=int, default=0, help="fix the number of PCA components (default: Kaiser criterion, 2-20); HDBSCAN wants few")
+    ap.add_argument("--min-samples", type=int, default=10, help="HDBSCAN min_samples (density requirement); the default is loose")
+    ap.add_argument("--join", action="append", default=[], metavar="name=populations.csv", help="merge another run's populations.csv on id.index as <name>.cluster etc., so a gate can chain on it")
     ap.add_argument("--store", default=None, help="virtual-stain store, to draw a gallery per population"); ap.add_argument("--gallery-n", type=int, default=8)
     a = ap.parse_args(argv)
     import pandas as pd
     t0 = time.time(); df = pd.read_csv(a.table); n_all = len(df)
+    global MIN_SAMPLES; MIN_SAMPLES = a.min_samples
+    for spec in a.join:
+        name, path = spec.split("=", 1); other = pd.read_csv(path)
+        keep = [c for c in other.columns if c in ("cluster", "emb_x", "emb_y") or c.startswith(("gate.", "pc"))]
+        other = other[["id.index"] + keep].rename(columns={c: "%s.%s" % (name, c) for c in keep})
+        df = df.merge(other, on="id.index", how="left")
     # ---- gates ----
     gates = [] if a.no_gates else list(DEFAULT_GATES)
     if a.within: gates.insert(0, ("within", "`id.pop_pred` == '%s'" % a.within))
@@ -175,7 +189,7 @@ def main(argv=None):
     if len(cols) < 2: raise SystemExit("fewer than two usable columns for set %s" % a.set)
     sub = df[passed]; X = sub[cols].to_numpy(dtype=float)
     Z, med, scale = standardise(X)
-    scores, pca = reduce_pca(Z)
+    scores, pca = reduce_pca(Z, fixed=a.components or None)
     print("set %s: %d columns kept, %d dropped; %d objects; PCA keeps %d components (%.0f%% of variance)" % (a.set, len(cols), len(dropped), len(sub), pca["n_components"], 100 * pca["cumulative"]))
     # ---- clustering ----
     labels, model = fit_cluster(scores, a.method, a.k, a.seed, a.min_cluster_size); model._fit_X = scores

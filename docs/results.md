@@ -178,6 +178,67 @@ a dim stain). Measured LDHC is weakly discriminative at the well level (replicat
 carries LDHC-channel signal, see the P:S note above) and the prediction inherits none of it.
 These are well labels, not cell labels: both wells are impure.
 
+### Feature engine and population engine: first results on the stained tube (2026-10-28)
+
+*`predict` → `data/isx_vstain` (4,000 held-out objects, server model, TTA, IDEAS masks stored),
+`features --daf` → `data/isx_vstain/features.csv` (1,025 columns, 328 s), `populate` →
+`runs/pop_isx_head`, `runs/pop_isx_tail_k4`. Everything here is one tube, held-out half.*
+
+**Validation step 1a, our definitions against the instrument's (on the IDEAS masks, 4,000
+cells).** Area reproduces IDEAS Area at r = 0.998–0.999, ratio 1.00; Width = our minimum
+Feret caliper at r = 0.965–0.993, ratio 1.00; Aspect Ratio = ours, ratio 1.00, r 0.84–0.99;
+IDEAS Length ≈ our ellipse major axis (r 0.92–0.95, ratio 1.02) and IDEAS Height ≈ our
+maximum Feret caliper (r 0.93–0.98, ratio 1.05–1.07; IDEAS measures between pixel centres,
+ours between corners). Gradient RMS and Contrast agree only in rank (r 0.46–0.76): IDEAS
+computes them on the raw image, we on the background-subtracted scaled one. The shape
+definitions are therefore fixed by data; the texture ones are ours and not IDEAS's.
+
+**Validation step 1b, predicted compartments against the reference, cell by cell (Bland–
+Altman, 4,000 cells).** Dimensions of the head and nucleus: r 0.79–0.87, mean differences
+under 0.4 µm, 95 % limits about ±3 µm. Flagellum: Feret max r 0.87, skeleton path r 0.76
+(mean +1.5 µm). Midpiece: r 0.65–0.78. Acrosome: r 0.80 on dimensions, 0.62 on aspect ratio.
+Principal piece: r 0.3–0.6 (it is the flagellum mask minus the dilated midpiece mask, and
+inherits both masks' errors). Curvature statistics (max curvature, sharp bends, tortuosity):
+r ≤ 0.33, i.e. not reproduced; total turning angle r 0.67. Cross-mask: nucleus-to-midpiece
+distance r 0.96 (the stain-geometry measurement again), nucleus-to-flagellum 0.88,
+head–midpiece angle 0.76, acrosome-anterior offset 0.74; insertion offset, acrosome
+fraction and the residue proxy r < 0.4.
+
+**One measurement caveat that applies to both predicted and IDEAS masks.** On the sperm
+cluster below, median head Feret max/min is 7.2/5.0 µm from predicted masks and 8.8/6.3 µm
+from the IDEAS masks, against WHO's 4.1/2.8 µm: a mask at 10–15 % of the object's peak is a
+stain halo, not the head outline. Morphometry against WHO numbers needs a tighter level
+(or an intensity-weighted fit); the current masks are right for presence and position, not
+for calibre.
+
+**Populations (step 2 and step 3).** Gates: predicted-DAPI "sperm" 2,767 of 4,000; single
+object (one brightfield component, one nucleus component) −161; tail in frame −2; focus
+(brightfield gradient RMS above its 5th percentile) −166 → 2,438. Head set (62 columns),
+PCA by Kaiser keeps 6 components (83 % of variance), k-means k = 3: clusters of 345, 1,167
+and 926, **stability ARI 0.96 / 0.99 across acquisition halves, 0.97 over bootstraps**.
+The galleries (`runs/pop_isx_head/gallery_*.png`) say what they are: cluster 1 is single
+sperm with a clear head; clusters 0 and 2 are large granular objects (round, textured,
+sometimes with a tail attached) on which the predicted nucleus and acrosome masks cover the
+whole body. The measured DAPI scalar, which the clustering never saw, agrees: median 79,900
+in cluster 1 against 41,000–44,000 in the other two, and cluster 2 holds 214 of the
+DAPI-dim objects. So the DAPI-intensity rule for "sperm" (`groups_for`) admits large
+low-DAPI bodies, and unsupervised head shape removes them: **1,167 single sperm among the
+3,611 gated objects.** This is the post-hoc-stain test of the framework and it passed on the
+first try.
+
+Tails, within head cluster 1 (`--join` + gate; 174 columns, 5 PCA components): HDBSCAN finds
+no density gaps at any setting (tail shape is a continuum), k-means k = 4 gives two real
+groups at stability ARI 0.80–0.82: **cluster 0, 381 sperm with an extended or looped tail**
+(median skeleton path 22.7 µm, total turning 480°, i.e. a loop) and **cluster 1, 731 sperm
+with the tail folded against the head** (path 7.4 µm, turning 140°), plus 55 with no
+principal-piece mask. Two thirds of the sperm in this fixed, stained tube have the tail
+wrapped on the head; the extended tails are themselves mostly looped. This is the
+"coiling versus frame" question answered for this preparation: it is the preparation.
+
+What is not yet done: the three-cluster head result of the morphometry literature is not
+reproducible here until the masks are tightened (the clusters found are sperm versus
+non-sperm, a coarser split); learned embeddings; the WHO mapping layer.
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing
