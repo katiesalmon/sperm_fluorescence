@@ -38,3 +38,17 @@ Predicting leukocyte and sperm immunofluorescence from the label-free images of 
   whether the abstract should say LDHC alone (as the ImageStream abstract does) or LDHC/AKAP4.
 - The A8 has no instrument-drawn masks, so the IoU reference is the thresholded measured stain,
   not an instrument mask as on the ImageStream; the results sentence is worded accordingly.
+
+## Figure
+
+Drawn on the laptop with the server checkpoint (`runs/srv_a8_stems/best.pt`, from the `-Checkpoints`
+zip) on the local 600-event held-out sample:
+
+`python -m sperm_fluorescence panel runs/srv_a8_stems --cache data/a8_roles --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --sample 600 --tta --out figures/aua_a8_panel.png`
+
+`figures/aua_a8_panel.png`: five sperm-well objects chosen by the best-case rule, as in the ImageStream
+figure. `figures/aua_a8_panel_with_pbmc.png` (`--rows "best:4,P:1"`): four sperm and one PBMC-well
+object, which shows the leukocyte marker lighting up on a white blood cell and staying dark on sperm,
+the point of this abstract. `--range sample` scales each marker by the brightest quarter of the sample,
+so CD45 is scaled by leukocytes; `--stained` leaves CD45 out of the "well stained" rule because sperm
+do not carry it. Legends are written beside each PNG as `.txt`.

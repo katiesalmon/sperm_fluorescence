@@ -42,7 +42,7 @@ if ($A8Run -ne "") {
     & $py -m sperm_fluorescence masks  runs\srv_a8_stems --cache $a8cache --test 3 --limit 1000 --calib 400
     & $py -m sperm_fluorescence accuracy runs\srv_a8_stems --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out figures\srv_a8_accuracy
     & $py -m sperm_fluorescence slides runs\srv_a8_stems --cache $a8cache --test 3 --well S --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out figures\srv_a8_slides
-    & $py -m sperm_fluorescence panel  runs\srv_a8_stems --cache $a8cache --test 3 --rows "best:2,typical:2,P:1" --size 56 --um-per-px 0.333 --out figures\srv_a8_panel.png
+    & $py -m sperm_fluorescence panel  runs\srv_a8_stems --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out figures\srv_a8_panel.png
 }
 
 if ($IsxCif -ne "") {

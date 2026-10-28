@@ -69,13 +69,15 @@ def sperm_shaped(ds, idx, names, av, um_per_px):
     return ok
 
 
-def choose(spec, g, r, ev, inside, main, rng, shaped=None):
-    """[(group name, q)] in row order, by the rule in the module docstring."""
-    score = np.nanmean(r, axis=1); taken = set(); rows = []
+def choose(spec, g, r, ev, inside, main, rng, shaped=None, use=None):
+    """[(group name, q)] in row order, by the rule in the module docstring. `use`: the
+    marker columns that count for "stained above the median" and for the ranking."""
+    use = list(range(r.shape[1])) if use is None else list(use)
+    score = np.nanmean(r[:, use], axis=1); taken = set(); rows = []
     sperm = (g == main) & inside & np.isfinite(score)
     if shaped is not None: sperm &= shaped
-    med = np.nanmedian(np.where(sperm[:, None], ev, np.nan), axis=0)
-    well = sperm & np.all(np.isnan(ev) | (ev > med), axis=1)
+    med = np.nanmedian(np.where(sperm[:, None], ev[:, use], np.nan), axis=0)
+    well = sperm & np.all(np.isnan(ev[:, use]) | (ev[:, use] > med), axis=1)
     for name, n in spec:
         if name == "best":
             order = [q for q in np.argsort(-score) if well[q] and q not in taken][:n]
@@ -99,7 +101,7 @@ def pad_to(a, size, fill):
     return out
 
 
-def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overlay=True):
+def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overlay=True, approx=False):
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     from matplotlib import patches
     groups = []
@@ -145,8 +147,9 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
             ax = fig.add_subplot(gs[R, col_of[("p", "all")]]); ax.imshow(render.composite(pl), interpolation="nearest"); axes[(R, col_of[("p", "all")])] = ax
         if i == 0 and um_per_px:
             ax = axes[(R, 0)]; px = 5.0 / um_per_px
-            ax.add_patch(patches.Rectangle((size - px - 3, size - 5), px, 1.6, color="white"))
-            ax.text(size - px / 2 - 3, size - 7, "5 µm", color="white", fontsize=5.2, ha="center", va="bottom")
+            ink = "black" if render.grey(x[0])[-12:, -int(px) - 6:].mean() > 0.5 else "white"     # light loss is a dark cell on a bright field
+            ax.add_patch(patches.Rectangle((size - px - 3, size - 5), px, 1.6, color=ink))
+            ax.text(size - px / 2 - 3, size - 7, ("≈5 µm" if approx else "5 µm"), color=ink, fontsize=5.2, ha="center", va="bottom")
     for ax in axes.values():
         ax.set_xticks([]); ax.set_yticks([]); ax.set_facecolor("black")
         for sp in ax.spines.values(): sp.set_edgecolor("#c8c8c8"); sp.set_linewidth(0.5)
@@ -183,6 +186,9 @@ def main(argv=None):
     ap.add_argument("--size", type=int, default=72, help="window side in px around each object")
     ap.add_argument("--um-per-px", type=float, default=0.0); ap.add_argument("--title", default="")
     ap.add_argument("--no-overlay", action="store_true", help="omit the all-marker overlay pair at the right")
+    ap.add_argument("--stained", default=None, help="comma list of markers that count for 'stained above the median' and the ranking (default: all; on the A8 leave CD45 out)")
+    ap.add_argument("--approx-scale", action="store_true", help="prefix the scale bar with ~ (A8: the pixel size is approximate)")
+    ap.add_argument("--range", default="rows", choices=["rows", "sample"], help="display range per marker from the rows shown (default) or from the whole scored sample (A8: so CD45, absent on sperm, is scaled by the leukocytes that carry it)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); te, wte, names, roles = R.te, R.wte, R.names, list(R.te.roles)
@@ -194,7 +200,8 @@ def main(argv=None):
     main_ = a.main or ("sperm" if (g == "sperm").any() else "S")
     r, ev, inside = per_object(te, P, idx, av)
     spec = [(s.split(":")[0].strip(), int(s.split(":")[1])) for s in a.rows.split(",") if s.strip()]
-    rows = choose(spec, g, r, ev, inside, main_, rng, sperm_shaped(te, idx, names, av, a.um_per_px))
+    use = [names.index(s.strip()) for s in a.stained.split(",")] if a.stained else None
+    rows = choose(spec, g, r, ev, inside, main_, rng, sperm_shaped(te, idx, names, av, a.um_per_px), use)
     objs = []
     for name, q in rows:
         x, y, m = crop(te, idx[q]); x, y, m, p = window(x, y, m, P[q], a.size)
@@ -202,9 +209,19 @@ def main(argv=None):
         objs.append((pad_to(x, a.size, fill), pad_to(y, a.size, 0.0), pad_to(m, a.size, 0.0), pad_to(p, a.size, 0.0), r[q]))
         print("%-8s object %6d  %s" % (name, idx[q], "  ".join("%s %.2f" % (names[k], r[q][k]) for k in range(te.cout) if av[q, k])))
     ks = [k for k in range(te.cout) if all(av[q, k] for _, q in rows)]
-    rng_ = render.ranges([o[1] for o in objs], [o[2] for o in objs])
+    if a.range == "sample":
+        # per marker: the brightest quarter of the sampled objects by event sum, then the usual
+        # 99.5th percentile of their pixels, so a marker absent on the rows shown (CD45 on sperm)
+        # is scaled by the cells that carry it and reads as dark on the rows that do not
+        sub = idx[:: max(1, len(idx) // 400)]; items = [crop(te, i) for i in sub]
+        rng_ = []
+        for k in range(te.cout):
+            sums = np.array([(y[k] * m).sum() for _, y, m in items]); top = sums >= np.percentile(sums, 75)
+            rng_.append(render.ranges([y for (_, y, m), t_ in zip(items, top) if t_], [m for (_, y, m), t_ in zip(items, top) if t_])[k])
+    else:
+        rng_ = render.ranges([o[1] for o in objs], [o[2] for o in objs])
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    draw(a.out, rows, objs, roles, names, ks, rng_, a.um_per_px, a.title, a.size, overlay=not a.no_overlay and len(ks) > 1)
+    draw(a.out, rows, objs, roles, names, ks, rng_, a.um_per_px, a.title, a.size, overlay=not a.no_overlay and len(ks) > 1, approx=a.approx_scale)
     stem = os.path.splitext(a.out)[0]
     json.dump({"run": a.run, "checkpoint": a.checkpoint, "sample": int(len(idx)), "seed": a.seed, "size_px": a.size, "main_population": main_,
                "rows": [{"group": name, "object": int(idx[q]), "pixel_r": {names[k]: (float(r[q][k]) if np.isfinite(r[q][k]) else None) for k in range(te.cout)}} for name, q in rows],
@@ -212,15 +229,16 @@ def main(argv=None):
     n_best = sum(n for s, n in spec if s == "best"); n_typ = sum(n for s, n in spec if s == "typical")
     others = ", ".join("%d %s" % (n, GROUP_LABEL.get(s, s).replace("\n", " ").lower()) for s, n in spec if s not in ("best", "typical"))
     parts = []
-    if n_best: parts.append("%d sperm with the highest per-object pixel correlation among sperm stained above the median on every marker" % n_best)
+    on = "every marker" if not a.stained else ("%s" % " and ".join(s.strip() for s in a.stained.split(",")))
+    if n_best: parts.append("%d sperm with the highest per-object pixel correlation among sperm stained above the median on %s" % (n_best, on))
     if n_typ: parts.append("%d sperm closest to the median correlation" % n_typ)
     if others: parts.append(others + " chosen at random")
     legend = ("Held-out objects, one per row: %s label-free inputs (left) and, for each marker, the measured fluorescence beside the "
               "image predicted from the inputs alone%s. Rows were chosen by rule from %d randomly sampled held-out objects: %s"
               "; objects whose stain touches the frame edge were excluded%s. Each marker is shown on one intensity range across all "
-              "rows (black = 0, full colour = the 99.5th percentile of the measured stain over the objects shown). r = per-object pixel correlation "
-              "between predicted and measured images within the cell. Scale bar 5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", len(idx), "; ".join(parts),
-                 ", and sperm rows were required to show one nucleus under 30 \u00b5m\u00b2 with the flagellum stain centred at least 2 \u00b5m from it" if (a.um_per_px and "DAPI" in names and "LDHC/AKAP4" in names) else ""))
+              "rows (black = 0, full colour = the 99.5th percentile of the measured stain over %s). r = per-object pixel correlation "
+              "between predicted and measured images within the cell. Scale bar %s5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", len(idx), "; ".join(parts),
+                 ", and sperm rows were required to show one nucleus under 30 \u00b5m\u00b2 with the flagellum stain centred at least 2 \u00b5m from it" if (a.um_per_px and "DAPI" in names and "LDHC/AKAP4" in names) else "", "the objects shown" if a.range == "rows" else "the brightest quarter of the sampled held-out objects, of every population, for that marker", "approximately " if a.approx_scale else ""))
     open(stem + ".txt", "w", encoding="utf-8").write(legend + "\n")
     print("wrote", a.out, "(+ .txt legend, .json picks)")
     return 0
