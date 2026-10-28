@@ -135,7 +135,7 @@ script is run with `-Checkpoints`, which adds each run's `best.pt` (about 30 MB 
 the laptop can redraw figures from the full model, e.g. the submission panel:
 
 ```
-python -m sperm_fluorescence panel runs/srv_isx_stems --cache data/isx_roles --test 3 --rows "best:2,typical:2,dim:1" --um-per-px 0.333 --out figures/aua_isx_panel.png
+python -m sperm_fluorescence panel runs/srv_isx_stems --cache data/isx_roles --test 3 --rows "best:5" --um-per-px 0.333 --out figures/aua_isx_panel.png
 ```
 
 (the laptop's `data/isx_roles` holds the same held-out half at 4,000 objects, enough to choose rows from).

@@ -14,7 +14,8 @@ population from `accuracy.groups_for` (ISX: dim, round; A8: S, SP, P) sampled at
 object whose stain touches the frame edge is never chosen. Each marker is drawn on one
 intensity range for the whole figure (the 99.5th percentile of the measured stain over the
 chosen objects), so a dim fragment looks dim. Writes the PNG, a .txt legend and a .json of
-the chosen objects.
+the chosen objects. An all-marker overlay pair (measured, predicted) closes each row unless
+--no-overlay.
 """
 import argparse
 import json
@@ -98,7 +99,7 @@ def pad_to(a, size, fill):
     return out
 
 
-def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size):
+def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overlay=True):
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     from matplotlib import patches
     groups = []
@@ -107,10 +108,11 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size):
         groups[-1][1] += 1
     gap = 0.22
     widths = [1.0] * len(roles) + [gap * 1.4]
-    for j in range(len(ks)): widths += [1.0, 1.0] + ([gap] if j < len(ks) - 1 else [])
+    for j in range(len(ks)): widths += [1.0, 1.0] + ([gap] if j < len(ks) - 1 or overlay else [])
+    if overlay: widths += [1.0, 1.0]
     heights = []
     for gi, (_, n) in enumerate(groups): heights += [1.0] * n + ([gap] if gi < len(groups) - 1 else [])
-    pw = 0.95; left, right, top, bottom = 0.95, 0.12, (0.78 if title else 0.6), 0.12
+    pw = 0.95; left, right, top, bottom = (0.95 if len(groups) > 1 else 0.12), 0.12, (0.78 if title else 0.6), 0.12
     figw = pw * sum(widths) + left + right; figh = pw * sum(heights) + top + bottom
     fig = plt.figure(figsize=(figw, figh), facecolor="white")
     gs = fig.add_gridspec(len(heights), len(widths), width_ratios=widths, height_ratios=heights,
@@ -120,6 +122,7 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size):
     c += 1
     for j, k in enumerate(ks):
         col_of[("t", k)] = c; col_of[("p", k)] = c + 1; c += 3
+    if overlay: col_of[("t", "all")] = c; col_of[("p", "all")] = c + 1
     row_of = []; rr = 0
     for gi, (_, n) in enumerate(groups):
         for _ in range(n): row_of.append(rr); rr += 1
@@ -129,12 +132,17 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size):
         R = row_of[i]
         for r_i in range(len(roles)):
             ax = fig.add_subplot(gs[R, col_of[("in", r_i)]]); ax.imshow(render.grey(x[r_i]), interpolation="nearest"); axes[(R, col_of[("in", r_i)])] = ax
+        tl, pl = [], []
         for k in ks:
             col = render.color_for(names[k], k); lo, hi = rng_[k]
-            ax = fig.add_subplot(gs[R, col_of[("t", k)]]); ax.imshow(render.colorize(y[k], col, lo, hi), interpolation="nearest"); axes[(R, col_of[("t", k)])] = ax
-            ax = fig.add_subplot(gs[R, col_of[("p", k)]]); ax.imshow(render.colorize(np.clip(p[k], 0, None), col, lo, hi), interpolation="nearest"); axes[(R, col_of[("p", k)])] = ax
+            tl.append(render.colorize(y[k], col, lo, hi)); pl.append(render.colorize(np.clip(p[k], 0, None), col, lo, hi))
+            ax = fig.add_subplot(gs[R, col_of[("t", k)]]); ax.imshow(tl[-1], interpolation="nearest"); axes[(R, col_of[("t", k)])] = ax
+            ax = fig.add_subplot(gs[R, col_of[("p", k)]]); ax.imshow(pl[-1], interpolation="nearest"); axes[(R, col_of[("p", k)])] = ax
             if np.isfinite(r[k]):
                 ax.text(0.04, 0.04, "r %.2f" % r[k], transform=ax.transAxes, color="white", fontsize=5.2, va="bottom", ha="left")
+        if overlay:
+            ax = fig.add_subplot(gs[R, col_of[("t", "all")]]); ax.imshow(render.composite(tl), interpolation="nearest"); axes[(R, col_of[("t", "all")])] = ax
+            ax = fig.add_subplot(gs[R, col_of[("p", "all")]]); ax.imshow(render.composite(pl), interpolation="nearest"); axes[(R, col_of[("p", "all")])] = ax
         if i == 0 and um_per_px:
             ax = axes[(R, 0)]; px = 5.0 / um_per_px
             ax.add_patch(patches.Rectangle((size - px - 3, size - 5), px, 1.6, color="white"))
@@ -145,18 +153,18 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size):
     # column headers: the inputs, then one header per marker over its measured/predicted pair
     for r_i, role in enumerate(roles):
         ax = axes[(0, col_of[("in", r_i)])]; ax.set_title(ROLE_LABEL.get(role, role), fontsize=7, fontweight="bold", pad=3)
-    for k in ks:
+    for k in ks + (["all"] if overlay else []):
         at, ap_ = axes[(0, col_of[("t", k)])], axes[(0, col_of[("p", k)])]
         at.set_title("measured", fontsize=6.2, color="#444444", pad=2); ap_.set_title("predicted", fontsize=6.2, color="#444444", pad=2)
         bt, bp = at.get_position(), ap_.get_position(); xm = (bt.x0 + bp.x1) / 2
-        col = tuple(0.7 * v for v in render.color_for(names[k], k))
-        fig.text(xm, bt.y1 + 0.17 / figh, names[k], fontsize=8, fontweight="bold", color=col, ha="center", va="bottom")
-        fig.text(xm, bt.y1 + 0.17 / figh + 0.14 / figh, WHERE.get(names[k], ""), fontsize=6.2, color="#444444", ha="center", va="bottom")
+        col = tuple(0.7 * v for v in render.color_for(names[k], k)) if k != "all" else "black"
+        fig.text(xm, bt.y1 + 0.17 / figh, names[k] if k != "all" else "All markers", fontsize=8, fontweight="bold", color=col, ha="center", va="bottom")
+        fig.text(xm, bt.y1 + 0.17 / figh + 0.14 / figh, WHERE.get(names[k], "") if k != "all" else "overlay", fontsize=6.2, color="#444444", ha="center", va="bottom")
     b0 = axes[(0, 0)].get_position(); b1 = axes[(0, col_of[("in", len(roles) - 1)])].get_position()
     fig.text((b0.x0 + b1.x1) / 2, b0.y1 + 0.17 / figh + 0.14 / figh, "Label-free inputs", fontsize=8, fontweight="bold", ha="center", va="bottom")
-    # row-group labels
+    # row-group labels (none when every row is the same group: the legend says what they are)
     i = 0
-    for name, n in groups:
+    for name, n in (groups if len(groups) > 1 else []):
         top_ax = axes[(row_of[i], 0)]; bot_ax = axes[(row_of[i + n - 1], 0)]
         bt, bb = top_ax.get_position(), bot_ax.get_position()
         fig.text(bt.x0 - 0.08 / figw, (bt.y1 + bb.y0) / 2, GROUP_LABEL.get(name, name), fontsize=7, fontweight="bold", ha="right", va="center", linespacing=1.1)
@@ -174,6 +182,7 @@ def main(argv=None):
     ap.add_argument("--sample", type=int, default=1500, help="held-out objects scored before choosing"); ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--size", type=int, default=72, help="window side in px around each object")
     ap.add_argument("--um-per-px", type=float, default=0.0); ap.add_argument("--title", default="")
+    ap.add_argument("--no-overlay", action="store_true", help="omit the all-marker overlay pair at the right")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); te, wte, names, roles = R.te, R.wte, R.names, list(R.te.roles)
@@ -195,19 +204,22 @@ def main(argv=None):
     ks = [k for k in range(te.cout) if all(av[q, k] for _, q in rows)]
     rng_ = render.ranges([o[1] for o in objs], [o[2] for o in objs])
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    draw(a.out, rows, objs, roles, names, ks, rng_, a.um_per_px, a.title, a.size)
+    draw(a.out, rows, objs, roles, names, ks, rng_, a.um_per_px, a.title, a.size, overlay=not a.no_overlay and len(ks) > 1)
     stem = os.path.splitext(a.out)[0]
     json.dump({"run": a.run, "checkpoint": a.checkpoint, "sample": int(len(idx)), "seed": a.seed, "size_px": a.size, "main_population": main_,
                "rows": [{"group": name, "object": int(idx[q]), "pixel_r": {names[k]: (float(r[q][k]) if np.isfinite(r[q][k]) else None) for k in range(te.cout)}} for name, q in rows],
                "display_range_max": {names[k]: rng_[k][1] for k in ks}}, open(stem + ".json", "w"), indent=1)
     n_best = sum(n for s, n in spec if s == "best"); n_typ = sum(n for s, n in spec if s == "typical")
     others = ", ".join("%d %s" % (n, GROUP_LABEL.get(s, s).replace("\n", " ").lower()) for s, n in spec if s not in ("best", "typical"))
+    parts = []
+    if n_best: parts.append("%d sperm with the highest per-object pixel correlation among sperm stained above the median on every marker" % n_best)
+    if n_typ: parts.append("%d sperm closest to the median correlation" % n_typ)
+    if others: parts.append(others + " chosen at random")
     legend = ("Held-out objects, one per row: %s label-free inputs (left) and, for each marker, the measured fluorescence beside the "
-              "image predicted from the inputs alone. Rows were chosen by rule from %d randomly sampled held-out objects: %d sperm with the highest "
-              "per-object pixel correlation among sperm stained above the median on every marker, %d sperm closest to the median correlation, and %s "
-              "chosen at random; objects whose stain touches the frame edge were excluded%s. Each marker is shown on one intensity range across all "
+              "image predicted from the inputs alone%s. Rows were chosen by rule from %d randomly sampled held-out objects: %s"
+              "; objects whose stain touches the frame edge were excluded%s. Each marker is shown on one intensity range across all "
               "rows (black = 0, full colour = the 99.5th percentile of the measured stain over the objects shown). r = per-object pixel correlation "
-              "between predicted and measured images within the cell. Scale bar 5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), len(idx), n_best, n_typ, others or "none",
+              "between predicted and measured images within the cell. Scale bar 5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", len(idx), "; ".join(parts),
                  ", and sperm rows were required to show one nucleus under 30 \u00b5m\u00b2 with the flagellum stain centred at least 2 \u00b5m from it" if (a.um_per_px and "DAPI" in names and "LDHC/AKAP4" in names) else ""))
     open(stem + ".txt", "w", encoding="utf-8").write(legend + "\n")
     print("wrote", a.out, "(+ .txt legend, .json picks)")

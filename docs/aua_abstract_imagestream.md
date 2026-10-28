@@ -22,11 +22,11 @@ if more samples are acquired before submission, the methods and results need the
 
 ## Figure
 
-`python -m sperm_fluorescence panel runs/srv_isx_stems --cache data/isx_roles --test 3 --rows "best:2,typical:2,dim:1" --um-per-px 0.333 --out figures/aua_isx_panel.png`
+`python -m sperm_fluorescence panel runs/srv_isx_stems --cache data/isx_roles --test 3 --rows "best:5" --um-per-px 0.333 --out figures/aua_isx_panel.png`
 
 One row per held-out object; columns are the three label-free inputs (brightfield 1, brightfield 2,
-darkfield), then for each marker the measured stain beside the prediction. Rows: two sperm chosen as the
-best cases by rule, two typical sperm, one DAPI-dim fragment. The command writes the legend to
+darkfield), then for each marker the measured stain beside the prediction, and an all-marker overlay
+pair at the right. Rows: five sperm chosen as the best cases by rule. The command writes the legend to
 `figures/aua_isx_panel.txt` and the chosen object ids to `figures/aua_isx_panel.json`.
 `figures/aua_isx_panel_laptop.png` is the layout draft from the laptop model (8,000 objects, 12 epochs);
 the submission version needs the server model (`server_stems.ps1 -SkipTrain -Checkpoints`, then the

@@ -59,7 +59,7 @@ if ($IsxCif -ne "") {
     & $py -m sperm_fluorescence masks  runs\srv_isx_stems --cache $isxcache --test 3 --isx $IsxCif --limit 1000 --calib 400
     & $py -m sperm_fluorescence accuracy runs\srv_isx_stems --cache $isxcache --test 3 --title "ImageStream, held-out half of the tube (full run)" --sample 5000 --out figures\srv_isx_accuracy
     & $py -m sperm_fluorescence slides runs\srv_isx_stems --cache $isxcache --test 3 --population sperm --title "ImageStream (60x): four markers predicted from brightfield" --input-name "Brightfield" --um-per-px 0.333 --n 4 --out figures\srv_isx_slides
-    & $py -m sperm_fluorescence panel  runs\srv_isx_stems --cache $isxcache --test 3 --rows "best:2,typical:2,dim:1" --um-per-px 0.333 --out figures\srv_isx_panel.png
+    & $py -m sperm_fluorescence panel  runs\srv_isx_stems --cache $isxcache --test 3 --rows "best:5" --um-per-px 0.333 --out figures\srv_isx_panel.png
 }
 # ---- one zip to carry back: every JSON, PNG, CSV and log from the two runs, plus figures\srv_* (no caches; checkpoints only with -Checkpoints)
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"
