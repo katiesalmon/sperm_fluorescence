@@ -66,8 +66,9 @@ def embedding_plot(tab, labels, kind, path, title="", measured_labels=None, meas
 
 
 def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=72):
-    """One PNG per cluster: top row the n members nearest the cluster centre, bottom row the n
-    farthest (its periphery), each as brightfield with compartment outlines."""
+    """One PNG per cluster: the n members nearest the cluster centre and the n farthest from
+    it, each as brightfield with compartment outlines and, beneath it, the predicted stains
+    overlaid in the IDEAS colours (one display range per marker across the gallery)."""
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     from ..data.cache import open_cache
     from ..data.store import open_store
@@ -75,27 +76,37 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
     from ..eval.slides import window
     from ..features.engine import COMPARTMENT
     st = open_store(store_path); ds, _, _ = open_cache(st.meta["source_cache"], st.classes)
-    bf_i = ds.roles.index("brightfield") if "brightfield" in ds.roles else 0
+    bf_i = next((ds.roles.index(r) for r in ("brightfield", "lightloss") if r in ds.roles), 0)
     comp_of = {COMPARTMENT[nm]: k for k, nm in enumerate(st.names) if nm in COMPARTMENT}
     show = [c for c in SET_MASKS.get(feature_set, SET_MASKS["morph"]) if c in comp_of]
     idx_all = tab["id.index"].to_numpy(dtype=int)
     for c in sorted(set(labels)):
         if c < 0: continue
-        sel = np.flatnonzero(labels == c); centre = scores[sel].mean(0); d = np.hypot(*(scores[sel] - centre).T) if scores.shape[1] == 2 else np.linalg.norm(scores[sel] - centre, axis=1)
+        sel = np.flatnonzero(labels == c); centre = scores[sel].mean(0); d = np.linalg.norm(scores[sel] - centre, axis=1)
         near = sel[np.argsort(d)[:n]]; far = sel[np.argsort(-d)[:n]]
-        fig, axes = plt.subplots(2, n, figsize=(1.15 * n, 2.7), facecolor="white", squeeze=False)
+        members = [(int(idx_all[q]), g) for g, grp in (("nearest the centre", near), ("periphery", far)) for q in grp]
+        items = {}
+        for i, _ in members:
+            x, y, m = ds.item(i); p, pm, _, _ = st.item(i)
+            xw, _, mw, pw = window(x, y, m, np.concatenate([p, pm.astype(np.float32)]), size)
+            items[i] = (xw, mw, pw[:st.cout], pw[st.cout:] > 0.5)
+        hi = [max(float(np.percentile(np.concatenate([np.clip(items[i][2][k][items[i][1] > 0], 0, None) for i, _ in members]), 99.5)), 1e-4) for k in range(st.cout)]
+        fig, axes = plt.subplots(4, n, figsize=(1.15 * n, 5.0), facecolor="white", squeeze=False)
         for r, (group, label) in enumerate(((near, "nearest the centre"), (far, "periphery"))):
             for j in range(n):
-                ax = axes[r, j]; ax.set_xticks([]); ax.set_yticks([])
-                if j >= len(group): ax.axis("off"); continue
-                i = int(idx_all[group[j]]); x, y, m = ds.item(i); p, pm, _, _ = st.item(i)
-                xw, _, mw, pw = window(x, y, m, pm.astype(np.float32), size)
+                ax_bf, ax_st = axes[2 * r, j], axes[2 * r + 1, j]
+                for ax in (ax_bf, ax_st): ax.set_xticks([]); ax.set_yticks([])
+                if j >= len(group): ax_bf.axis("off"); ax_st.axis("off"); continue
+                i = int(idx_all[group[j]]); xw, mw, pw, masks = items[i]
                 img = render.grey(xw[bf_i])
                 for comp in show:
-                    o = outline(pw[comp_of[comp]] > 0.5); img[o] = MASK_COLOUR[comp]
-                ax.imshow(img, interpolation="nearest")
-                ax.set_title("#%d" % i, fontsize=6, pad=2)
-                for sp in ax.spines.values(): sp.set_edgecolor("#cccccc"); sp.set_linewidth(0.5)
-            axes[r, 0].set_ylabel(label, fontsize=7)
-        fig.suptitle("cluster %d (n = %d): %s outlined" % (c, len(sel), ", ".join(show)), fontsize=9, fontweight="bold")
+                    o = outline(masks[comp_of[comp]]); img[o] = MASK_COLOUR[comp]
+                ax_bf.imshow(img, interpolation="nearest"); ax_bf.set_title("#%d" % i, fontsize=6, pad=2)
+                layers = [render.colorize(np.clip(pw[k], 0, None), render.color_for(st.names[k], k), 0, hi[k]) for k in range(st.cout)]
+                ax_st.imshow(render.composite(layers), interpolation="nearest")
+                for ax in (ax_bf, ax_st):
+                    for sp in ax.spines.values(): sp.set_edgecolor("#cccccc"); sp.set_linewidth(0.5)
+            axes[2 * r, 0].set_ylabel(label + "\nbrightfield", fontsize=6.5); axes[2 * r + 1, 0].set_ylabel("virtual stains", fontsize=6.5)
+        legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
+        fig.suptitle("cluster %d (n = %d): %s" % (c, len(sel), legend), fontsize=8.5, fontweight="bold")
         fig.tight_layout(); fig.savefig(os.path.join(out_dir, "gallery_%d.png" % c), dpi=200, facecolor="white"); plt.close(fig)
