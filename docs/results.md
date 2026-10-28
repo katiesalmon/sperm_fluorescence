@@ -303,6 +303,41 @@ What is not yet done: the three-cluster head result of the morphometry literatur
 reproducible here until the masks are tightened (the clusters found are sperm versus
 non-sperm, a coarser split); learned embeddings; the WHO mapping layer.
 
+### Using the virtual stain images instead of masks (2026-10-28)
+
+*`features/stain.py`: per predicted channel, intensity moments (weighted sigma along its own
+axes, anisotropy, entropy, peak fraction), the fraction of intensity within 1/2/4/8 µm of its
+centroid, a 16-bin profile along the whole-cell axis with the head at the negative end, and
+between channels the centroid distance and the offset along the axis; nothing is thresholded.
+Also every channel rotated onto the cell axis, head left, on a 48 × 48 grid at 0.667 µm/px,
+for pixel-level PCA. `runs/cmp_*`; ARI = agreement with the measured side clustered the same
+way; A8 judged on the wells.*
+
+| representation (label-free side) | ISX, k = 3 | A8, k = 2: PBMC cluster holds | A8 ARI |
+|---|---|---|---|
+| intensity columns (37) | 0.78 | 140 of 200 PBMC, 22 of 400 sperm-well objects | 0.52 |
+| stain-image features (preds.*, 112) | 0.77 | 199 PBMC, 17 S + 51 SP | 0.01 |
+| stain-image + intensity | 0.78 | 199 PBMC, 4 S + 33 SP | — |
+| aligned pixels alone, 30 PCs | **0.07** | 199 PBMC, 16 S + 51 SP | 0.05 |
+| all mask features (358–465) | 0.72 | **199 PBMC, 0 S + 31 SP** | **0.99** |
+| all mask + stain-image | 0.77 | 199 PBMC, 0 S + 31 SP | 0.98 |
+| all mask + pixels | 0.73 | 199 PBMC, 0 S + 31 SP | 0.99 |
+
+(The 31 mixed-well objects with the PBMCs are the leukocytes that well was spiked with; S
+objects in the PBMC cluster are errors.)
+
+So the stain images used directly, without a threshold, carry the populations as well as
+the best mask-free set on the ImageStream (0.77–0.78 against 0.72 for masks) and nearly as
+well as everything on the A8 (4 sperm-well errors against 0). **Raw aligned pixels do not**:
+30 principal components of the 48 × 48 stacks reach 0.07 on the ImageStream and are unstable
+(bootstrap ARI 0.22). Pixel PCA is dominated by where the tail happens to lie, which the
+rotation does not normalise; a learned embedding (autoencoder or the U-Net bottleneck) is
+the route for pixels, not PCA. On the A8 the mask features keep a small edge for the
+sperm-versus-PBMC call because its decisive quantity is the thickness of the painted body,
+which the mask thickness columns state directly and the intensity sigmas state only
+approximately. The two instruments agree on the ordering: image-derived summaries
+(intensity, moments, profiles) first, mask geometry as a complement, raw pixels not yet.
+
 ### The same pipeline on the A8 (2026-10-28)
 
 *`predict` with `runs/srv_a8_stems` (the 40-epoch model) on the laptop's held-out sample

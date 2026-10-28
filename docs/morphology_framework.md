@@ -147,7 +147,11 @@ population to describe it; and weight or select columns rather than letting the 
 shape features set the metric. On the A8 the opposite holds (results.md): intensity
 alone reaches ARI 0.52 and all features 0.99 against the wells, because the A8's predicted
 brightness is noisy and the geometry of the painted compartments is not. The combined space
-is the default; which family carries a population is read off afterwards.
+is the default; which family carries a population is read off afterwards. The stain images
+used directly (threshold-free moments, radial and axial profiles, `preds.*`) match the best
+mask-free set on both instruments (results.md), so the catalogue now has three families:
+image summaries, mask geometry, and aligned pixel stacks; raw pixel PCA fails and the pixel
+stacks await a learned embedding.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):
