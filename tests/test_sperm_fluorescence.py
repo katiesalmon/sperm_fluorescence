@@ -77,6 +77,37 @@ def test_native_size_evaluate_crops_to_object():
         assert set(res) == {"A", "B"} and all(v["event_r"] is not None for v in res.values())
 
 
+def test_predict_writes_a_store_that_indexes_like_the_cache():
+    """An untrained stems model run through `predict`: the store has one prediction per cache
+    object at the cache's frame size, masks inside the valid frame, and item(i) lines up."""
+    import torch
+    from sperm_fluorescence.data.store import open_store
+    from sperm_fluorescence.predict import main as predict_main
+    with tempfile.TemporaryDirectory() as d:
+        cache, run, store = os.path.join(d, "cache"), os.path.join(d, "run"), os.path.join(d, "store")
+        os.makedirs(cache); os.makedirs(run); make_cache(cache, n=7)
+        model = stems.build("stems", ["lightloss", "fsc", "ssc"], 8, 3, 2)
+        torch.save(model.state_dict(), os.path.join(run, "best.pt"))
+        json.dump({"scale": [1.0, 2.0], "roles": ["lightloss", "fsc", "ssc"], "arch": "stems", "width": 8, "train": ["2S"], "test": ["3S"]},
+                  open(os.path.join(run, "results.json"), "w"))
+        assert predict_main([run, "--cache", cache, "--classes", "3S", "--out", store, "--batch", "4"]) == 0
+        st = open_store(store)
+        ds, _, _ = open_cache(cache, ["3S"])
+        assert len(st) == len(ds) == 7 and st.names == ["A", "B"]
+        for i in range(len(st)):
+            p, pm, m, im = st.item(i)
+            x, y, mc = ds.item(i)
+            assert p.shape == y.shape and pm.shape == y.shape and m.shape == mc.shape and im is None
+            assert np.array_equal(m, mc) and not (pm & ~m[None]).any()
+        meta = json.load(open(os.path.join(store, "meta.json")))
+        assert meta["classes"]["3S"]["n"] == 7 and meta["thresholds"]["a8:A"] == ["rel", 0.15]
+        # --limit trims the copied index to what was written
+        assert predict_main([run, "--cache", cache, "--classes", "3S", "--out", store + "2", "--limit", "3", "--threshold", "B=rel:0.3"]) == 0
+        st2 = open_store(store + "2"); assert len(st2) == 3 and st2.meta["thresholds"]["a8:B"] == ["rel", 0.3]
+        p2, _, _, _ = st2.item(2); p0, _, _, _ = st.item(2); assert np.allclose(p2, p0, atol=1e-2)
+
+
 if __name__ == "__main__":
-    for fn in (test_cache_round_trip_and_role_selection, test_stems_ignore_absent_roles_and_match_shape, test_native_size_evaluate_crops_to_object):
+    for fn in (test_cache_round_trip_and_role_selection, test_stems_ignore_absent_roles_and_match_shape, test_native_size_evaluate_crops_to_object,
+               test_predict_writes_a_store_that_indexes_like_the_cache):
         fn(); print("ok", fn.__name__)

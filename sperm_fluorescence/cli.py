@@ -9,6 +9,7 @@
   views                inputs beside outputs, per input subset     predict-cytpix  run an ISX model on CytPix crops
   spectral             plot a spectral_export.py JSON              denoised        pixel r against a denoised measurement
   compare              within-population event r of several runs, side by side
+  predict              virtual stains for every object of a cache -> a store (predicted images + masks)
   panel                submission figure: inputs, measured and predicted stains, one row per object
 
 Every command takes --help.
@@ -32,6 +33,7 @@ COMMANDS = {
     "compare": ("sperm_fluorescence.eval.compare", "main"),
     "panel": ("sperm_fluorescence.eval.panel", "main"),
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
+    "predict": ("sperm_fluorescence.predict", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
 

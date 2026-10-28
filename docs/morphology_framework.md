@@ -35,7 +35,7 @@ do not decide anything; they survive only as a sanity check on the population na
 
 | piece | state |
 |---|---|
-| Predicted stain images | `evaluate` returns them at native size; no writer yet |
+| Predicted stain images | `predict` writes them for a whole cache to the virtual-stain store (`data/store.py`): predicted images, predicted masks from the run's calibrated thresholds, IDEAS masks of the measured channels, indexed like the cache; `prepare --unstained` makes the cache for an unstained .cif |
 | Compartment masks | `masks`: per-channel threshold (`rel` 0.10–0.15 of the object's peak), IoU 0.60–0.73 vs IDEAS, 87–100 % detected |
 | Population labels | `accuracy.groups_for`: sperm / round / DAPI-dim by the DAPI scalar (ISX); wells on the A8; sperm-vs-PBMC AUC 0.95 on predicted CD45 (A8) |
 | Object selection by rule | `panel.sperm_shaped` (nucleus area, flagellum-to-nucleus distance), `slides.pick`: first features, already used |
@@ -63,12 +63,17 @@ do not decide anything; they survive only as a sanity check on the population na
    manual percentage.
 6. **One sample so far**, split by acquisition order.
 
-## 1. `predict` and the virtual-stain store
+## 1. `predict` and the virtual-stain store (built 2026-10-28)
 
-Run a trained model over a `.cif`, stained or unstained, and write per object the predicted
-channels at native size, the label-free inputs, the masks, and (when present) the measured
-channels and the IDEAS masks, in the ragged cache layout so every downstream command reads
-one store. The unstained path needs `prepare` to accept a `.cif` with no stain channels.
+`prepare` makes the cache (stained: classes 2I/3I; `--unstained`: one class 1I with zero
+targets and nothing marked available), and `predict` runs a model over it and writes the
+store: per object the predicted channels in cache units, a predicted mask per channel from
+the run's calibrated threshold rule, the IDEAS masks of the measured channels when the
+`.cif` is given, and the cache's own index arrays, so `open_store` and `open_cache` over the
+same classes index identically. Inputs and measured channels stay in the cache; the feature
+engine opens both. One caveat for the features stage: the `rel` mask rule is relative to
+each object's own peak, so every object gets a non-empty mask, including objects with no
+stain; mask presence is not a detection and the intensity features must carry that.
 
 ## 2. The feature engine
 

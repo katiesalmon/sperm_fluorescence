@@ -15,6 +15,7 @@ subset       re-score on DAPI-defined populations      ablate    score a stems m
 predict-cytpix  an ISX model on CytPix crops           spectral  plot a scripts/spectral_export.py JSON
 views        inputs beside outputs per input subset     denoised  pixel r against a denoised measurement
 compare      runs side by side, within-population r     panel     submission figure, one row per object
+predict      virtual stains for a whole cache -> store   
 prepare-a8 / prepare-isx / prepare-generalist          the earlier fixed-layout caches (legacy)
 ```
 
@@ -36,6 +37,7 @@ Rendered by `docs/diagrams/make_diagrams.py` (PNG and SVG beside it).
 | `sperm_fluorescence/data/` | `prepare` (config-driven cache writer), `cache` (ragged layout, load/open), `batching` (datasets, shape-bucketed batches, role selection, presence), `augment` |
 | `sperm_fluorescence/models/` | `stems` (per-role input stems + `build`/`call` for both architectures), `unet` (the trunk), `registry` (TOML configs) |
 | `sperm_fluorescence/train/` | `loop` (the training loop and `train` CLI), `losses` (masked L1, gradient term, target scale), `device` |
+| `sperm_fluorescence/predict.py` | `predict`: run a model over a cache and write the virtual-stain store (`data/store.py`: predicted images, masks, IDEAS masks, cache-aligned index) |
 | `sperm_fluorescence/eval/` | `metrics` (native-size evaluate), `sheets`/`render` (IDEAS-style figures), `load` (load a run; `sheet`), `masks`, `slides`, `accuracy`, `subset`, `ablate`, `views`, `denoised`, `compare`, `panel` (submission figure: inputs, measured and predicted stains per row), `spectral` |
 | `configs/instruments/` | one TOML per instrument: label-free **roles** → source page, **stains** → page, pixel pitch, class rules |
 | `configs/markers/` | one TOML per marker: name, colour, localisation, the population its checkpoint is selected on |

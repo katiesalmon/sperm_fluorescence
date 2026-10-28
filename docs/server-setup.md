@@ -214,3 +214,14 @@ the cache once from the share, then train. `prepare_isx.py` is pure numpy, ~2 mi
 
 The ablation -- one joint model with per-marker checkpoints, then one model per marker --
 is five `train` runs on the same cache; see the commands in the project log.
+
+## Virtual stains for a whole acquisition (`predict`)
+
+```
+.venv\Scripts\python.exe -m sperm_fluorescence predict runs\srv_isx_stems --cache data\server_cache\isx_roles --classes 3I --isx "Z:\...\ALL_1_400_1.cif" --tta --out data\server_cache\isx_vstain
+```
+
+writes `data\server_cache\isx_vstain` (about 60 MB per 1,000 objects: float16 images plus two
+bool masks per marker). For an unstained `.cif`, first
+`prepare --instrument isx --source <cif> --unstained --cache data\server_cache\isx_unstained`,
+then `predict ... --cache data\server_cache\isx_unstained --classes 1I`.

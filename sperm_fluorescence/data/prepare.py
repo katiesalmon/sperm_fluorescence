@@ -5,6 +5,7 @@ and markers from.
     python -m sperm_fluorescence prepare --instrument a8  --source data/a8_bundle_seed0.zip --cache data/a8_roles
     python -m sperm_fluorescence prepare --instrument isx --source data/isx/ALL_1_400_1.cif --daf data/isx/ALL_1_400_1.daf --cache data/isx_roles
     python -m sperm_fluorescence prepare --instrument a8 --source ... --instrument isx --source ... --daf ... --cache data/both_roles
+    python -m sperm_fluorescence prepare --instrument isx --source unstained.cif --unstained --cache data/isx_unstained
 
 The cache layout is data/cache.py's. meta.json carries:
     roles          the x channel names, in order (union over instruments; a role an instrument
@@ -13,8 +14,9 @@ The cache layout is data/cache.py's. meta.json carries:
     classes        {cls: {instrument, family, avail, present, repeat}}
     scales         per instrument and marker: the divisor that brought targets to unit mean |y|
 
-Targets are background-subtracted stain images scaled per instrument and marker to unit
-mean magnitude, so instruments with different units meet on equal terms. Inputs are
+An unstained source (--unstained) gets zero targets and nothing marked available; it exists
+to be run through `predict`. Targets are background-subtracted stain images scaled per
+instrument and marker to unit mean magnitude, so instruments with different units meet on equal terms. Inputs are
 standardised per object and channel. The A8 is resampled to the ImageStream pitch
 (instrument config `zoom_to_reference`) so one model sees one scale.
 """
@@ -51,13 +53,17 @@ def a8_records(cfg, source, limit=0):
         yield cls, items
 
 
-def isx_records(cfg, source, daf, limit=0):
+def isx_records(cfg, source, daf, limit=0, unstained=False):
+    """Stained: the tube is split into 2I (first half) and 3I (second half) by acquisition
+    order. Unstained: one class, 1I, every object (the digit 1 is the brightfield-only
+    replicate, as on the A8)."""
     c = isx_io.CIF(source); roles = cfg["roles"]; stains = cfg["stains"]
     scal_name = cfg["classes"].get("scalar"); F = col = None
     if daf and scal_name:
         names, F, _ = isx_daf.read_features(daf); col = {n: i for i, n in enumerate(names)}
     n = len(c) if not limit else min(limit, len(c)); half = n // 2
-    for cls, rows in (("2I", range(0, half)), ("3I", range(half, n))):
+    splits = (("1I", range(0, n)),) if unstained else (("2I", range(0, half)), ("3I", range(half, n)))
+    for cls, rows in splits:
         items = []; t0 = time.time()
         for i in rows:
             img = c.image(i).astype(np.float32); mk = c.mask(i); mc = mk.any(axis=0)
@@ -141,6 +147,7 @@ def main(argv=None):
     ap.add_argument("--daf", action="append", default=[], help="ImageStream .daf (features), one per isx instrument")
     ap.add_argument("--cache", required=True); ap.add_argument("--limit", type=int, default=0, help="events per class (0 = all)")
     ap.add_argument("--reader", default=None, help="override the config's reader, e.g. a8_run for a full run folder on the server")
+    ap.add_argument("--unstained", action="store_true", help="the source carries no stains: targets are written as zeros and no marker is marked available (ISX: one class, 1I)")
     a = ap.parse_args(argv)
     if len(a.source) != len(a.instrument): ap.error("one --source per --instrument")
     cfgs = [registry.instrument(n) for n in a.instrument]
@@ -152,12 +159,12 @@ def main(argv=None):
     dafs = list(a.daf)
     for cfg, src in zip(cfgs, a.source):
         inst = cfg["name"]; meta["instruments"][inst] = {"family": cfg.get("family"), "pixel_um": cfg.get("pixel_um"), "zoom_to_reference": cfg.get("zoom_to_reference", 1.0)}
-        present = [r in cfg["roles"] for r in roles]; avail = [m in cfg["stains"] for m in markers]
+        present = [r in cfg["roles"] for r in roles]; avail = [m in cfg["stains"] and not a.unstained for m in markers]
         rk = [list(cfg["roles"]).index(r) if r in cfg["roles"] else None for r in roles]
         mk = [list(cfg["stains"]).index(m) if m in cfg["stains"] else None for m in markers]
         rname = a.reader or cfg["reader"]; reader = READERS[rname]
         def run_reader(limit):
-            return reader(cfg, src, dafs[0] if rname == "isx_cif" and dafs else None, limit) if rname == "isx_cif" else reader(cfg, src, limit)
+            return reader(cfg, src, dafs[0] if rname == "isx_cif" and dafs else None, limit, a.unstained) if rname == "isx_cif" else reader(cfg, src, limit)
         def widen(items):
             full = []
             for x, y, s, row in items:
@@ -165,7 +172,7 @@ def main(argv=None):
                 for j, k in enumerate(rk):
                     if k is not None: X[j] = x[k]
                 for j, k in enumerate(mk):
-                    if k is not None: Y[j] = y[k]
+                    if k is not None and not a.unstained: Y[j] = y[k]
                 full.append((X, Y, s, row))
             return full
         # pass 1: the per-marker scale (unit mean |y|) from a short draw of the training-digit classes
