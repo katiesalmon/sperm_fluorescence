@@ -49,13 +49,13 @@ def main(argv=None):
     ta, tb = runs[0]["tab"], runs[1]["tab"]
     m = ta[["id.index", "cluster"]].merge(tb[["id.index", "cluster"]], on="id.index", suffixes=("_a", "_b"))
     ct = pd.crosstab(m["cluster_a"], m["cluster_b"])
-    ka = sorted(ta["cluster"].unique())
-    # order the right-hand clusters so each row faces the left cluster it overlaps most (greedy on the contingency)
-    kb, left = [], list(sorted(tb["cluster"].unique()))
-    for i in ka:
-        if not left: break
-        j = max(left, key=lambda j: ct.loc[i, j] if j in ct.columns else 0); kb.append(j); left.remove(j)
-    kb += left
+    # pair clusters by overlap, largest cells first, so matching clusters share a row; unpaired ones follow
+    pairs = sorted(((int(ct.loc[i, j]), i, j) for i in ct.index for j in ct.columns), reverse=True)
+    ka, kb, used_a, used_b = [], [], set(), set()
+    for _, i, j in pairs:
+        if i in used_a or j in used_b: continue
+        ka.append(i); kb.append(j); used_a.add(i); used_b.add(j)
+    ka += [i for i in sorted(ta["cluster"].unique()) if i not in used_a]; kb += [j for j in sorted(tb["cluster"].unique()) if j not in used_b]
     # display ranges per marker, shared across the figure
     sample = ta["id.index"].to_numpy()[:: max(1, len(ta) // 300)]
     hi = []
@@ -97,8 +97,10 @@ def main(argv=None):
             pos.set_title("%s   cluster %d  (n = %d)%s" % (label.upper() if False else label, c, n_c, ("   " + name) if name else ""), fontsize=9, fontweight="bold", color=colours[c % len(colours)], pad=14, loc="left")
     # contingency table
     axc = fig.add_subplot(outer[nrows, :]); axc.axis("off")
-    cell_text = [[str(ct.loc[i, j]) if j in ct.columns else "0" for j in kb] for i in ka]
-    tbl = axc.table(cellText=cell_text, rowLabels=["%s %d" % (la, i) for i in ka], colLabels=["%s %d" % (lb, j) for j in kb], loc="center", cellLoc="center", bbox=[0.3, 0.05, 0.4, 0.8])
+    cell_text = [["%s %d" % (la, i)] + [str(ct.loc[i, j]) if (i in ct.index and j in ct.columns) else "0" for j in kb] for i in ka]
+    tbl = axc.table(cellText=cell_text, colLabels=[""] + ["%s %d" % (lb, j) for j in kb], loc="center", cellLoc="center", bbox=[0.3, 0.05, 0.4, 0.8])
+    for (r_, c_), cell in tbl.get_celld().items():
+        if c_ == 0 or r_ == 0: cell.set_text_props(fontweight="bold"); cell.set_facecolor("#f4f4f2")
     tbl.auto_set_font_size(False); tbl.set_fontsize(8)
     from sklearn.metrics import adjusted_rand_score
     ari = adjusted_rand_score(m["cluster_a"], m["cluster_b"])
