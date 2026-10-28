@@ -235,6 +235,38 @@ principal-piece mask. Two thirds of the sperm in this fixed, stained tube have t
 wrapped on the head; the extended tails are themselves mostly looped. This is the
 "coiling versus frame" question answered for this preparation: it is the preparation.
 
+**A test of the features with no rules (`analysis/cluster_agreement.py`).** Cluster the
+label-free side (`pred.*`) and the measured side (`ref.*`, the IDEAS masks of the real
+stains) with the same recipe on the same 3,611 gated objects, and ask whether they find the
+same populations. Adjusted Rand index between the two clusterings:
+
+| feature set | k = 2 | k = 3 | k = 4 | k = 6 |
+|---|---|---|---|---|
+| head | **0.49** | 0.18 | 0.26 | 0.32 |
+| tail | **0.56** | 0.44 | 0.21 | 0.15 |
+
+At k = 2 the two sides agree on 85 % (head) and 90 % (tail) of objects, and what the
+label-free split is, read from measured quantities the clustering never saw: head cluster
+A (2,302 objects) has median measured DAPI 62,600, LDHC/AKAP4 3,070 and an 8.1 µm nucleus,
+cluster B (1,309) has DAPI 31,400, LDHC 751 and an 11.7 µm nucleus: stained sperm-sized
+objects against larger, barely stained bodies. The tail split is sharper: 700 objects with
+DAPI 75,100, LDHC 4,930 and a 12.3 µm flagellum path against 2,911 with DAPI 25,300, LDHC
+558 and a 4.2 µm path, i.e. fully stained sperm with an extended tail against everything
+else. At k = 3 the tail set separates stained sperm with a folded tail (1,090; path 7.4 µm),
+stained sperm with an extended tail (475; path 14.6 µm) and unstained or dim objects
+(2,040), and 89 % of the measured side's extended-tail cluster lands in the label-free one.
+Beyond k = 3 agreement falls to 0.15–0.3: both sides see a continuum and cut it in
+different places. The DAPI-scalar population label (`groups_for`) agrees with neither side
+(ARI ≤ 0.13), which is the earlier finding again: DAPI intensity alone is a poor sperm
+label on this tube.
+
+So the dominant structure in the label-free compartment features is "carries the stain
+pattern of a sperm or not", then "tail extended or folded", and the measured stains agree
+on both. Finer morphological subpopulations are not yet reproducible between the two sides,
+and the masks are too loose for calibre, so that is where the next work goes. (Standardised
+features are now clipped at ±5 IQR before PCA; without it a handful of extreme objects
+owned the components and k-means returned one cluster plus outliers.)
+
 What is not yet done: the three-cluster head result of the morphometry literature is not
 reproducible here until the masks are tightened (the clusters found are sperm versus
 non-sperm, a coarser split); learned embeddings; the WHO mapping layer.

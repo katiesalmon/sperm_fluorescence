@@ -58,12 +58,16 @@ def select_columns(df, patterns, max_nan):
     return keep, dropped
 
 
+CLIP = 5.0
+
+
 def standardise(X):
-    """Median / IQR per column after median imputation; IQR of 0 falls back to the std."""
+    """Median / IQR per column after median imputation, clipped at +-CLIP so that a handful
+    of extreme objects cannot own the principal components; IQR of 0 falls back to the std."""
     X = X.copy(); med = np.nanmedian(X, axis=0); X = np.where(np.isnan(X), med, X)
     q1, q3 = np.percentile(X, [25, 75], axis=0); scale = q3 - q1
     sd = X.std(axis=0); scale = np.where(scale > 0, scale, np.where(sd > 0, sd, 1.0))
-    return (X - med) / scale, med, scale
+    return np.clip((X - med) / scale, -CLIP, CLIP), med, scale
 
 
 def reduce_pca(Z, min_components=2, max_components=20, fixed=None):
