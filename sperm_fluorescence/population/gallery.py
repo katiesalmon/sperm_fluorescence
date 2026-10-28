@@ -65,7 +65,10 @@ def embedding_plot(tab, labels, kind, path, title="", measured_labels=None, meas
     fig.suptitle(title, fontsize=11, fontweight="bold"); fig.tight_layout(); fig.savefig(path, dpi=170, facecolor="#fcfcfb"); plt.close(fig)
 
 
-def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=72):
+INSTRUMENT = {"isx": "ImageStream (60x)", "a8": "BD FACSDiscover A8"}
+
+
+def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=72, context=""):
     """One PNG per cluster: the n members nearest the cluster centre and the n farthest from
     it, each as brightfield with compartment outlines and, beneath it, the predicted stains
     overlaid in the IDEAS colours (one display range per marker across the gallery)."""
@@ -80,6 +83,7 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
     comp_of = {COMPARTMENT[nm]: k for k, nm in enumerate(st.names) if nm in COMPARTMENT}
     show = [c for c in SET_MASKS.get(feature_set, SET_MASKS["morph"]) if c in comp_of]
     idx_all = tab["id.index"].to_numpy(dtype=int)
+    bf_name = {"brightfield": "brightfield", "lightloss": "light loss"}.get(ds.roles[bf_i], ds.roles[bf_i])
     for c in sorted(set(labels)):
         if c < 0: continue
         sel = np.flatnonzero(labels == c); centre = scores[sel].mean(0); d = np.linalg.norm(scores[sel] - centre, axis=1)
@@ -91,7 +95,7 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
             xw, _, mw, pw = window(x, y, m, np.concatenate([p, pm.astype(np.float32)]), size)
             items[i] = (xw, mw, pw[:st.cout], pw[st.cout:] > 0.5)
         hi = [max(float(np.percentile(np.concatenate([np.clip(items[i][2][k][items[i][1] > 0], 0, None) for i, _ in members]), 99.5)), 1e-4) for k in range(st.cout)]
-        fig, axes = plt.subplots(4, n, figsize=(1.15 * n, 5.0), facecolor="white", squeeze=False)
+        fig, axes = plt.subplots(4, n, figsize=(1.15 * n, 5.6), facecolor="white", squeeze=False)
         for r, (group, label) in enumerate(((near, "nearest the centre"), (far, "periphery"))):
             for j in range(n):
                 ax_bf, ax_st = axes[2 * r, j], axes[2 * r + 1, j]
@@ -106,7 +110,10 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
                 ax_st.imshow(render.composite(layers), interpolation="nearest")
                 for ax in (ax_bf, ax_st):
                     for sp in ax.spines.values(): sp.set_edgecolor("#cccccc"); sp.set_linewidth(0.5)
-            axes[2 * r, 0].set_ylabel(label + "\nbrightfield", fontsize=6.5); axes[2 * r + 1, 0].set_ylabel("virtual stains", fontsize=6.5)
+            axes[2 * r, 0].set_ylabel(label + "\n" + bf_name, fontsize=6.5); axes[2 * r + 1, 0].set_ylabel("virtual stains", fontsize=6.5)
         legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
-        fig.suptitle("cluster %d (n = %d): %s" % (c, len(sel), legend), fontsize=8.5, fontweight="bold")
-        fig.tight_layout(); fig.savefig(os.path.join(out_dir, "gallery_%d.png" % c), dpi=200, facecolor="white"); plt.close(fig)
+        inst = INSTRUMENT.get(st.meta["classes"][st.classes[0]]["instrument"], st.meta["classes"][st.classes[0]]["instrument"])
+        fig.suptitle("%s  ·  cluster %d of %d  (n = %d of %d clustered)" % (inst, c, len([k for k in set(labels) if k >= 0]), len(sel), int((labels >= 0).sum())), fontsize=9.5, fontweight="bold", y=0.995)
+        fig.text(0.5, 0.955, "%s\nstore %s  ·  classes %s  ·  %s" % (context, store_path, ",".join(st.classes), os.path.basename(out_dir.rstrip("/"))), ha="center", va="top", fontsize=7, color="#52514e", linespacing=1.3)
+        fig.text(0.5, 0.905, "rows: %s with compartment outlines, then the virtual stains (%s); top pair nearest the cluster centre, bottom pair its periphery" % (bf_name, legend), ha="center", va="top", fontsize=6.8, color="#52514e")
+        fig.tight_layout(rect=(0, 0, 1, 0.89)); fig.savefig(os.path.join(out_dir, "gallery_%d.png" % c), dpi=200, facecolor="white"); plt.close(fig)

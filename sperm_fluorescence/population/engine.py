@@ -282,7 +282,11 @@ def main(argv=None):
     embedding_plot(out[passed], labels, emb_kind, os.path.join(a.out, "embedding.png"), title="%s: %s, %s" % (os.path.basename(a.out), a.set, a.method),
                    measured_labels=measured_labels, measured=sub)
     if a.store:
-        galleries(a.store, out[passed], scores, labels, a.set, a.out, a.gallery_n)
+        what = a.set if not (a.pixels or a.embedding) else ("%s + " % a.set if cols else "") + ", ".join(["aligned pixels"] * bool(a.pixels) + [s.split("=", 1)[0] + " embedding" for s in a.embedding])
+        gates_txt = ", ".join("%s (%s)" % (g["gate"], g["query"].replace("`", "")) for g in gate_report) or "none"
+        context = "%d of %d objects after gates: %s  ·  features: %s (%d columns%s)  ·  %s, k = %d  ·  %s" % (
+            int(passed.sum()), n_all, gates_txt, what, len(cols), ", %d PCs" % pca["n_components"], a.method, a.k, time.strftime("%Y-%m-%d"))
+        galleries(a.store, out[passed], scores, labels, a.set, a.out, a.gallery_n, context=context)
     print("wrote %s (%.0fs)" % (a.out, time.time() - t0))
     return 0
 
