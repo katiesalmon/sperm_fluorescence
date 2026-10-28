@@ -71,12 +71,14 @@ def main(argv=None):
     ap.add_argument("pixels"); ap.add_argument("--out", required=True); ap.add_argument("--latent", type=int, default=32)
     ap.add_argument("--epochs", type=int, default=60); ap.add_argument("--batch", type=int, default=64); ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--no-aug", action="store_true"); ap.add_argument("--stains-only", action="store_true")
+    ap.add_argument("--inputs-only", action="store_true", help="train on the label-free input channels alone (no virtual stains)")
     a = ap.parse_args(argv)
     import torch
     from sperm_fluorescence.train.device import pick_device
     X, idx, ch = load_stack(a.pixels)
-    if a.stains_only:
-        keep = [k for k, c in enumerate(ch) if not c.startswith(("brightfield", "lightloss", "fsc", "ssc", "darkfield"))]; X = X[:, keep]; ch = [ch[k] for k in keep]
+    is_input = [c.startswith(("brightfield", "lightloss", "fsc", "ssc", "darkfield")) for c in ch]
+    if a.stains_only or a.inputs_only:
+        keep = [k for k, inp in enumerate(is_input) if inp == a.inputs_only]; X = X[:, keep]; ch = [ch[k] for k in keep]
     dev = pick_device(); torch.manual_seed(a.seed); rng = np.random.default_rng(a.seed)
     model = build(X.shape[1], a.latent, X.shape[-1]).to(dev); opt = torch.optim.Adam(model.parameters(), lr=a.lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs)

@@ -403,6 +403,31 @@ training half (another `predict` + `features --no-ref`) is the clean version, an
 objects would likely close the gap to the features. The galleries and the discriminating-feature
 tables are the interpretability layer.
 
+### Is the virtual-stain step necessary before the autoencoder? (2026-10-28)
+
+*The same autoencoder trained three ways on the same aligned stacks: the label-free inputs
+alone (3 channels), the virtual stains alone (4 on the ImageStream, 3 on the A8), and both.
+Everything else identical (latent 32 / 16, epochs, augmentation, GMM). Caveat: the stacks
+were aligned on the cell axis found from the virtual stains, so "inputs only" still borrows
+the stain model for alignment.*
+
+| autoencoder input | ISX ARI vs measured side (k = 3) | ISX stability | A8 PBMC cluster (k = 2) |
+|---|---|---|---|
+| inputs only (brightfield ×2 + darkfield / light loss + FSC + SSC) | 0.45 | 0.79 | 199 PBMC with **38 S + 73 SP** sperm |
+| virtual stains only | 0.65 | 0.77 | 199 PBMC with **90 S + 107 SP** sperm |
+| inputs + virtual stains | **0.68** | **0.92** | 199 PBMC, **0 S + 31 SP** (exact) |
+
+The virtual stains are not a detour. On the ImageStream the stains alone carry most of the
+structure (0.65 against 0.45 for the raw inputs), i.e. the U-Net has already done the hard
+part of turning brightfield texture into compartments, and an autoencoder on the inputs
+rediscovers only part of that. On the A8 neither alone is enough: inputs alone mix 111
+sperm into the PBMC cluster, stains alone mix 197, and only the two together give the exact
+split. The stains say *which compartments* are present and the inputs say *what the body
+looks like* (a leukocyte is a thick dark oval in light loss and bright in SSC); the
+sperm-versus-PBMC call needs both. So the right reading is that the U-Net is a supervised
+front end to the encoder, trained on real stains, and the autoencoder adds the unsupervised
+compression on top; going straight from inputs to the autoencoder loses the supervision.
+
 ### Within the A8 sperm population (2026-10-28)
 
 *The sperm population is the autoencoder's cluster 0 (370 objects: all 200 sperm-well objects,
