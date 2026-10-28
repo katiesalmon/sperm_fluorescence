@@ -1,6 +1,7 @@
 # Whole-ejaculate morphology from virtual fluorescence: the framework
 
-*Plan, 2026-10-28. Builds on the ImageStream stems model (`runs/srv_isx_stems`: LDHC/AKAP4,
+*Plan, 2026-10-28, revised the same day after the literature survey in `morphology_research.md`
+(its Section 6 lists what changed and why). Builds on the ImageStream stems model (`runs/srv_isx_stems`: LDHC/AKAP4,
 TOMM20, DAPI, ACRV1 from brightfield ×2 + darkfield at 60×, 0.333 µm/px) and the A8 model.
 Nothing here is built yet; the sections "What exists" and "Facts that shape the design" are
 measured, the rest is the proposal.*
@@ -55,6 +56,31 @@ applied, so the same aliquot stays usable.
    get head (DAPI, partly), midpiece and tail, not the acrosome, so no acrosome-area criterion.
 6. **One sample so far**, split by acquisition order. Nothing population-level can be validated
    until there are several patients with manual morphology results.
+
+## Revisions after the survey (`morphology_research.md`, Section 6)
+
+- Outputs follow the WHO reporting structure: ideal/abnormal per sperm with four region flags
+  (head, neck/midpiece, tail, residual cytoplasm), % ideal, the four regional percentages, TZI
+  (1.00–4.00) with MAI and SDI as extras, free heads and free tails tallied separately, non-sperm
+  objects counted separately, and the Fig. 2.11 decision order.
+- The feature table carries the standard CASMA set with formulas stated (area, perimeter, Feret
+  length and width, L/W, rugosity, elongation, regularity, acrosome fraction, midpiece
+  length/width/insertion angle, tail length/width/curvature), so numbers can be set against WHO
+  reference values and vendor systems.
+- Midpiece width (0.6 µm, under 2 px) is not measured directly; thin/thick is proxied by TOMM20
+  mask area per unit length and brightfield darkness, and labelled as a proxy.
+- A categorical CNN classifier on technician-labelled brightfield crops (5–8 classes plus
+  "multiple" and "debris") is added beside the rule engine; it is the arm the IFC literature has
+  validated, and the vendor's Amnis AI module is run once as a baseline.
+- Validation copies the QART design: same cells, predicted versus measured versus IDEAS
+  measurements, Bland–Altman with acceptance limits from the reference's repeatability; then
+  patient-level agreement judged against the known CASMA-versus-manual noise.
+- Subpopulations: PCA on the morphometric set then clustering (expect three head
+  subpopulations) before anything novel; tail-shape clustering is flagged exploratory.
+- Gating mirrors IDEAS practice (focus, single cell, whole cell in frame, explicit debris and
+  multiple classes) and the fraction removed at each gate is reported.
+- 60× is kept (acrosome needs it, in the boar data as in our ablation); a 40× acquisition is a
+  measured trade-off for tail capture, not a default.
 
 ## The pipeline
 
