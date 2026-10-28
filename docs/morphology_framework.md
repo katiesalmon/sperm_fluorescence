@@ -144,12 +144,18 @@ intensity set alone (37 columns) reached 0.81–0.89: finding populations is fir
 intensity question, and the 360 mask-geometry columns dilute it. The order that follows:
 cluster on intensity (and similarity) to find the populations, then on shape within a
 population to describe it; and weight or select columns rather than letting the count of
-shape features set the metric.
+shape features set the metric. On the A8 the opposite holds (results.md): intensity
+alone reaches ARI 0.52 and all features 0.99 against the wells, because the A8's predicted
+brightness is noisy and the geometry of the painted compartments is not. The combined space
+is the default; which family carries a population is read off afterwards.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):
 
-- **Gates.** Thresholds and polygons on one or two features, drawn on data, saved as a
+- **Gates.** (The light-loss object proxy fragments on the A8 and the default single-object
+  gate discards half of every well there; the A8 needs the instrument's own segmentation
+  before gates are trusted. Results so far on the A8 were checked with and without gates.)
+  Thresholds and polygons on one or two features, drawn on data, saved as a
   template and applied in batch; hierarchical, like IDEAS. The first gates are the quality
   gates (in focus, single object, whole cell in frame, not overlapped) and the coarse
   populations (sperm / round cells / debris / free heads / free tails), and every gate's loss

@@ -303,6 +303,47 @@ What is not yet done: the three-cluster head result of the morphometry literatur
 reproducible here until the masks are tightened (the clusters found are sperm versus
 non-sperm, a coarser split); learned embeddings; the WHO mapping layer.
 
+### The same pipeline on the A8 (2026-10-28)
+
+*`predict` with `runs/srv_a8_stems` (the 40-epoch model) on the laptop's held-out sample
+(`data/a8_roles`, replicate 3: 200 objects each from the S, P and SP wells) → `data/a8_vstain`;
+`features` (reference = thresholded measured stain, the A8 has no instrument masks; 744
+columns); `populate` → `runs/pop_a8_*`. The wells are a truth the features never see.*
+
+**Unsupervised, all 358 label-free columns, no gates, all 600 objects, k = 2** (`runs/
+pop_a8_all_nogate_k2`): cluster 1 holds 200 of 200 sperm-well objects, 169 of 200 mixed-well
+objects and 1 of 200 PBMC-well objects; cluster 0 holds 199 PBMC-well objects, 31 mixed-well
+objects and no sperm-well object. The measured-side clustering (same recipe on the measured
+stains) agrees at **ARI 0.99**. The 31 mixed-well objects in the PBMC cluster are the
+leukocytes that well was spiked with. So sperm versus white blood cell, the question the A8
+abstract asks, falls out of the feature space unsupervised, and the discriminating columns
+are the thickness and minor axis of the predicted CD45 and head masks: a leukocyte is a
+thick round body in every predicted channel, a sperm a thin one. At k = 3 (ARI 0.74) the
+sperm split into a thin-tailed group (191) and a brighter-LDHC group (179), both pure of
+PBMCs, and the PBMC cluster is unchanged.
+
+**Intensity alone is weaker here** (`--set intensity`, no gates, k = 2: 140 of 200 PBMC-well
+objects isolated, 60 left with the sperm; ARI 0.52 with the measured side), the reverse of
+the ImageStream. The A8's predicted intensities are noisier (CD45 within PBMCs r 0.61,
+ACRV1 within sperm 0.37) and its scatter images are coarse, so the geometry of the painted
+compartments, which the model gets right even when it gets the brightness wrong, carries
+the population. Which family of features finds the populations is therefore instrument-
+dependent, and the combined space is the safe default.
+
+**The quality gates are wrong for the A8** and discarded 386 of 600 objects: the
+light-loss object proxy (|standardised light loss| > 1.5) fragments into 2–7 components on
+the A8's noisy strip, so "single object" fails 54 % of every well, and the predicted
+flagellum mask reaches the frame edge on half the sperm-well objects. With the gates the
+k = 2 result is the same (125 sperm-cluster objects with one PBMC, 89 PBMC-cluster objects
+with no sperm, ARI 0.96 with the measured side), so nothing turns on them, but the object
+proxy needs the instrument's own light-loss segmentation before gates mean anything on the
+A8. The galleries (`runs/pop_a8_all_k2/gallery_*.png`) show the two clusters as they look:
+sperm with head and tail outlined, round PBMCs with every predicted mask drawn over the
+same body.
+
+600 objects is the laptop sample; the full held-out replicate (60,000) is on the server
+(`predict` then `features` there, `docs/server-setup.md`).
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing

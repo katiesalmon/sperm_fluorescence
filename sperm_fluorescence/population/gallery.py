@@ -13,20 +13,53 @@ SET_MASKS = {"head": ("nucleus", "acrosome"), "tail": ("midpiece", "flagellum"),
              "intensity": ("nucleus", "acrosome", "midpiece", "flagellum"), "all": ("nucleus", "acrosome", "midpiece", "flagellum")}
 
 
-def embedding_plot(tab, labels, kind, path, title=""):
+def measured_columns(tab):
+    """The measured stain sums in their own compartment masks, whatever markers the instrument has."""
+    out = []
+    for c in tab.columns:
+        parts = c.split(".")
+        if len(parts) == 4 and parts[0] == "ref" and parts[3] == "sum" and parts[2] != "cell": out.append((c, "measured " + parts[1].replace("_", "/")))
+    return out[:4]
+
+
+def embedding_plot(tab, labels, kind, path, title="", measured_labels=None, measured=None):
+    """Top row: the embedding by cluster, and by the measured-side clustering when the table
+    has reference features (else by the DAPI-scalar population rule). Bottom row, when the
+    measured stain sums are available: the same points coloured by each measured marker."""
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), facecolor="#fcfcfb")
+    MEASURED = measured_columns(measured) if measured is not None else []
+    have_meas = bool(MEASURED)
+    fig, axes = plt.subplots(2 if have_meas else 1, 4 if have_meas else 2, figsize=(16 if have_meas else 10, 8.6 if have_meas else 4.6), facecolor="#fcfcfb", squeeze=False)
     x, y = tab["emb_x"].to_numpy(), tab["emb_y"].to_numpy()
+    ax = axes[0, 0]
     for c in sorted(set(labels)):
         sel = labels == c; col = "#bbbbbb" if c < 0 else COLOURS[c % len(COLOURS)]
-        axes[0].scatter(x[sel], y[sel], s=4, color=col, alpha=0.6, label=("noise" if c < 0 else "cluster %d" % c) + " (%d)" % sel.sum(), rasterized=True)
-    pops = tab["id.pop_pred"].to_numpy().astype(str)
-    for j, p in enumerate(("sperm", "round", "dim", "none")):
-        sel = pops == p
-        if sel.any(): axes[1].scatter(x[sel], y[sel], s=4, color=COLOURS[j % len(COLOURS)], alpha=0.6, label="%s (%d)" % (p, sel.sum()), rasterized=True)
-    axes[0].set_title("by cluster", fontsize=10); axes[1].set_title("by predicted-DAPI population", fontsize=10)
-    for ax in axes:
-        ax.set_xlabel("%s 1" % kind, fontsize=9); ax.set_ylabel("%s 2" % kind, fontsize=9); ax.legend(fontsize=7.5, frameon=False, markerscale=3)
+        ax.scatter(x[sel], y[sel], s=4, color=col, alpha=0.6, label=("noise" if c < 0 else "cluster %d" % c) + " (%d)" % sel.sum(), rasterized=True)
+    ax.set_title("label-free clusters", fontsize=10)
+    ax = axes[0, 1]
+    if measured_labels is not None:
+        for c in sorted(set(measured_labels)):
+            sel = measured_labels == c
+            ax.scatter(x[sel], y[sel], s=4, color=COLOURS[c % len(COLOURS)], alpha=0.6, label="measured-side cluster %d (%d)" % (c, sel.sum()), rasterized=True)
+        ax.set_title("same recipe on the measured stains (IDEAS masks)", fontsize=10)
+    else:
+        pops = tab["id.pop_pred"].to_numpy().astype(str)
+        for j, p in enumerate(("sperm", "round", "dim", "none")):
+            sel = pops == p
+            if sel.any(): ax.scatter(x[sel], y[sel], s=4, color=COLOURS[j % len(COLOURS)], alpha=0.6, label="%s (%d)" % (p, sel.sum()), rasterized=True)
+        ax.set_title("by predicted-DAPI population rule", fontsize=10)
+    if have_meas:
+        for j in range(2, 4): axes[0, j].axis("off")
+        for j, (col, name) in enumerate(MEASURED):
+            ax = axes[1, j]
+            if col not in measured: ax.axis("off"); continue
+            v = measured[col].to_numpy(float); v = np.log10(np.clip(v, 1, None))
+            sc = ax.scatter(x, y, s=4, c=v, cmap="viridis", alpha=0.8, vmin=np.nanpercentile(v, 2), vmax=np.nanpercentile(v, 98), rasterized=True)
+            ax.set_title(name + " (log10 sum)", fontsize=10); fig.colorbar(sc, ax=ax, fraction=0.04, pad=0.02)
+    for ax in axes.ravel():
+        if not ax.axison: continue
+        ax.set_xlabel("%s 1" % kind, fontsize=9); ax.set_ylabel("%s 2" % kind, fontsize=9)
+        if ax.get_legend_handles_labels()[0]: ax.legend(fontsize=7.5, frameon=False, markerscale=3)
         for sp in ("top", "right"): ax.spines[sp].set_visible(False)
         ax.set_facecolor("#fcfcfb")
     fig.suptitle(title, fontsize=11, fontweight="bold"); fig.tight_layout(); fig.savefig(path, dpi=170, facecolor="#fcfcfb"); plt.close(fig)

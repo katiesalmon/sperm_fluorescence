@@ -219,7 +219,20 @@ def main(argv=None):
                "cluster_sizes": sizes, "stability": stab, "discriminators": disc, "embedding": emb_kind, "created": time.strftime("%Y-%m-%d %H:%M")}
     json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
     from .gallery import embedding_plot, galleries
-    embedding_plot(out[passed], labels, emb_kind, os.path.join(a.out, "embedding.png"), title="%s: %s, %s" % (os.path.basename(a.out), a.set, a.method))
+    # the measured side, when the table has reference features: the same recipe on ref.* columns, for the plot and the summary
+    measured_labels = None
+    ref_cols, _ = select_columns(sub, [p.replace("pred.", "ref.") for p in SETS[a.set] + a.features if p.startswith("pred.")], a.max_nan)
+    if len(ref_cols) >= 2 and a.method != "hdbscan":
+        Zr, _, _ = standardise(sub[ref_cols].to_numpy(float)); sr, _ = reduce_pca(Zr, fixed=a.components or None)
+        measured_labels, _ = fit_cluster(sr, a.method, a.k, a.seed, a.min_cluster_size)
+        from sklearn.metrics import adjusted_rand_score
+        summary["measured_side"] = {"columns": ref_cols, "ari_vs_label_free": float(adjusted_rand_score(labels, measured_labels)),
+                                    "contingency": {str(c): {str(m): int(((labels == c) & (measured_labels == m)).sum()) for m in sorted(set(measured_labels))} for c in sorted(set(labels))}}
+        print("measured side (same recipe on ref.*): ARI vs label-free %.3f" % summary["measured_side"]["ari_vs_label_free"])
+        json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
+        out["measured_cluster"] = -2; out.loc[passed, "measured_cluster"] = measured_labels; out.to_csv(os.path.join(a.out, "populations.csv"), index=False)
+    embedding_plot(out[passed], labels, emb_kind, os.path.join(a.out, "embedding.png"), title="%s: %s, %s" % (os.path.basename(a.out), a.set, a.method),
+                   measured_labels=measured_labels, measured=sub)
     if a.store:
         galleries(a.store, out[passed], scores, labels, a.set, a.out, a.gallery_n)
     print("wrote %s (%.0fs)" % (a.out, time.time() - t0))

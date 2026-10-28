@@ -17,7 +17,7 @@ Columns:  id.*   class, index, .cif row, well, DAPI scalar, population labels
 Masks: nucleus (DAPI), acrosome (ACRV1), head = filled nucleus|acrosome, midpiece (TOMM20),
 flagellum (LDHC/AKAP4), principal = flagellum minus the dilated midpiece, tail = flagellum|midpiece,
 cell = brightfield object (a proxy: |standardised brightfield| > 1.5, closed, filled, largest
-component, united with every stain mask). Marker names in column names have '/' as '_'.
+component, united with every stain mask; light loss plays brightfield on the A8). Marker names in column names have '/' as '_'.
 With --daf the reference features are checked against the instrument's own feature table and
 the predicted ones against the reference (<out>.validation.json).
 """
@@ -57,7 +57,7 @@ QC_DOC = {
     "n_nuclei": "components of the nucleus mask", "n_objects": "components of the brightfield-object mask",
     "flagellum_edge_frac": "fraction of flagellum mask pixels within 2 px of the valid frame's border",
     "tail_end_edge_um": "distance from the tail path's edge-nearest end to the border, um",
-    "focus_gradient_rms": "in.brightfield.cell.gradient_rms, repeated here as the focus gate",
+    "focus_gradient_rms": "the brightfield (or first input) channel's gradient RMS in the cell mask, repeated here as the focus gate",
     "frame_fill": "brightfield-object pixels / valid frame pixels",
 }
 
@@ -143,7 +143,7 @@ def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
     """All features for one object under one prefix ('pred' or 'ref'). parts: {compartment: mask};
     chans: {marker: image}; inputs: {role: image} or {}. Fills `docs` with column definitions."""
     row = {}
-    M = derive_masks(parts, inputs.get("brightfield"), valid)
+    M = derive_masks(parts, inputs.get("brightfield", inputs.get("lightloss")), valid)      # light loss is the A8's brightfield-like image
     S, K = {}, {}
     for k, m in M.items():
         S[k] = shp.shape_features(m & valid, px_um)
@@ -173,7 +173,7 @@ def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
 
 def qc_features(M, K, row, valid, prefix="pred"):
     out = {k: np.nan for k in QC_DOC}
-    out["n_nuclei"] = row.get(colname(prefix, "nucleus", "n_components"), np.nan)
+    out["n_nuclei"] = row.get(colname(prefix, "nucleus", "n_components"), 0)       # no nucleus channel (A8): zero nuclei, which passes the single-object gate
     out["n_objects"] = row.get(colname(prefix, "cell", "n_components"), np.nan)
     if "flagellum" in M and M["flagellum"].any():
         border = valid & ~ndi.binary_erosion(valid, iterations=2, border_value=0)
@@ -181,7 +181,9 @@ def qc_features(M, K, row, valid, prefix="pred"):
     if "tail" in K and np.isfinite(K["tail"].get("end_y", np.nan)):
         ys, xs = np.nonzero(valid); ey, ex = K["tail"]["end_y"], K["tail"]["end_x"]
         out["tail_end_edge_um"] = float(min(ey - ys.min(), ys.max() - ey, ex - xs.min(), xs.max() - ex))
-    out["focus_gradient_rms"] = row.get(colname("in", "brightfield", "cell", "gradient_rms"), np.nan)
+    focus_cols = [c for c in row if c.startswith("in.") and c.endswith(".cell.gradient_rms")]
+    bf = colname("in", "brightfield", "cell", "gradient_rms")
+    out["focus_gradient_rms"] = row.get(bf, row[focus_cols[0]] if focus_cols else np.nan)      # brightfield when the instrument has one, else the first input (A8: light loss)
     out["frame_fill"] = float(M["cell"].sum() / max(valid.sum(), 1))
     return out
 
