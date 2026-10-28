@@ -40,8 +40,15 @@ def main(argv=None):
     hi = [max(float(np.percentile(np.concatenate([np.clip(st.item(int(i))[0][k][st.item(int(i))[2] > 0], 0, None) for i in sample]), 99.5)), 1e-4) for k in range(st.cout)]
     legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
     colours = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#8e5bd6"]
-    fig = plt.figure(figsize=(0.62 * a.cols + 0.3, (0.62 * a.rows + 0.55) * len(ks) + 1.1), facecolor="white")
-    outer = gridspec.GridSpec(len(ks), 1, figure=fig, hspace=0.18, left=0.01, right=0.99, top=1 - 0.95 / fig.get_figheight(), bottom=0.01)
+    import textwrap
+    gates = ", ".join("%s (%s)" % (g["gate"], g["query"].replace("`", "")) for g in s["gates"]) or "none"
+    what = s["set"] if not s.get("pixels") else "pixels"
+    header = "%d of %d objects after gates: %s  ·  features: %s (%d columns, %d PCs)  ·  %s, k = %d  ·  run %s" % (
+        len(t), s["n"], gates, what, len(s["columns"]), s["pca"]["n_components"], s["method"], s["k"], os.path.basename(a.run.rstrip("/")))
+    lines = textwrap.wrap(header, int(11 * a.cols)) + ["virtual stains only: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % (legend, a.store, ",".join(st.classes))]
+    head_in = 0.55 + 0.16 * len(lines)
+    fig = plt.figure(figsize=(0.62 * a.cols + 0.3, (0.62 * a.rows + 0.55) * len(ks) + head_in + 0.3), facecolor="white")
+    outer = gridspec.GridSpec(len(ks), 1, figure=fig, hspace=0.18, left=0.01, right=0.99, top=1 - (head_in + 0.25) / fig.get_figheight(), bottom=0.01)
     for row, c in enumerate(ks):
         sel = t[t["cluster"] == c]
         if a.order == "centre":
@@ -61,13 +68,7 @@ def main(argv=None):
         name = names.get(str(c), "")
         head.set_title("cluster %d  (n = %d, showing %d%s)%s" % (c, len(sel), min(per, len(sel)), " from the centre outward" if a.order == "centre" else ", random", ("   " + name) if name else ""),
                        fontsize=10, fontweight="bold", color=colours[c % len(colours)], loc="left", pad=6)
-    gates = ", ".join("%s (%s)" % (g["gate"], g["query"].replace("`", "")) for g in s["gates"]) or "none"
-    what = s["set"] if not s.get("pixels") else "pixels"
     fig.suptitle(a.title or "%s: virtual stains by cluster" % inst, fontsize=12, fontweight="bold", y=0.995)
-    import textwrap
-    header = "%d of %d objects after gates: %s  ·  features: %s (%d columns, %d PCs)  ·  %s, k = %d  ·  run %s" % (
-        len(t), s["n"], gates, what, len(s["columns"]), s["pca"]["n_components"], s["method"], s["k"], os.path.basename(a.run.rstrip("/")))
-    lines = textwrap.wrap(header, int(11 * a.cols)) + ["virtual stains only: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % (legend, a.store, ",".join(st.classes))]
     fig.text(0.5, 1 - 0.42 / fig.get_figheight(), "\n".join(lines), ha="center", va="top", fontsize=7.5, color="#52514e", linespacing=1.4)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True); fig.savefig(a.out, dpi=150, facecolor="white"); plt.close(fig); print("wrote", a.out)
 
