@@ -444,6 +444,29 @@ bootstraps, with the straight-versus-looped split the stable part; 370 objects i
 sample, and the same commands on the server's 60,000 are the real version. The galleries
 show light loss above the virtual stains, which is the brightfield-equivalent view on the A8.
 
+### ImageStream, the same two-stage view: k = 2 on everything, k = 3 within the stained objects (2026-10-28)
+
+*`runs/isx_all_{feat,latent}_k2`, `runs/isx_sperm_{feat,latent}_k3`; stain-only galleries
+`figures/stains_isx_*.png` (`analysis/stain_gallery.py`).*
+
+k = 2 on the 3,611 gated objects separates stained from unstained on both representations:
+the latent (GMM) gives 1,956 stained against 1,655 unstained at stability 0.99 and ARI 0.82
+with the measured side; the features (k-means) give 2,263 / 1,348 at 0.93 and 0.61, with 731
+objects placed differently between the two (the features draw the "stained" boundary
+tighter). The unstained cluster in the galleries is uniformly a faint tan blob, the model
+painting almost nothing.
+
+Within the latent's 1,956 stained objects, k = 3: on features (k-means), **extended or looped
+tails** (616; measured flagellum path 11 µm, turning 215°), **folded tails** (972; path 4 µm,
+turning 76°) and **large bright bodies** (368; measured DAPI 168,000, nucleus 12 µm), stability
+0.79, ARI 0.54 with the measured side. On the latent (GMM), the same three kinds in a
+different balance, large bright bodies (683), folded or compact (621), extended or looped
+(652), stability 0.61, ARI 0.36. The galleries show the two methods agree on the extremes,
+long looped tails and large round bodies, and divide the folded-tail middle differently. So
+the ImageStream reads like the A8 one level up: stained versus not, then tail configuration,
+with the large non-sperm bodies that the "stained" gate admits as a third group that a sperm
+gate would remove.
+
 ### The same pipeline on the A8 (2026-10-28)
 
 *`predict` with `runs/srv_a8_stems` (the 40-epoch model) on the laptop's held-out sample
