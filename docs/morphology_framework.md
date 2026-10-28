@@ -155,7 +155,11 @@ stacks await a learned embedding.
 Blurred, coarsened stain images (6 × 6 per channel) cluster as well as the features on the
 binary A8 call and at half their agreement on the three-way ImageStream call (results.md);
 the U-Net bottleneck is spatial by design and adds nothing. `populate --embedding` takes any
-(N, D) embedding, so a learned one slots in without further plumbing.
+(N, D) embedding, so a learned one slots in without further plumbing. The first learned one,
+a convolutional autoencoder on the aligned stacks after Zhang 2023 (`analysis/
+autoencoder_embedding.py`), reaches 0.68 on the ImageStream and an exact sperm/PBMC split on
+the A8 (results.md); it is the pixel-side representation to develop (train on more objects,
+a clustering-aware objective), alongside the summary features rather than instead of them.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):
