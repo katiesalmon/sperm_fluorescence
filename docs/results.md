@@ -403,6 +403,22 @@ training half (another `predict` + `features --no-ref`) is the clean version, an
 objects would likely close the gap to the features. The galleries and the discriminating-feature
 tables are the interpretability layer.
 
+### Within the A8 sperm population (2026-10-28)
+
+*The sperm population is the autoencoder's cluster 0 (370 objects: all 200 sperm-well objects,
+169 mixed-well, 1 PBMC-well), gated with `--join` + `--gate`; then k = 3 on all features
+(`runs/pop_a8_sperm_feat`) and on the autoencoder latent (`runs/pop_a8_sperm_latent`).*
+
+Both find the same structure, tail configuration: on the features, **straight tails** (173;
+predicted ACRV1 and CD45 brighter in the cell, the tail leaving the frame), **curled or looped
+tails** (148; tail mask 7 µm wide against 3.6), and **faint sperm** (49; predicted ACRV1 and
+CD45 at a third of the rest). On the latent: straight (149), bent or short (95), looped
+(126). The sperm-well and mixed-well sperm distribute alike across the clusters, as they
+should. Stability is moderate at this size, 0.60 (features) and 0.44 (latent) over
+bootstraps, with the straight-versus-looped split the stable part; 370 objects is the laptop
+sample, and the same commands on the server's 60,000 are the real version. The galleries
+show light loss above the virtual stains, which is the brightfield-equivalent view on the A8.
+
 ### The same pipeline on the A8 (2026-10-28)
 
 *`predict` with `runs/srv_a8_stems` (the 40-epoch model) on the laptop's held-out sample
