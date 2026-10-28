@@ -28,6 +28,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("table"); ap.add_argument("--within", default=None, help="populations.csv:cluster to restrict to")
     ap.add_argument("--measures", nargs="*", default=None); ap.add_argument("--out", required=True); ap.add_argument("--title", default=None)
+    ap.add_argument("--prefixes", nargs=2, default=["pred", "ref"], help="column prefixes for the virtual and measured sides (pred ref for mask features, preds refs for stain-image features)")
+    ap.add_argument("--names", nargs="*", default=[], help="measure=display name")
     a = ap.parse_args(argv)
     import pandas as pd
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -35,11 +37,13 @@ def main(argv=None):
     if a.within:
         path, c = a.within.rsplit(":", 1); p = pd.read_csv(path, usecols=["id.index", "cluster", "gate.passed"])
         keep = p[(p["gate.passed"]) & (p["cluster"] == int(c))]["id.index"]; df = df[df["id.index"].isin(keep)]; label = "cluster %s of %s" % (c, os.path.basename(os.path.dirname(path)))
-    measures = [(m, n) for m, n in MEASURES if (a.measures is None or m in a.measures) and "pred." + m in df and "ref." + m in df]
+    pv, pm_ = a.prefixes; names = dict(s.split("=", 1) for s in a.names)
+    base = [(m, names.get(m, n)) for m, n in MEASURES] if a.measures is None else [(m, names.get(m, m)) for m in a.measures]
+    measures = [(m, n) for m, n in base if "%s.%s" % (pv, m) in df and "%s.%s" % (pm_, m) in df]
     fig, axes = plt.subplots(len(measures), 3, figsize=(13, 2.6 * len(measures)), facecolor="white")
     rows = []
     for i, (m, name) in enumerate(measures):
-        x = df["ref." + m].to_numpy(float); y = df["pred." + m].to_numpy(float); ok = np.isfinite(x) & np.isfinite(y); x, y = x[ok], y[ok]
+        x = df["%s.%s" % (pm_, m)].to_numpy(float); y = df["%s.%s" % (pv, m)].to_numpy(float); ok = np.isfinite(x) & np.isfinite(y); x, y = x[ok], y[ok]
         r = float(np.corrcoef(x, y)[0, 1]) if len(x) > 2 else np.nan; d = y - x; bias, sd = d.mean(), d.std()
         lo, hi = np.nanpercentile(np.concatenate([x, y]), [0.5, 99.5])
         ax = axes[i, 0]; ax.scatter(x, y, s=3, alpha=0.3, color="#2a78d6", rasterized=True); ax.plot([lo, hi], [lo, hi], color="#52514e", lw=0.8, ls="--")

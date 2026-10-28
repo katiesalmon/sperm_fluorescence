@@ -228,7 +228,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence features", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("store"); ap.add_argument("--cache", default=None, help="default: the store's source cache")
     ap.add_argument("--classes", default=None); ap.add_argument("--out", required=True)
-    ap.add_argument("--reference", default="auto", choices=["auto", "ideas", "truth", "none"], help="reference masks: the store's IDEAS masks, the thresholded measured stain, or none (auto: ideas if stored, else truth if stained, else none)")
+    ap.add_argument("--reference", default="auto", choices=["auto", "ideas", "truth", "rule", "none"], help="reference masks: the store's IDEAS masks, the thresholded measured stain (masks.py rule), the SAME threshold rule the store used for the predictions applied to the measured stain (like with like), or none (auto: ideas if stored, else truth if stained, else none)")
     ap.add_argument("--daf", default=None, help="ImageStream .daf: validate reference features against the instrument's table and predicted against reference")
     ap.add_argument("--limit", type=int, default=0); ap.add_argument("--no-ref", action="store_true", help="alias for --reference none")
     ap.add_argument("--no-pixels", action="store_true", help="skip the canonical aligned pixel stacks (<out>.pixels.npz)")
@@ -264,6 +264,10 @@ def main(argv=None):
         if ref != "none" and av.any():
             if ref == "ideas":
                 rparts = {COMPARTMENT[nm]: im[k] & valid for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
+            elif ref == "rule":
+                from ..eval.masks import pred_mask
+                thr = st.meta["thresholds"]
+                rparts = {COMPARTMENT[nm]: pred_mask(y[k], tuple(thr["%s:%s" % (inst, nm)]), valid.astype(np.float32)) for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
             else:
                 rparts = {COMPARTMENT[nm]: mask_from_image(y[k], valid, **RULE[inst]) for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
             rchans = {nm: y[k] for k, nm in enumerate(names) if av[k]}
