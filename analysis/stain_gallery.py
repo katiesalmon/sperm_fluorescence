@@ -22,6 +22,7 @@ def main(argv=None):
     ap.add_argument("--order", default="centre", choices=["centre", "random"], help="members from the cluster centre outward, or a random draw")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--measured", action="store_true", help="draw the MEASURED stains (from the cache) instead of the virtual ones; the clusters are unchanged")
+    ap.add_argument("--input", default=None, help="draw one label-free input channel (e.g. ssc, lightloss, brightfield, darkfield) in grey instead of the stains; the clusters are unchanged")
     a = ap.parse_args(argv)
     import pandas as pd
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -38,11 +39,14 @@ def main(argv=None):
     t = t[t["gate.passed"]].reset_index(drop=True); pcs = [c for c in t.columns if c.startswith("pc") and c[2:].isdigit()]
     ks = sorted(c for c in t["cluster"].unique() if c >= 0); per = a.cols * a.rows; rng = np.random.default_rng(a.seed)
     sample = t["id.index"].to_numpy()[:: max(1, len(t) // 300)]
+    in_k = list(ds.roles).index(a.input) if a.input else None
     def stain_of(i):
+        if in_k is not None:
+            x, _, mm = ds.item(int(i)); return x[in_k:in_k + 1], mm
         if a.measured:
             _, y, mm = ds.item(int(i)); return y, mm
         p, _, mm, _ = st.item(int(i)); return p, mm
-    hi = [max(float(np.percentile(np.concatenate([np.clip(stain_of(i)[0][k][stain_of(i)[1] > 0], 0, None) for i in sample]), 99.5)), 1e-4) for k in range(st.cout)]
+    hi = [] if in_k is not None else [max(float(np.percentile(np.concatenate([np.clip(stain_of(i)[0][k][stain_of(i)[1] > 0], 0, None) for i in sample]), 99.5)), 1e-4) for k in range(st.cout)]
     legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
     colours = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#8e5bd6"]
     import textwrap
@@ -50,7 +54,7 @@ def main(argv=None):
     what = s["set"] if not s.get("pixels") else "pixels"
     header = "%d of %d objects after gates: %s  ·  features: %s (%d columns, %d PCs)  ·  %s, k = %d  ·  run %s" % (
         len(t), s["n"], gates, what, len(s["columns"]), s["pca"]["n_components"], s["method"], s["k"], os.path.basename(a.run.rstrip("/")))
-    lines = textwrap.wrap(header, int(11 * a.cols)) + ["%s: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % ("MEASURED (true) stains" if a.measured else "virtual stains only", legend, a.store, ",".join(st.classes))]
+    lines = textwrap.wrap(header, int(11 * a.cols)) + ["%s: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % (("label-free input: %s (grey, per-object contrast)" % a.input) if a.input else ("MEASURED (true) stains" if a.measured else "virtual stains only"), legend if not a.input else "", a.store, ",".join(st.classes))]
     head_in = 0.55 + 0.16 * len(lines)
     fig = plt.figure(figsize=(0.62 * a.cols + 0.3, (0.62 * a.rows + 0.55) * len(ks) + head_in + 0.3), facecolor="white")
     outer = gridspec.GridSpec(len(ks), 1, figure=fig, hspace=0.18, left=0.01, right=0.99, top=1 - (head_in + 0.25) / fig.get_figheight(), bottom=0.01)
@@ -67,7 +71,8 @@ def main(argv=None):
             if j >= len(members): ax.axis("off"); continue
             i = int(members[j]); x, y, m = ds.item(i); p, _ = stain_of(i)
             _, _, _, pw = window(x, y, m, p, a.size)
-            ax.imshow(render.composite([render.colorize(np.clip(pw[k], 0, None), render.color_for(st.names[k], k), 0, hi[k]) for k in range(st.cout)]), interpolation="nearest")
+            if in_k is not None: ax.imshow(render.grey(pw[0]), interpolation="nearest")
+            else: ax.imshow(render.composite([render.colorize(np.clip(pw[k], 0, None), render.color_for(st.names[k], k), 0, hi[k]) for k in range(st.cout)]), interpolation="nearest")
             for sp in ax.spines.values(): sp.set_edgecolor("#333333"); sp.set_linewidth(0.3)
         head = fig.add_subplot(outer[row]); head.axis("off")
         name = names.get(str(c), "")
