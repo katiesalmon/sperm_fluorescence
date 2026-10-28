@@ -136,6 +136,10 @@ Status: `populate` does the gates, feature-set selection, PCA, k-means / GMM / H
 halves-and-bootstrap stability, discriminating features and galleries described below;
 UMAP falls back to t-SNE until umap-learn is installed. Gates are pandas queries, so a gate
 is a line of text in the summary, never code.
+First result (results.md, 2026-10-28): clustering on all 465 features at once agrees with
+the measured-side clustering at ARI 0.77 and separates sperm with extended tails, sperm with
+folded tails, and everything else; the head and tail sets alone reach 0.18 and 0.44. Use
+`--set all` by default and the named sets to read a result, not to find it.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):

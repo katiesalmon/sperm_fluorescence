@@ -260,7 +260,21 @@ different places. The DAPI-scalar population label (`groups_for`) agrees with ne
 (ARI ≤ 0.13), which is the earlier finding again: DAPI intensity alone is a poor sperm
 label on this tube.
 
-So the dominant structure in the label-free compartment features is "carries the stain
+**All features combined beat either set** (`runs/pop_isx_all_k3`, `_k5`; 465 columns, 20
+PCs, 70 % of variance). Agreement with the measured side at k = 3 is **ARI 0.77** (head set
+0.18, tail set 0.44), stability 0.98, and the embedding has a real gap: cluster 0 (1,903)
+is every object without a sperm's stain pattern (median measured DAPI 13,900, LDHC 274:
+round granular cells and debris), cluster 1 (619) is sperm with an extended tail (DAPI
+75,200, LDHC 4,950, flagellum path 12.5 µm) and cluster 2 (1,089) is sperm with the tail
+folded on the head (DAPI 95,600, LDHC 5,560, path 4.4 µm). At k = 5 (ARI 0.66, stability
+0.94) the folded sperm split into those with a visible folded tail (673) and compact heads
+with little tail (505), and the non-sperm into round granular cells (1,401) and large
+irregular bodies (602). The combined space separates on three things at once, the
+similarity between predicted channels (the sperm pattern has DAPI, TOMM20 and LDHC in
+distinct places; on a round cell they all paint the same blob, r ≈ 0.99), the texture of
+the predicted channels, and tail skeleton length, which no single set carries.
+
+So the dominant structure in the label-free features is "carries the stain
 pattern of a sperm or not", then "tail extended or folded", and the measured stains agree
 on both. Finer morphological subpopulations are not yet reproducible between the two sides,
 and the masks are too loose for calibre, so that is where the next work goes. (Standardised
