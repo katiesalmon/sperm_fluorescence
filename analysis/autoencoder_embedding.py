@@ -72,6 +72,8 @@ def main(argv=None):
     ap.add_argument("--epochs", type=int, default=60); ap.add_argument("--batch", type=int, default=64); ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--no-aug", action="store_true"); ap.add_argument("--stains-only", action="store_true")
     ap.add_argument("--inputs-only", action="store_true", help="train on the label-free input channels alone (no virtual stains)")
+    ap.add_argument("--apply", default=None, help="a second pixels.npz to embed with the trained encoder (e.g. train on the training replicate, apply to the held-out one)")
+    ap.add_argument("--apply-out", default=None, help="where the --apply embedding goes (default: <out stem>_applied.npz)")
     a = ap.parse_args(argv)
     import torch
     from sperm_fluorescence.train.device import pick_device
@@ -100,6 +102,16 @@ def main(argv=None):
     np.savez(a.out, embedding=Z.astype(np.float32), index=idx, channels=np.array(ch), latent=a.latent, epochs=a.epochs)
     torch.save(model.state_dict(), os.path.splitext(a.out)[0] + ".pt")
     print("wrote %s: %d x %d latent" % (a.out, *Z.shape))
+    if a.apply:
+        X2, idx2, ch2 = load_stack(a.apply)
+        if a.stains_only or a.inputs_only:
+            keep2 = [k for k, c in enumerate(ch2) if c.startswith(("brightfield", "lightloss", "fsc", "ssc", "darkfield")) == a.inputs_only]; X2 = X2[:, keep2]
+        Z2 = []
+        with torch.no_grad():
+            for i in range(0, len(X2), 256): Z2.append(model.encode(torch.tensor(X2[i:i + 256], device=dev)).cpu().numpy())
+        Z2 = np.concatenate(Z2); out2 = a.apply_out or os.path.splitext(a.out)[0] + "_applied.npz"
+        np.savez(out2, embedding=Z2.astype(np.float32), index=idx2, channels=np.array(ch), latent=a.latent, epochs=a.epochs, trained_on=a.pixels)
+        print("wrote %s: %d x %d latent (encoder trained on %s)" % (out2, *Z2.shape, a.pixels))
 
 
 if __name__ == "__main__":

@@ -241,6 +241,7 @@ def main(argv=None):
     ap.add_argument("--daf", default=None, help="ImageStream .daf: validate reference features against the instrument's table and predicted against reference")
     ap.add_argument("--limit", type=int, default=0); ap.add_argument("--no-ref", action="store_true", help="alias for --reference none")
     ap.add_argument("--no-pixels", action="store_true", help="skip the canonical aligned pixel stacks (<out>.pixels.npz)")
+    ap.add_argument("--pixels-only", action="store_true", help="write only the aligned pixel stacks (cell axis from the virtual stains; no feature catalogue, no CSV): fast, for autoencoder training data")
     a = ap.parse_args(argv)
     st = open_store(a.store, [c.strip() for c in a.classes.split(",")] if a.classes else None)
     cache = a.cache or st.meta["source_cache"]
@@ -255,6 +256,21 @@ def main(argv=None):
     n = len(st) if not a.limit else min(a.limit, len(st))
     rows, docs = [], {}; pixels, pixels_ref = [], []
     t0 = time.time()
+    if a.pixels_only:
+        stem = os.path.splitext(a.out)[0]; os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+        for i in range(n):
+            p, pm, m, im = st.item(i); x, y, mc = ds.item(i); valid = m > 0
+            inputs = {r: x[j] for j, r in enumerate(roles)}
+            parts = {COMPARTMENT[nm]: pm[k] for k, nm in enumerate(names) if nm in COMPARTMENT}
+            M = derive_masks(parts, inputs.get("brightfield", inputs.get("lightloss")), valid)
+            region = ndi.binary_dilation(M["cell"], iterations=max(int(round(REGION_UM / px_um)), 1)) & valid
+            axis, centre, _ = stn.cell_axis(p, list(names), region, px_um)
+            imgs = np.concatenate([p, x]); fill = [0.0] * len(names) + [float(np.median(np.concatenate([x[j][0], x[j][-1], x[j][:, 0], x[j][:, -1]]))) for j in range(len(roles))]
+            pixels.append(stn.canonical_stack(imgs, valid, px_um, axis, centre, fill).astype(np.float16))
+            if (i + 1) % 2000 == 0: print("  %d / %d  (%.0fs)" % (i + 1, n, time.time() - t0))
+        np.savez(stem + ".pixels.npz", pixels=np.stack(pixels), index=np.arange(len(pixels)), channels=np.array(list(names) + list(roles)), px_um=stn.CANON_UM, side=stn.CANON_PX)
+        print("wrote %s.pixels.npz: %d objects x %s (aligned, %.3g um/px; pixels only, %.0fs)" % (stem, len(pixels), "x".join(str(v) for v in pixels[0].shape), stn.CANON_UM, time.time() - t0))
+        return 0
     for i in range(n):
         p, pm, m, im = st.item(i); x, y, mc = ds.item(i); valid = m > 0
         av = ds.avail[i] if ds.avail is not None else np.zeros(ds.cout, bool)

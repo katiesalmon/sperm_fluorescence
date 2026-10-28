@@ -225,3 +225,22 @@ writes `data\server_cache\isx_vstain` (about 60 MB per 1,000 objects: float16 im
 bool masks per marker). For an unstained `.cif`, first
 `prepare --instrument isx --source <cif> --unstained --cache data\server_cache\isx_unstained`,
 then `predict ... --cache data\server_cache\isx_unstained --classes 1I`.
+
+## Full-population A8 populations (`scripts/server_populations.ps1`)
+
+After `server_stems.ps1` has left `runs\srv_a8_stems` and `data\server_cache\a8_roles`:
+
+```
+git pull
+.\scripts\server_populations.ps1
+```
+
+Virtual stains for the whole held-out replicate (60,000 objects → `data\server_cache\a8_vstain`,
+about 12 GB, stays on the server), the feature catalogue and aligned stacks (~2 h, single
+process), virtual stains and stacks for the training replicate, an autoencoder trained on
+the training replicate and applied to the held-out one, clustering at k = 2..5 on the latent
+and k = 2..4 on the features with stain-only galleries, the features-versus-latent
+comparison, the compartment-agreement figure, and `server_populations_<timestamp>.zip`
+(populations, summaries, embeddings, figures). `-TrainOnHeldOut` skips the training-replicate
+pass; `-WithFeatures` adds the 60,000-row features.csv to the zip. Unpack on the laptop with
+`python scripts/unpack_results.py <zip>`.
