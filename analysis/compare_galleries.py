@@ -49,7 +49,13 @@ def main(argv=None):
     ta, tb = runs[0]["tab"], runs[1]["tab"]
     m = ta[["id.index", "cluster"]].merge(tb[["id.index", "cluster"]], on="id.index", suffixes=("_a", "_b"))
     ct = pd.crosstab(m["cluster_a"], m["cluster_b"])
-    ka, kb = sorted(ta["cluster"].unique()), sorted(tb["cluster"].unique())
+    ka = sorted(ta["cluster"].unique())
+    # order the right-hand clusters so each row faces the left cluster it overlaps most (greedy on the contingency)
+    kb, left = [], list(sorted(tb["cluster"].unique()))
+    for i in ka:
+        if not left: break
+        j = max(left, key=lambda j: ct.loc[i, j] if j in ct.columns else 0); kb.append(j); left.remove(j)
+    kb += left
     # display ranges per marker, shared across the figure
     sample = ta["id.index"].to_numpy()[:: max(1, len(ta) // 300)]
     hi = []
@@ -73,7 +79,7 @@ def main(argv=None):
 
     nrows = max(len(ka), len(kb))
     fig = plt.figure(figsize=(2 * (1.0 * a.n + 1.2), 2.25 * nrows + 3.2), facecolor="white")
-    outer = gridspec.GridSpec(nrows + 1, 2, figure=fig, height_ratios=[1] * nrows + [1.1], wspace=0.08, hspace=0.42, left=0.04, right=0.99, top=0.86, bottom=0.03)
+    outer = gridspec.GridSpec(nrows + 1, 2, figure=fig, height_ratios=[1] * nrows + [0.75], wspace=0.08, hspace=0.42, left=0.04, right=0.99, top=0.86, bottom=0.02)
     colours = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#8e5bd6"]
     for col, (r, label, ks) in enumerate(((runs[0], la, ka), (runs[1], lb, kb))):
         for row, c in enumerate(ks):
@@ -92,11 +98,11 @@ def main(argv=None):
     # contingency table
     axc = fig.add_subplot(outer[nrows, :]); axc.axis("off")
     cell_text = [[str(ct.loc[i, j]) if j in ct.columns else "0" for j in kb] for i in ka]
-    tbl = axc.table(cellText=cell_text, rowLabels=["%s cluster %d" % (la, i) for i in ka], colLabels=["%s cluster %d" % (lb, j) for j in kb], loc="center", cellLoc="center")
-    tbl.auto_set_font_size(False); tbl.set_fontsize(8); tbl.scale(1, 1.4)
+    tbl = axc.table(cellText=cell_text, rowLabels=["%s %d" % (la, i) for i in ka], colLabels=["%s %d" % (lb, j) for j in kb], loc="center", cellLoc="center", bbox=[0.3, 0.05, 0.4, 0.8])
+    tbl.auto_set_font_size(False); tbl.set_fontsize(8)
     from sklearn.metrics import adjusted_rand_score
     ari = adjusted_rand_score(m["cluster_a"], m["cluster_b"])
-    axc.set_title("the same %d objects under both clusterings (adjusted Rand index %.2f); each strip shows the %d members nearest its cluster centre" % (len(m), ari, a.n), fontsize=8.5, color="#52514e", pad=4)
+    axc.set_title("the same %d objects under both clusterings, rows = %s clusters, columns = %s clusters (adjusted Rand index %.2f); each strip above shows the %d members nearest its cluster centre; rows are paired by overlap" % (len(m), la, lb, ari, a.n), fontsize=8.5, color="#52514e", pad=2)
     ga = runs[0]["summ"]["gates"]; gates = ", ".join("%s (%s)" % (g["gate"], g["query"].replace("`", "")) for g in ga) or "none"
     title = a.title or "%s: the same population clustered two ways" % inst
     fig.suptitle(title, fontsize=12, fontweight="bold", y=0.985)
