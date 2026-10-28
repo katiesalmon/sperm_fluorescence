@@ -152,6 +152,10 @@ used directly (threshold-free moments, radial and axial profiles, `preds.*`) mat
 mask-free set on both instruments (results.md), so the catalogue now has three families:
 image summaries, mask geometry, and aligned pixel stacks; raw pixel PCA fails and the pixel
 stacks await a learned embedding.
+Blurred, coarsened stain images (6 × 6 per channel) cluster as well as the features on the
+binary A8 call and at half their agreement on the three-way ImageStream call (results.md);
+the U-Net bottleneck is spatial by design and adds nothing. `populate --embedding` takes any
+(N, D) embedding, so a learned one slots in without further plumbing.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):
