@@ -338,6 +338,42 @@ which the mask thickness columns state directly and the intensity sigmas state o
 approximately. The two instruments agree on the ordering: image-derived summaries
 (intensity, moments, profiles) first, mask geometry as a complement, raw pixels not yet.
 
+### Clustering on the stain images with no feature step (2026-10-28)
+
+*`analysis/image_embeddings.py` → `populate --embedding`. Representations of the predicted
+stain images that involve no hand-made feature: the aligned stain channels (head left),
+each normalised to unit sum, Gaussian-blurred (1.3 µm) and block-averaged to 12 × 12
+(`blur12`, 576 dims) or 6 × 6 (`blur6`, 144); the same unblurred at 24 × 24 (`stainpix24`);
+and the model's own deepest activations (U-Net e4, 512 channels at 1/8 resolution, mean- and
+max-pooled over the object, `bottleneck`, 1,024 dims). Each reduced to 30 PCs and clustered;
+the measured side is clustered on its stain-image + intensity features.*
+
+| label-free representation | ISX ARI (k = 3) | A8 PBMC cluster (k = 2) |
+|---|---|---|
+| stain-image + intensity features (the middle step) | **0.78** | 199 PBMC, 4 S + 33 SP |
+| blur12 alone | 0.43 | 200 PBMC, 15 S + 37 SP |
+| blur6 alone | 0.42 | 199 PBMC, **3 S + 33 SP** |
+| stainpix24 alone (unblurred) | 0.45 | 199 PBMC, 137 S + 153 SP (fails) |
+| bottleneck alone | 0.30 | 199 PBMC, 106 S + 140 SP (fails) |
+| bottleneck + blur6 | 0.43 | **199 PBMC, 0 S + 31 SP** (exact) |
+| bottleneck + stain-image + intensity | 0.78 | — |
+
+Two readings. On the ImageStream, where three populations have to be told apart, the images
+alone carry about half the structure the summary features carry (0.42–0.45 against 0.78),
+and the model's bottleneck adds nothing to the features. On the A8, where the question is
+binary, a 6 × 6 blurred stain image alone matches the features (3 errors), and the
+bottleneck plus that image reproduces the mask result exactly (0 sperm-well errors, the
+31 spiked leukocytes with the PBMCs). Blur is the whole trick: the unblurred 24 × 24 pixels
+fail on both instruments because a few pixels of tail position dominate the distance.
+
+So "cluster the stain images directly" works when the images are coarsened enough to be
+position-tolerant, and it is competitive for a coarse call; for the finer structure the
+summary features still win, because moments, profiles and intensities are exactly the
+position-invariant quantities a coarse image only approximates. The route to beating the
+features from pixels is a representation learned for invariance (an autoencoder or
+contrastive embedding on the stain stacks), not PCA; the bottleneck of a model trained to
+*paint* the stains is not that representation, it is spatial by design.
+
 ### The same pipeline on the A8 (2026-10-28)
 
 *`predict` with `runs/srv_a8_stems` (the 40-epoch model) on the laptop's held-out sample

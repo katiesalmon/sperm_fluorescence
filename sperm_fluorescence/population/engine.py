@@ -188,6 +188,8 @@ def main(argv=None):
     ap.add_argument("--store", default=None, help="virtual-stain store, to draw a gallery per population"); ap.add_argument("--gallery-n", type=int, default=8)
     ap.add_argument("--pixels", default=None, help="<features>.pixels.npz: append PCA scores of the aligned pixel stacks (or use them alone with --set pixels); the measured side uses the matching .pixels_ref.npz when present")
     ap.add_argument("--pixel-components", type=int, default=30)
+    ap.add_argument("--embedding", action="append", default=[], metavar="name=file.npz", help="append an embedding (fields: embedding (N, D), index) reduced to --pixel-components PCs; use alone with --set pixels")
+    ap.add_argument("--measured-set", default=None, choices=sorted(SETS), help="which set's ref.* columns the measured side is clustered on (default: the mirror of --set; needed when the label-free side is an embedding)")
     a = ap.parse_args(argv)
     import pandas as pd
     t0 = time.time(); df = pd.read_csv(a.table); n_all = len(df)
@@ -216,7 +218,7 @@ def main(argv=None):
     df["gate.passed"] = passed
     # ---- features ----
     cols, dropped = select_columns(df, SETS[a.set] + a.features, a.max_nan)
-    if len(cols) < 2 and not a.pixels: raise SystemExit("fewer than two usable columns for set %s" % a.set)
+    if len(cols) < 2 and not a.pixels and not a.embedding: raise SystemExit("fewer than two usable columns for set %s" % a.set)
     sub = df[passed]
     if cols:
         X = sub[cols].to_numpy(dtype=float); Z, med, scale = standardise(X)
@@ -227,6 +229,14 @@ def main(argv=None):
         ps, pix_info = pixel_scores(a.pixels, sub["id.index"].to_numpy(), a.pixel_components, a.seed)
         Z = np.concatenate([Z, ps / (ps.std(0) + 1e-6)], axis=1)       # pixel components on the same footing as standardised columns
         print("pixels: %d aligned pixels -> %d components (%.0f%% of variance), %s" % (pix_info["n_pixels"], pix_info["n_components"], 100 * pix_info["cumulative"], "alone" if not cols else "appended to %d columns" % len(cols)))
+    for spec in a.embedding:
+        name, path = spec.split("=", 1); e = np.load(path); E = e["embedding"].astype(np.float32); pos = {int(i): q for q, i in enumerate(e["index"])}
+        rows = [pos.get(int(i), -1) for i in sub["id.index"].to_numpy()]
+        if min(rows) < 0: raise SystemExit("embedding %s lacks %d objects" % (path, sum(r < 0 for r in rows)))
+        from sklearn.decomposition import PCA
+        X = E[rows]; X = np.clip((X - X.mean(0)) / (X.std(0) + 1e-6), -CLIP, CLIP)
+        es = PCA(n_components=min(a.pixel_components, len(X) - 1, X.shape[1]), random_state=a.seed).fit_transform(X)
+        Z = np.concatenate([Z, es / (es.std(0) + 1e-6)], axis=1); print("embedding %s: %d dims -> %d components" % (name, E.shape[1], es.shape[1]))
     scores, pca = reduce_pca(Z, fixed=a.components or None)
     print("set %s: %d columns kept, %d dropped; %d objects; PCA keeps %d components (%.0f%% of variance)" % (a.set, len(cols), len(dropped), len(sub), pca["n_components"], 100 * pca["cumulative"]))
     # ---- clustering ----
@@ -255,7 +265,7 @@ def main(argv=None):
     from .gallery import embedding_plot, galleries
     # the measured side, when the table has reference features: the same recipe on ref.* columns, for the plot and the summary
     measured_labels = None
-    ref_cols, _ = select_columns(sub, [p.replace("preds.", "refs.").replace("pred.", "ref.") for p in SETS[a.set] + a.features if p.startswith("pred")], a.max_nan)
+    ref_cols, _ = select_columns(sub, [p.replace("preds.", "refs.").replace("pred.", "ref.") for p in SETS[a.measured_set or a.set] + a.features if p.startswith("pred")], a.max_nan)
     ref_pix = a.pixels.replace(".pixels.npz", ".pixels_ref.npz") if a.pixels else None
     if (len(ref_cols) >= 2 or (ref_pix and os.path.exists(ref_pix))) and a.method != "hdbscan":
         Zr = standardise(sub[ref_cols].to_numpy(float))[0] if ref_cols else np.zeros((len(sub), 0))
