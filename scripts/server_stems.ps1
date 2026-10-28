@@ -6,8 +6,8 @@
 #                              -Cache C:\sf_cache -Width 64        (any LOCAL disk; default <repo>\data\server_cache)
 #
 # Caches go to a LOCAL disk (-Cache), never Z:. Outputs: runs\srv_a8_stems, runs\srv_isx_stems (results.json,
-# ablate.json, masks.json, sheet/masks/views PNGs) and figures\srv_* (accuracy, slides). At the end everything
-# worth carrying back is zipped into server_results_<timestamp>.zip in the repo folder (no checkpoints, no caches).
+# ablate.json, masks.json, sheet/masks/views PNGs) and figures\srv_* (accuracy, slides, panel). At the end everything
+# worth carrying back is zipped into server_results_<timestamp>.zip in the repo folder (no caches; best.pt only with -Checkpoints).
 param(
     [string]$A8Run = "",
     [string]$IsxCif = "",
@@ -18,7 +18,8 @@ param(
     [int]$IsxEpochs = 30,
     [int]$Limit = 0,            # events per class, 0 = all; use e.g. 2000 for a first smoke run
     [switch]$SkipPrepare,
-    [switch]$SkipTrain          # reuse runs\srv_*: no prepare, train or ablate; redraw views, sheet, masks, accuracy, slides
+    [switch]$SkipTrain,         # reuse runs\srv_*: no prepare, train or ablate; redraw views, sheet, masks, accuracy, slides, panel
+    [switch]$Checkpoints        # also put each run's best.pt (~30 MB) in the zip, so the laptop can redraw figures from the full model
 )
 $ErrorActionPreference = "Stop"
 $py = ".venv\Scripts\python.exe"
@@ -41,6 +42,7 @@ if ($A8Run -ne "") {
     & $py -m sperm_fluorescence masks  runs\srv_a8_stems --cache $a8cache --test 3 --limit 1000 --calib 400
     & $py -m sperm_fluorescence accuracy runs\srv_a8_stems --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out figures\srv_a8_accuracy
     & $py -m sperm_fluorescence slides runs\srv_a8_stems --cache $a8cache --test 3 --well S --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out figures\srv_a8_slides
+    & $py -m sperm_fluorescence panel  runs\srv_a8_stems --cache $a8cache --test 3 --rows "best:2,typical:2,P:1" --size 56 --um-per-px 0.333 --out figures\srv_a8_panel.png
 }
 
 if ($IsxCif -ne "") {
@@ -57,8 +59,9 @@ if ($IsxCif -ne "") {
     & $py -m sperm_fluorescence masks  runs\srv_isx_stems --cache $isxcache --test 3 --isx $IsxCif --limit 1000 --calib 400
     & $py -m sperm_fluorescence accuracy runs\srv_isx_stems --cache $isxcache --test 3 --title "ImageStream, held-out half of the tube (full run)" --sample 5000 --out figures\srv_isx_accuracy
     & $py -m sperm_fluorescence slides runs\srv_isx_stems --cache $isxcache --test 3 --population sperm --title "ImageStream (60x): four markers predicted from brightfield" --input-name "Brightfield" --um-per-px 0.333 --n 4 --out figures\srv_isx_slides
+    & $py -m sperm_fluorescence panel  runs\srv_isx_stems --cache $isxcache --test 3 --rows "best:2,typical:2,dim:1" --um-per-px 0.333 --out figures\srv_isx_panel.png
 }
-# ---- one zip to carry back: every JSON, PNG, CSV and log from the two runs, plus figures\srv_* (no checkpoints, no caches)
+# ---- one zip to carry back: every JSON, PNG, CSV and log from the two runs, plus figures\srv_* (no caches; checkpoints only with -Checkpoints)
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"
 $zip = "server_results_$stamp.zip"
 $staging = Join-Path $env:TEMP "sf_results_$stamp"
@@ -68,6 +71,7 @@ foreach ($run in @("runs\srv_a8_stems", "runs\srv_isx_stems")) {
         $dest = Join-Path $staging $run
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
         Get-ChildItem $run -File | Where-Object { $_.Extension -in ".json", ".png", ".csv", ".log" } | Copy-Item -Destination $dest
+        if ($Checkpoints -and (Test-Path (Join-Path $run "best.pt"))) { Copy-Item (Join-Path $run "best.pt") -Destination $dest }
     }
 }
 Get-ChildItem figures -Directory -Filter "srv_*" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $staging "figures\$($_.Name)") -Recurse -Force }

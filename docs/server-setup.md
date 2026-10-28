@@ -130,7 +130,15 @@ in the repo folder: the JSON, PNG, CSV and log files of both runs, `figures\srv_
 hash and the torch/CUDA versions. A few MB. Copy that one file to the laptop and unpack it
 with `python scripts/unpack_results.py <the zip>`, which puts `runs/srv_*` and `figures/srv_*`
 where every laptop command expects them (plain `unzip` keeps the Windows backslashes in the
-names of zips made before 2026-10-27). Checkpoints (`*.pt`) and caches stay on the server.
+names of zips made before 2026-10-27). Caches stay on the server; checkpoints too unless the
+script is run with `-Checkpoints`, which adds each run's `best.pt` (about 30 MB at width 64) so
+the laptop can redraw figures from the full model, e.g. the submission panel:
+
+```
+python -m sperm_fluorescence panel runs/srv_isx_stems --cache data/isx_roles --test 3 --rows "best:2,typical:2,dim:1" --um-per-px 0.333 --out figures/aua_isx_panel.png
+```
+
+(the laptop's `data/isx_roles` holds the same held-out half at 4,000 objects, enough to choose rows from).
 
 Training on CUDA runs in bfloat16 mixed precision where the GPU supports it (the A6000 does).
 The first full A8 run used fp16 and went NaN at epoch 22 of 40; the epoch-20 checkpoint was

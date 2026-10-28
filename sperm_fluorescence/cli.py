@@ -9,6 +9,7 @@
   views                inputs beside outputs, per input subset     predict-cytpix  run an ISX model on CytPix crops
   spectral             plot a spectral_export.py JSON              denoised        pixel r against a denoised measurement
   compare              within-population event r of several runs, side by side
+  panel                submission figure: inputs, measured and predicted stains, one row per object
 
 Every command takes --help.
 """
@@ -29,6 +30,7 @@ COMMANDS = {
     "views": ("sperm_fluorescence.eval.views", "main"),
     "denoised": ("sperm_fluorescence.eval.denoised", "main"),
     "compare": ("sperm_fluorescence.eval.compare", "main"),
+    "panel": ("sperm_fluorescence.eval.panel", "main"),
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
