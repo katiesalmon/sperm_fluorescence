@@ -1,8 +1,7 @@
 # AUA abstract draft: A8 virtual fluorescence (adapted from the submitted ImageStream abstract)
 
-*Draft 2026-10-27 from `runs/srv_a8_stems` (server run, commit 7cfe9bc, epoch-20 checkpoint of the
-fp16 run). The 40-epoch bfloat16 rerun now on the server will replace every number below; the
-bracketed items need filling in. The A8 abstract's purpose is identification for sorting, not
+*Draft 2026-10-27, numbers from the 40-epoch bfloat16 run `runs/srv_a8_stems`
+(`server_results_20261027_1941_a8.zip`, commit db78bce, best epoch 37). Bracketed items need filling in. The A8 abstract's purpose is identification for sorting, not
 morphology, so the objective, conclusions and impact statement are rewritten rather than adapted.*
 
 ## Title
@@ -19,7 +18,7 @@ A remnant ejaculate sample from a high-volume male infertility practice and peri
 
 ## Results
 
-The final model was tested on the 60,000 events of the independent replicate, a separate acquisition with its own staining and instrument settings. Accuracy was scored on both the intensity and the location of the predicted fluorescence against the true staining result. For intensity, the Pearson coefficient r correlated the brightness of the predicted fluorescence with the measured result for each marker. Across all events, predicted stain intensity tracked the measured intensity at r = 0.74 for LDHC, 0.78 for CD45 and 0.66 for ACRV1; within a single cell population, where cell identity cannot help the model, r = 0.75 for LDHC among sperm, 0.60 for CD45 among PBMCs, and 0.32 for ACRV1 among sperm. Predicted CD45 was 6.9-fold higher on PBMC-well events than on sperm-well events (measured: 7.6-fold), and predicted ACRV1 was 16-fold higher on sperm-well events than on PBMC-well events (measured: 66-fold), so the predicted stains separate the two populations in the direction the real stains do. [Add: AUC for sperm vs PBMC on predicted CD45 alone; needs the checkpoint back from the server.] For location, an Intersection-over-Union (IoU) score described how closely the area covered by the predicted fluorescence matched the area of the measured stain: IoU = 0.67 (LDHC), 0.62 (CD45) and 0.43 (ACRV1), with 97–100% of stained events detected. Systematically restricting the inputs of the model revealed that light loss alone predicts LDHC and CD45 at r = 0.56 and 0.26, adding forward scatter raises them to 0.71 and 0.39, and adding side scatter to 0.74 and 0.59: the side-scatter image, which resolves the granular interior of a leukocyte, carries most of the CD45 signal.
+The final model was tested on the 60,000 events of the independent replicate, a separate acquisition with its own staining and instrument settings. Accuracy was scored on both the intensity and the location of the predicted fluorescence against the true staining result. For intensity, the Pearson coefficient r correlated the brightness of the predicted fluorescence with the measured result for each marker. Across all events, predicted stain intensity tracked the measured intensity at r = 0.75 for LDHC, 0.78 for CD45 and 0.66 for ACRV1; within a single cell population, where cell identity cannot help the model, r = 0.75 for LDHC among sperm, 0.61 for CD45 among PBMCs, and 0.37 for ACRV1 among sperm. Predicted CD45 alone separated PBMC-well from sperm-well events at AUC = 0.95 (measured CD45: 0.99), and predicted ACRV1 at AUC = 0.97 (measured: 0.91) [on 600 held-out events; rerun at full scale before submission]. For location, an Intersection-over-Union (IoU) score described how closely the area covered by the predicted fluorescence matched the area of the measured stain: IoU = 0.68 (LDHC), 0.62 (CD45) and 0.42 (ACRV1), with 97–100% of stained events detected. Systematically restricting the inputs of the model revealed that light loss alone predicts LDHC and CD45 at r = 0.59 and 0.35, adding forward scatter raises them to 0.74 and 0.44, and adding side scatter to 0.74 and 0.60: the side-scatter image, which resolves the granular interior of a leukocyte, carries most of the CD45 signal.
 
 ## Conclusions
 
@@ -31,12 +30,11 @@ Predicting leukocyte and sperm immunofluorescence from the label-free images of 
 
 ## Numbers to update before submission
 
-- Every result above is from the epoch-20 checkpoint of the first full run (the fp16 run that went
-  NaN at epoch 22). Replace them from the 40-epoch bfloat16 rerun when its zip arrives.
-- Sperm-vs-PBMC AUC on predicted CD45 (and on predicted LDHC) is the number this abstract's
-  purpose really rests on and has not been computed at full scale. It needs `best.pt` from the
-  server (`server_stems.ps1 ... -Checkpoints`); then it is a few lines on the laptop.
-- The AF488 channel is named LDHC/AKAP4 in the panel files; confirm with the Stocks lab whether
-  the abstract should say LDHC alone (as the ImageStream abstract does) or LDHC/AKAP4.
+- The sperm-vs-PBMC AUCs were scored with the server checkpoint on the laptop's 600-event held-out
+  sample (200 per well). Rerun at full scale (60,000 events) on the server before submission.
+- The repo does not record how many donors contributed the ejaculate, or their semen parameters;
+  the methods sentence says "a remnant ejaculate sample" and needs the Stocks lab to confirm.
+- The AF488 channel is named LDHC/AKAP4 in the panel files (FCS label `LDHC_AKAP4-A`); confirm
+  whether the abstract should say LDHC alone (as the ImageStream abstract does) or LDHC/AKAP4.
 - The A8 has no instrument-drawn masks, so the IoU reference is the thresholded measured stain,
   not an instrument mask as on the ImageStream; the results sentence is worded accordingly.

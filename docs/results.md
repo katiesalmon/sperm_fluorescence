@@ -134,6 +134,50 @@ The predicted masks agree with the instrument's about as well as the measured st
 does, on every marker. (These were computed with the IDEAS mask of the right channel by
 construction: the mask lookup went by column, and the columns were right.)
 
+### A8 rerun, 40 epochs under bfloat16 (2026-10-27)
+
+*`server_results_20261027_1941_a8.zip`, commit db78bce, RTX A6000. Same data, split and
+settings as above; the fp16 defect is gone (40 epochs logged, no NaN, validation L1 0.0850 at the
+best epoch, 37). The epoch-20 fp16 results are kept in `runs/srv_a8_stems_fp16_ep20` and
+`figures/srv_fp16_ep20/`. The zip also carried both runs' `best.pt` (`-Checkpoints`) and the
+redrawn ISX figures with the corrected labels, including the submission panel
+`figures/srv_isx_panel.png`.*
+
+Counts, from `results.json`: 57,000 training + 3,000 validation events (replicate 2: wells 2S, 2P,
+2SP, 20,000 imaged events each), 60,000 test events (replicate 3, the same three wells). The
+repo records nothing about the donor(s) or their semen parameters; the run folder is
+`260709_Blair_Sperm_Cytpix` and the wells are sperm alone, PBMCs alone and a mixture.
+
+Within-well event r (epoch-20 fp16 value in brackets):
+
+| | sperm well (S) | mixed well (SP) | PBMC well (P) | pooled event r | pixel r |
+|---|---|---|---|---|---|
+| LDHC/AKAP4 | **0.75** (0.75) | 0.76 | 0.52 | 0.75 | 0.76 |
+| CD45 | 0.10 | 0.71 | **0.61** (0.60) | 0.78 | 0.60 |
+| ACRV1 | **0.37** (0.32) | 0.53 | 0.44 | 0.66 | 0.59 |
+
+Twenty more epochs bought ACRV1 within sperm 0.32 → 0.37 and nothing measurable elsewhere; the
+A8 model is converged on its weak signals. Masks (3,000 held-out, thresholded truth): LDHC/AKAP4
+IoU 0.68, CD45 0.62, ACRV1 0.42, 97–100 % detected. Ablation within S (CD45 within P): light loss
+only 0.59 / 0.35 / 0.23 (LDHC / CD45 / ACRV1), + FSC 0.74 / 0.44 / 0.32, + SSC 0.74 / 0.60 / 0.36,
+SSC only 0.69 / 0.54 / 0.22.
+
+**Sperm versus PBMC on the predicted stains**, scored with this checkpoint on the laptop's
+600-object held-out sample (200 per well; the full-scale version needs the `accuracy` command
+on the server). AUC for PBMC-well against sperm-well events, per-event stain sum:
+
+| | measured stain | predicted stain |
+|---|---|---|
+| CD45 (PBMC-high) | 0.987 | **0.954** |
+| ACRV1 (sperm-high) | 0.906 | **0.969** |
+| LDHC/AKAP4 | 0.62 | 0.50 |
+
+Predicted CD45 alone separates the PBMC well from the sperm well at 0.95, and predicted ACRV1
+does it better than the measured ACRV1 (the prediction is a smoothed, PBMC-negative version of
+a dim stain). Measured LDHC is weakly discriminative at the well level (replicate 3's PBMC well
+carries LDHC-channel signal, see the P:S note above) and the prediction inherits none of it.
+These are well labels, not cell labels: both wells are impure.
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing
