@@ -37,6 +37,7 @@ do not decide anything; they survive only as a sanity check on the population na
 |---|---|
 | Predicted stain images | `predict` writes them for a whole cache to the virtual-stain store (`data/store.py`): predicted images, predicted masks from the run's calibrated thresholds, IDEAS masks of the measured channels, indexed like the cache; `prepare --unstained` makes the cache for an unstained .cif |
 | Compartment masks | `masks`: per-channel threshold (`rel` 0.10–0.15 of the object's peak), IoU 0.60–0.73 vs IDEAS, 87–100 % detected |
+| Feature engine | `features` (`sperm_fluorescence/features/`): the catalogue below over a store, CSV + column definitions, reference features on the IDEAS masks, and `--daf` validation (built 2026-10-28) |
 | Population labels | `accuracy.groups_for`: sperm / round / DAPI-dim by the DAPI scalar (ISX); wells on the A8; sperm-vs-PBMC AUC 0.95 on predicted CD45 (A8) |
 | Object selection by rule | `panel.sperm_shaped` (nucleus area, flagellum-to-nucleus distance), `slides.pick`: first features, already used |
 | IDEAS's own features | the `.daf` feature block (`analysis/isx_daf.py`): Area, Length, Width, Aspect Ratio, Circularity, Major/Minor axis, intensities, per channel mask, all 20,000 objects of the stained tube. Decoded intensities match IDEAS at r = 1.000 |
@@ -75,7 +76,13 @@ engine opens both. One caveat for the features stage: the `rel` mask rule is rel
 each object's own peak, so every object gets a non-empty mask, including objects with no
 stain; mask presence is not a detection and the intensity features must carry that.
 
-## 2. The feature engine
+## 2. The feature engine (built 2026-10-28; `sperm_fluorescence/features/`)
+
+Status: `features` computes everything below except the learned embeddings, lobe count and
+symmetry, and writes one CSV row per object with a JSON of column definitions beside it.
+Masks: nucleus, acrosome, head, midpiece, principal piece, flagellum, tail, cell (a
+brightfield proxy). Reference columns (`ref.*`) are the same features on the IDEAS masks of
+the measured stains, so validation step 1 is a column comparison; `--daf` runs it.
 
 The catalogue is deliberately generic and large, after IDEAS: nothing in it is a sperm
 defect. Features are computed for every (mask, channel) pair that makes sense, and the table

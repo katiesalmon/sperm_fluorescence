@@ -10,6 +10,7 @@
   spectral             plot a spectral_export.py JSON              denoised        pixel r against a denoised measurement
   compare              within-population event r of several runs, side by side
   predict              virtual stains for every object of a cache -> a store (predicted images + masks)
+  features             the feature catalogue over a store -> CSV (+ validation against the .daf)
   panel                submission figure: inputs, measured and predicted stains, one row per object
 
 Every command takes --help.
@@ -34,6 +35,7 @@ COMMANDS = {
     "panel": ("sperm_fluorescence.eval.panel", "main"),
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
     "predict": ("sperm_fluorescence.predict", "main"),
+    "features": ("sperm_fluorescence.features.engine", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
 

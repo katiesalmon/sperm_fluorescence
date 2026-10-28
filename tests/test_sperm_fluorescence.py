@@ -107,7 +107,38 @@ def test_predict_writes_a_store_that_indexes_like_the_cache():
         p2, _, _, _ = st2.item(2); p0, _, _, _ = st.item(2); assert np.allclose(p2, p0, atol=1e-2)
 
 
+
+
+def test_feature_engine_on_a_drawn_sperm():
+    """A synthetic sperm (elliptical nucleus, acrosomal cap, a short midpiece, a curved tail)
+    through the compartment features: masks derive, lengths come out in the right units, the
+    acrosome sits ahead of the nucleus and the tail path is longer than its chord."""
+    from sperm_fluorescence.features.engine import compartment_features, qc_features
+    px = 0.333; h, w = 96, 64; yy, xx = np.mgrid[:h, :w]
+    nucleus = ((yy - 30) / 7.0) ** 2 + ((xx - 32) / 4.5) ** 2 <= 1          # ~4.7 x 3 um
+    acro = (((yy - 24) / 5.0) ** 2 + ((xx - 32) / 4.5) ** 2 <= 1) & ~nucleus    # cap on the anterior pole (smaller row)
+    mid = (yy >= 37) & (yy <= 49) & (np.abs(xx - 32) <= 1)                 # 13 px = 4.3 um
+    t = np.linspace(0, 1, 400); ty = 50 + 40 * t; tx = 32 + 12 * np.sin(2 * np.pi * t)
+    tail = np.zeros((h, w), bool); tail[np.clip(ty.astype(int), 0, h - 1), np.clip(tx.astype(int), 0, w - 1)] = True
+    tail = __import__("scipy.ndimage", fromlist=["binary_dilation"]).binary_dilation(tail, iterations=1)
+    valid = np.ones((h, w), bool)
+    parts = {"nucleus": nucleus, "acrosome": acro, "midpiece": mid, "flagellum": tail | mid}
+    rng = np.random.default_rng(0)
+    chans = {"DAPI": nucleus * 5.0 + rng.normal(0, 0.1, (h, w)), "ACRV1": acro * 3.0, "TOMM20": mid * 4.0, "LDHC/AKAP4": (tail | mid) * 2.0}
+    bf = -3.0 * (nucleus | acro | mid | tail).astype(np.float32) + rng.normal(0, 0.3, (h, w))
+    docs = {}
+    row, M, S, K = compartment_features("pred", parts, chans, {"brightfield": bf}, valid, px, docs)
+    assert set(M) >= {"nucleus", "acrosome", "head", "midpiece", "principal", "tail", "cell"}
+    assert 4.0 < row["pred.nucleus.feret_max_um"] < 5.5 and 2.5 < row["pred.nucleus.feret_min_um"] < 3.6
+    assert 3.0 < row["pred.midpiece.skel.path_um"] < 5.0      # 13 px drawn; skeletonising trims an end pixel each side
+    assert row["pred.tail.skel.tortuosity"] > 1.3 and row["pred.tail.skel.path_um"] > row["pred.tail.skel.end_to_end_um"]
+    assert row["pred.x.acrosome_anterior_um"] < 0 and 0.2 < row["pred.x.acrosome_frac"] < 0.6
+    assert row["pred.x.head_midpiece_angle_deg"] < 15 and row["pred.x.insertion_offset_um"] < 1.5
+    assert row["pred.DAPI.nucleus.frac_in_mask"] > 0.9
+    qc = qc_features(M, K, row, valid); assert qc["n_nuclei"] == 1 and qc["n_objects"] == 1
+    assert all(c in docs for c in row)
+
 if __name__ == "__main__":
     for fn in (test_cache_round_trip_and_role_selection, test_stems_ignore_absent_roles_and_match_shape, test_native_size_evaluate_crops_to_object,
-               test_predict_writes_a_store_that_indexes_like_the_cache):
+               test_predict_writes_a_store_that_indexes_like_the_cache, test_feature_engine_on_a_drawn_sperm):
         fn(); print("ok", fn.__name__)
