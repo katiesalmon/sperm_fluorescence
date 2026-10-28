@@ -13,7 +13,11 @@ Columns:  id.*   class, index, .cif row, well, DAPI scalar, population labels
           in.<role>.<mask>.<f>           the label-free inputs inside the cell and head masks
           pred.sim.<a>_<b>.r|z           similarity of two predicted channels inside the cell
           pred.x.<f>                     cross-mask geometry: delta centroids, head-midpiece angle, insertion offset, area ratios
-          ref.*                          the same on the IDEAS masks and measured channels (stained cache + .cif), for validation
+          preds.<channel>.<f>            the stain IMAGES, no thresholds: intensity moments, radial and axial profiles (features/stain.py)
+          preds.d|along.<a>_<b>          distances between channel intensity centroids, and along the cell axis
+          ref.*, refs.*                  the same on the IDEAS masks / measured channels (stained cache + .cif), for validation
+Also <out>.pixels.npz: every channel (predicted stains + inputs) rotated onto the cell axis, head left,
+on a 48 x 48 grid at 0.667 um/px, for pixel-level PCA (`populate --pixels`); and .pixels_ref.npz for the measured stains.
 Masks: nucleus (DAPI), acrosome (ACRV1), head = filled nucleus|acrosome, midpiece (TOMM20),
 flagellum (LDHC/AKAP4), principal = flagellum minus the dilated midpiece, tail = flagellum|midpiece,
 cell = brightfield object (a proxy: |standardised brightfield| > 1.5, closed, filled, largest
@@ -36,6 +40,7 @@ from ..eval.masks import RULE, mask_from_image
 from . import intensity as inten
 from . import shape as shp
 from . import skeleton as skel
+from . import stain as stn
 
 COMPARTMENT = {"DAPI": "nucleus", "ACRV1": "acrosome", "TOMM20": "midpiece", "LDHC/AKAP4": "flagellum", "CD45": "cd45"}
 SKELETON_MASKS = ("midpiece", "principal", "flagellum", "tail", "cell")
@@ -141,7 +146,8 @@ def cross_features(M, S, K, px_um):
 
 def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
     """All features for one object under one prefix ('pred' or 'ref'). parts: {compartment: mask};
-    chans: {marker: image}; inputs: {role: image} or {}. Fills `docs` with column definitions."""
+    chans: {marker: image}; inputs: {role: image} or {}. Fills `docs` with column definitions.
+    Returns (row, masks, shape dicts, skeleton dicts, (cell axis, centre) or None)."""
     row = {}
     M = derive_masks(parts, inputs.get("brightfield", inputs.get("lightloss")), valid)      # light loss is the A8's brightfield-like image
     S, K = {}, {}
@@ -168,7 +174,28 @@ def compartment_features(prefix, parts, chans, inputs, valid, px_um, docs):
             s = inten.similarity(chans[names[i]], chans[names[j]], M["cell"] & valid)
             for f, v in s.items(): row[colname(prefix, "sim", names[i] + "_" + names[j], f)] = v; docs[colname(prefix, "sim", names[i] + "_" + names[j], f)] = "Pearson %s of %s and %s inside the cell mask" % (f, names[i], names[j])
     for f, v in cross_features(M, S, K, px_um).items(): row[colname(prefix, "x", f)] = v; docs[colname(prefix, "x", f)] = X_DOC[f]
-    return row, M, S, K
+    # stain-image features, no thresholds: moments, profiles, cross-channel centroids, on the channels as images
+    names_ = list(chans); imgs = np.stack([chans[n] for n in names_]) if names_ else None
+    if imgs is not None:
+        axis, centre, info = stn.cell_axis(imgs, names_, valid, px_um)
+        sp = prefix + "s"                                              # 'preds' / 'refs': the stain-image family
+        for f, v in info.items(): row[colname(sp, "cell", f)] = v; docs[colname(sp, "cell", f)] = stn.X_DOC[f]
+        cents = {}
+        for k, nm in enumerate(names_):
+            feats = stn.channel_features(imgs[k], valid, px_um, axis, centre)
+            for f, v in feats.items(): row[colname(sp, nm, f)] = v; docs[colname(sp, nm, f)] = "%s image: %s" % (nm, stn.DOC[f])
+            cents[nm] = (feats["cy"], feats["cx"])
+        for i in range(len(names_)):
+            for j in range(i + 1, len(names_)):
+                a, b = cents[names_[i]], cents[names_[j]]
+                d = float(np.hypot(a[0] - b[0], a[1] - b[1])) * px_um if np.isfinite(a[0]) and np.isfinite(b[0]) else np.nan
+                along = float(((b[0] - a[0]) * axis[0] + (b[1] - a[1]) * axis[1]) * px_um) if np.isfinite(d) else np.nan
+                row[colname(sp, "d", names_[i] + "_" + names_[j])] = d; docs[colname(sp, "d", names_[i] + "_" + names_[j])] = "distance between the intensity centroids of %s and %s, um" % (names_[i], names_[j])
+                row[colname(sp, "along", names_[i] + "_" + names_[j])] = along; docs[colname(sp, "along", names_[i] + "_" + names_[j])] = "centroid of %s minus %s along the cell axis, um (positive = towards the tail)" % (names_[j], names_[i])
+        axis_out = (axis, centre)
+    else:
+        axis_out = None
+    return row, M, S, K, axis_out
 
 
 def qc_features(M, K, row, valid, prefix="pred"):
@@ -204,6 +231,7 @@ def main(argv=None):
     ap.add_argument("--reference", default="auto", choices=["auto", "ideas", "truth", "none"], help="reference masks: the store's IDEAS masks, the thresholded measured stain, or none (auto: ideas if stored, else truth if stained, else none)")
     ap.add_argument("--daf", default=None, help="ImageStream .daf: validate reference features against the instrument's table and predicted against reference")
     ap.add_argument("--limit", type=int, default=0); ap.add_argument("--no-ref", action="store_true", help="alias for --reference none")
+    ap.add_argument("--no-pixels", action="store_true", help="skip the canonical aligned pixel stacks (<out>.pixels.npz)")
     a = ap.parse_args(argv)
     st = open_store(a.store, [c.strip() for c in a.classes.split(",")] if a.classes else None)
     cache = a.cache or st.meta["source_cache"]
@@ -216,7 +244,7 @@ def main(argv=None):
     if ref == "auto": ref = "ideas" if any(x is not None for x in st.ims) else ("truth" if stained else "none")
     if ref == "ideas" and not any(x is not None for x in st.ims): raise SystemExit("the store has no IDEAS masks (predict --isx)")
     n = len(st) if not a.limit else min(a.limit, len(st))
-    rows, docs = [], {}
+    rows, docs = [], {}; pixels, pixels_ref = [], []
     t0 = time.time()
     for i in range(n):
         p, pm, m, im = st.item(i); x, y, mc = ds.item(i); valid = m > 0
@@ -227,15 +255,22 @@ def main(argv=None):
         row = {"id.class": str(st.class_of[i]), "id.index": i, "id.source_row": st.source_row(i), "id.well": str(wells[i]),
                "id.scalar": float(np.asarray(scal).reshape(len(scal), -1)[i, 0])}
         for k, nm in enumerate(names): row[colname("id", "avail", nm)] = int(av[k])
-        r, M, S, K = compartment_features("pred", parts, chans, inputs, valid, px_um, docs); row.update(r)
+        r, M, S, K, axis_pred = compartment_features("pred", parts, chans, inputs, valid, px_um, docs); row.update(r)
         row.update({colname("qc", f): v for f, v in qc_features(M, K, row, valid).items()})
+        if axis_pred is not None and not a.no_pixels:
+            imgs = np.stack([p[k] for k in range(len(names))] + [x[j] for j in range(len(roles))])
+            fill = [0.0] * len(names) + [float(np.median(np.concatenate([x[j][0], x[j][-1], x[j][:, 0], x[j][:, -1]]))) for j in range(len(roles))]
+            pixels.append(stn.canonical_stack(imgs, valid, px_um, axis_pred[0], axis_pred[1], fill).astype(np.float16))
         if ref != "none" and av.any():
             if ref == "ideas":
                 rparts = {COMPARTMENT[nm]: im[k] & valid for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
             else:
                 rparts = {COMPARTMENT[nm]: mask_from_image(y[k], valid, **RULE[inst]) for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
             rchans = {nm: y[k] for k, nm in enumerate(names) if av[k]}
-            r, _, _, _ = compartment_features("ref", rparts, rchans, {}, valid, px_um, docs); row.update(r)
+            r, _, _, _, axis_ref = compartment_features("ref", rparts, rchans, {}, valid, px_um, docs); row.update(r)
+            if axis_ref is not None and not a.no_pixels:
+                imgs = np.stack([y[k] for k in range(len(names))]); fill = [0.0] * len(names)
+                pixels_ref.append((i, stn.canonical_stack(imgs, valid, px_um, axis_ref[0], axis_ref[1], fill).astype(np.float16)))
         rows.append(row)
         if (i + 1) % 500 == 0: print("  %d / %d  (%.0fs)" % (i + 1, n, time.time() - t0))
     for f, d in QC_DOC.items(): docs[colname("qc", f)] = d
@@ -259,6 +294,12 @@ def main(argv=None):
     side = {"store": st.meta, "cache": os.path.abspath(cache), "classes": st.classes, "pixel_um": px_um, "reference": ref, "n": len(rows),
             "columns": {c: docs.get(c, "") for c in cols}, "created": time.strftime("%Y-%m-%d %H:%M")}
     json.dump(side, open(os.path.splitext(a.out)[0] + ".columns.json", "w"), indent=1)
+    if pixels:
+        stem = os.path.splitext(a.out)[0]
+        np.savez(stem + ".pixels.npz", pixels=np.stack(pixels), index=np.arange(len(pixels)), channels=np.array(list(names) + list(roles)), px_um=stn.CANON_UM, side=stn.CANON_PX)
+        if pixels_ref:
+            np.savez(stem + ".pixels_ref.npz", pixels=np.stack([p for _, p in pixels_ref]), index=np.array([i for i, _ in pixels_ref]), channels=np.array(list(names)), px_um=stn.CANON_UM, side=stn.CANON_PX)
+        print("wrote %s.pixels.npz: %d objects x %s (aligned, %.3g um/px)" % (stem, len(pixels), "x".join(str(v) for v in pixels[0].shape), stn.CANON_UM))
     print("wrote %s: %d objects x %d columns (%.0fs); reference = %s" % (a.out, len(rows), len(cols), time.time() - t0, ref))
     if a.daf:
         from .validate import validate

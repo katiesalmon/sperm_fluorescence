@@ -10,7 +10,9 @@ given, a gallery per population is drawn.
 
 Feature sets (--set): head (shape of nucleus, acrosome, head and their ratios), tail
 (shape and skeleton of midpiece, principal piece, tail), morph (both), intensity (predicted
-channel sums, maxima and similarities), all (every pred.* and in.* column). --features adds
+channel sums, maxima and similarities), stain (the threshold-free stain-image features,
+preds.*), stain+intensity, pixels (the aligned pixel stacks alone, with --pixels), all (every
+pred.* and in.* column; preds.* are not in it, add them with --features "preds.*"). --features adds
 glob patterns of your own. Columns with more than --max-nan missing or no variance are
 dropped; the rest are median-imputed and standardised (median / IQR, robust to outliers).
 
@@ -42,8 +44,30 @@ SETS = {
     "all": ["pred.*", "in.*"],
 }
 SETS["morph"] = SETS["head"] + SETS["tail"]
+SETS["stain"] = ["preds.*"]                                   # the stain-image features, no thresholds (features/stain.py)
+SETS["stain+intensity"] = SETS["stain"] + SETS["intensity"]
+SETS["pixels"] = []                                           # the aligned pixel stacks alone (needs --pixels)
 EXCLUDE = ["*.centroid_y", "*.centroid_x", "*.orientation_deg", "*.end_y", "*.end_x", "*.n_px"]      # frame coordinates and raw pixel counts carry no shape
 DEFAULT_GATES = [("single", "`qc.n_objects` <= 1 and `qc.n_nuclei` <= 1"), ("in_frame", "`qc.flagellum_edge_frac` < 0.05"), ("focus", "`qc.focus_gradient_rms` >= @focus_p5")]
+
+
+def pixel_scores(path, index, n_components, seed, fit_on=None):
+    """PCA scores of the aligned pixel stacks for the objects `index` (store indices). Each
+    stain channel is normalised to unit sum per object (shape, not brightness; brightness is
+    in the intensity columns), inputs are left standardised. Returns (scores, info)."""
+    from sklearn.decomposition import PCA
+    d = np.load(path); P = d["pixels"].astype(np.float32); idx = d["index"]; ch = list(d["channels"])
+    pos = {int(i): q for q, i in enumerate(idx)}
+    rows = [pos.get(int(i), -1) for i in index]
+    if min(rows) < 0: raise SystemExit("pixel file %s lacks %d of the requested objects" % (path, sum(r < 0 for r in rows)))
+    X = P[rows]
+    for c, name in enumerate(ch):
+        if not name.startswith(("brightfield", "lightloss", "fsc", "ssc", "darkfield")):
+            v = np.clip(X[:, c], 0, None); s = v.reshape(len(X), -1).sum(1); X[:, c] = v / np.maximum(s, 1e-6)[:, None, None]
+    X = X.reshape(len(X), -1)
+    X = np.clip((X - X.mean(0)) / (X.std(0) + 1e-6), -CLIP, CLIP)
+    pca = PCA(n_components=min(n_components, len(X) - 1, X.shape[1]), random_state=seed).fit(X if fit_on is None else fit_on)
+    return pca.transform(X), {"n_components": int(pca.n_components_), "cumulative": float(pca.explained_variance_ratio_.sum()), "channels": ch, "n_pixels": int(X.shape[1])}
 
 
 def select_columns(df, patterns, max_nan):
@@ -152,7 +176,7 @@ def discriminators(df, cols, labels, top=10):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence populate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("table"); ap.add_argument("--out", required=True)
-    ap.add_argument("--set", default="morph", choices=sorted(SETS)); ap.add_argument("--features", action="append", default=[], help="extra glob patterns of columns")
+    ap.add_argument("--set", default="all", choices=sorted(SETS)); ap.add_argument("--features", action="append", default=[], help="extra glob patterns of columns")
     ap.add_argument("--within", default=None, help="restrict to one id.pop_pred population before clustering, e.g. sperm")
     ap.add_argument("--gate", action="append", default=[], metavar="name=query", help="add or replace a gate (pandas query; backtick column names)")
     ap.add_argument("--no-gates", action="store_true"); ap.add_argument("--max-nan", type=float, default=0.3)
@@ -162,6 +186,8 @@ def main(argv=None):
     ap.add_argument("--min-samples", type=int, default=10, help="HDBSCAN min_samples (density requirement); the default is loose")
     ap.add_argument("--join", action="append", default=[], metavar="name=populations.csv", help="merge another run's populations.csv on id.index as <name>.cluster etc., so a gate can chain on it")
     ap.add_argument("--store", default=None, help="virtual-stain store, to draw a gallery per population"); ap.add_argument("--gallery-n", type=int, default=8)
+    ap.add_argument("--pixels", default=None, help="<features>.pixels.npz: append PCA scores of the aligned pixel stacks (or use them alone with --set pixels); the measured side uses the matching .pixels_ref.npz when present")
+    ap.add_argument("--pixel-components", type=int, default=30)
     a = ap.parse_args(argv)
     import pandas as pd
     t0 = time.time(); df = pd.read_csv(a.table); n_all = len(df)
@@ -190,9 +216,17 @@ def main(argv=None):
     df["gate.passed"] = passed
     # ---- features ----
     cols, dropped = select_columns(df, SETS[a.set] + a.features, a.max_nan)
-    if len(cols) < 2: raise SystemExit("fewer than two usable columns for set %s" % a.set)
-    sub = df[passed]; X = sub[cols].to_numpy(dtype=float)
-    Z, med, scale = standardise(X)
+    if len(cols) < 2 and not a.pixels: raise SystemExit("fewer than two usable columns for set %s" % a.set)
+    sub = df[passed]
+    if cols:
+        X = sub[cols].to_numpy(dtype=float); Z, med, scale = standardise(X)
+    else:
+        Z = np.zeros((len(sub), 0)); med = scale = np.zeros(0)
+    pix_info = None
+    if a.pixels:
+        ps, pix_info = pixel_scores(a.pixels, sub["id.index"].to_numpy(), a.pixel_components, a.seed)
+        Z = np.concatenate([Z, ps / (ps.std(0) + 1e-6)], axis=1)       # pixel components on the same footing as standardised columns
+        print("pixels: %d aligned pixels -> %d components (%.0f%% of variance), %s" % (pix_info["n_pixels"], pix_info["n_components"], 100 * pix_info["cumulative"], "alone" if not cols else "appended to %d columns" % len(cols)))
     scores, pca = reduce_pca(Z, fixed=a.components or None)
     print("set %s: %d columns kept, %d dropped; %d objects; PCA keeps %d components (%.0f%% of variance)" % (a.set, len(cols), len(dropped), len(sub), pca["n_components"], 100 * pca["cumulative"]))
     # ---- clustering ----
@@ -213,7 +247,7 @@ def main(argv=None):
     for j in range(scores.shape[1]): out["pc%d" % (j + 1)] = np.nan; out.loc[passed, "pc%d" % (j + 1)] = scores[:, j]
     out["emb_x"] = np.nan; out["emb_y"] = np.nan; out.loc[passed, "emb_x"] = emb[:, 0]; out.loc[passed, "emb_y"] = emb[:, 1]
     out.to_csv(os.path.join(a.out, "populations.csv"), index=False)
-    summary = {"table": os.path.abspath(a.table), "n": n_all, "gates": gate_report, "set": a.set, "columns": cols, "dropped": dropped,
+    summary = {"table": os.path.abspath(a.table), "n": n_all, "gates": gate_report, "set": a.set, "columns": cols, "dropped": dropped, "pixels": pix_info,
                "standardise": {"median": med.tolist(), "scale": scale.tolist()}, "pca": {k: v for k, v in pca.items() if k != "loadings"},
                "pca_loadings": pca["loadings"], "method": a.method, "k": a.k, "min_cluster_size": a.min_cluster_size, "seed": a.seed,
                "cluster_sizes": sizes, "stability": stab, "discriminators": disc, "embedding": emb_kind, "created": time.strftime("%Y-%m-%d %H:%M")}
@@ -221,9 +255,13 @@ def main(argv=None):
     from .gallery import embedding_plot, galleries
     # the measured side, when the table has reference features: the same recipe on ref.* columns, for the plot and the summary
     measured_labels = None
-    ref_cols, _ = select_columns(sub, [p.replace("pred.", "ref.") for p in SETS[a.set] + a.features if p.startswith("pred.")], a.max_nan)
-    if len(ref_cols) >= 2 and a.method != "hdbscan":
-        Zr, _, _ = standardise(sub[ref_cols].to_numpy(float)); sr, _ = reduce_pca(Zr, fixed=a.components or None)
+    ref_cols, _ = select_columns(sub, [p.replace("preds.", "refs.").replace("pred.", "ref.") for p in SETS[a.set] + a.features if p.startswith("pred")], a.max_nan)
+    ref_pix = a.pixels.replace(".pixels.npz", ".pixels_ref.npz") if a.pixels else None
+    if (len(ref_cols) >= 2 or (ref_pix and os.path.exists(ref_pix))) and a.method != "hdbscan":
+        Zr = standardise(sub[ref_cols].to_numpy(float))[0] if ref_cols else np.zeros((len(sub), 0))
+        if ref_pix and os.path.exists(ref_pix):
+            pr, _ = pixel_scores(ref_pix, sub["id.index"].to_numpy(), a.pixel_components, a.seed); Zr = np.concatenate([Zr, pr / (pr.std(0) + 1e-6)], axis=1)
+        sr, _ = reduce_pca(Zr, fixed=a.components or None)
         measured_labels, _ = fit_cluster(sr, a.method, a.k, a.seed, a.min_cluster_size)
         from sklearn.metrics import adjusted_rand_score
         summary["measured_side"] = {"columns": ref_cols, "ari_vs_label_free": float(adjusted_rand_score(labels, measured_labels)),
