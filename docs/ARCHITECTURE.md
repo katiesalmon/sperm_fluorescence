@@ -16,6 +16,7 @@ predict-cytpix  an ISX model on CytPix crops           spectral  plot a scripts/
 views        inputs beside outputs per input subset     denoised  pixel r against a denoised measurement
 compare      runs side by side, within-population r     panel     submission figure, one row per object
 predict      virtual stains for a whole cache -> store   features  the feature catalogue over a store -> CSV
+populate     gates, PCA, clustering, stability, galleries over a feature table
 prepare-a8 / prepare-isx / prepare-generalist          the earlier fixed-layout caches (legacy)
 ```
 
@@ -39,6 +40,7 @@ Rendered by `docs/diagrams/make_diagrams.py` (PNG and SVG beside it).
 | `sperm_fluorescence/train/` | `loop` (the training loop and `train` CLI), `losses` (masked L1, gradient term, target scale), `device` |
 | `sperm_fluorescence/predict.py` | `predict`: run a model over a cache and write the virtual-stain store (`data/store.py`: predicted images, masks, IDEAS masks, cache-aligned index) |
 | `sperm_fluorescence/features/` | the feature engine: `shape` (per-mask shape, several length/width definitions), `skeleton` (longest path, curvature profile, coiling), `intensity` (intensity, texture, similarity), `engine` (`features`: compartments, cross-mask geometry, quality, population labels, CSV + column docs), `validate` (our definitions vs the .daf; predicted vs reference, Bland-Altman) |
+| `sperm_fluorescence/population/` | the population engine: `engine` (`populate`: gates as pandas queries, feature sets, robust standardisation, PCA by Kaiser, k-means / GMM / HDBSCAN, stability by halves and bootstraps, Fisher-ratio discriminators), `gallery` (embedding plot, per-cluster galleries) |
 | `sperm_fluorescence/eval/` | `metrics` (native-size evaluate), `sheets`/`render` (IDEAS-style figures), `load` (load a run; `sheet`), `masks`, `slides`, `accuracy`, `subset`, `ablate`, `views`, `denoised`, `compare`, `panel` (submission figure: inputs, measured and predicted stains per row), `spectral` |
 | `configs/instruments/` | one TOML per instrument: label-free **roles** → source page, **stains** → page, pixel pitch, class rules |
 | `configs/markers/` | one TOML per marker: name, colour, localisation, the population its checkpoint is selected on |

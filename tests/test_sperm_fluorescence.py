@@ -138,7 +138,41 @@ def test_feature_engine_on_a_drawn_sperm():
     qc = qc_features(M, K, row, valid); assert qc["n_nuclei"] == 1 and qc["n_objects"] == 1
     assert all(c in docs for c in row)
 
+
+
+def test_populate_recovers_planted_clusters():
+    """A feature table with three planted populations in four head columns (plus noise
+    columns and quality flags): the gates report their losses, PCA keeps a few components,
+    k-means finds the three groups (ARI > 0.9 against the plant) and they are stable."""
+    import csv
+    from sklearn.metrics import adjusted_rand_score
+    from sperm_fluorescence.population.engine import main as populate_main
+    rng = np.random.default_rng(1); n = 600; plant = rng.integers(0, 3, n)
+    centres = np.array([[4.0, 2.8, 8.5, 0.5], [5.2, 2.4, 9.6, 0.45], [3.6, 3.4, 9.0, 0.6]])
+    head = centres[plant] + rng.normal(0, [0.12, 0.08, 0.3, 0.02], (n, 4))
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "features.csv")
+        cols = ["id.class", "id.index", "id.pop_pred", "qc.n_objects", "qc.n_nuclei", "qc.flagellum_edge_frac", "qc.focus_gradient_rms",
+                "pred.head.feret_max_um", "pred.head.feret_min_um", "pred.head.area_um2", "pred.x.acrosome_frac", "pred.head.centroid_x", "pred.tail.skel.path_um", "pred.head.n_components"]
+        with open(path, "w", newline="") as f:
+            w = csv.writer(f); w.writerow(cols)
+            for i in range(n):
+                w.writerow(["3I", i, "sperm" if i % 10 else "round", 1 if i % 25 else 2, 1, 0.0 if i % 40 else 0.2, rng.normal(10, 1),
+                            *head[i], rng.uniform(0, 60), rng.normal(20, 5), 1])
+        out = os.path.join(d, "pop")
+        assert populate_main([path, "--set", "head", "--k", "3", "--within", "sperm", "--out", out, "--seed", "0"]) == 0
+        summ = json.load(open(os.path.join(out, "summary.json")))
+        assert [g["gate"] for g in summ["gates"]] == ["within", "single", "in_frame", "focus"] and summ["gates"][0]["lost"] == 60
+        assert "pred.head.centroid_x" not in summ["columns"] and "pred.head.n_components" in summ["dropped"]
+        assert summ["cluster_sizes"] and len(summ["cluster_sizes"]) == 3
+        import pandas as pd
+        tab = pd.read_csv(os.path.join(out, "populations.csv")); ok = tab["gate.passed"].to_numpy(bool)
+        assert adjusted_rand_score(plant[ok], tab["cluster"].to_numpy()[ok]) > 0.9
+        assert summ["stability"]["bootstrap_ari_mean"] > 0.8 and all(v > 0.8 for v in summ["stability"]["halves_ari"])
+        assert os.path.exists(os.path.join(out, "embedding.png"))
+
 if __name__ == "__main__":
     for fn in (test_cache_round_trip_and_role_selection, test_stems_ignore_absent_roles_and_match_shape, test_native_size_evaluate_crops_to_object,
-               test_predict_writes_a_store_that_indexes_like_the_cache, test_feature_engine_on_a_drawn_sperm):
+               test_predict_writes_a_store_that_indexes_like_the_cache, test_feature_engine_on_a_drawn_sperm,
+               test_populate_recovers_planted_clusters):
         fn(); print("ok", fn.__name__)

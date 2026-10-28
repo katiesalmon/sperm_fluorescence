@@ -11,6 +11,7 @@
   compare              within-population event r of several runs, side by side
   predict              virtual stains for every object of a cache -> a store (predicted images + masks)
   features             the feature catalogue over a store -> CSV (+ validation against the .daf)
+  populate             gates, PCA, clustering, stability and galleries over a feature table
   panel                submission figure: inputs, measured and predicted stains, one row per object
 
 Every command takes --help.
@@ -36,6 +37,7 @@ COMMANDS = {
     "predict-cytpix": ("sperm_fluorescence.predict_cytpix", "main"),
     "predict": ("sperm_fluorescence.predict", "main"),
     "features": ("sperm_fluorescence.features.engine", "main"),
+    "populate": ("sperm_fluorescence.population.engine", "main"),
     "spectral": ("sperm_fluorescence.eval.spectral", "main"),
 }
 

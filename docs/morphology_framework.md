@@ -130,7 +130,12 @@ does not exist on an unstained run).
 The table has one row per object and the feature definitions as a versioned header. Scikit-
 image is the only new dependency.
 
-## 3. The population engine
+## 3. The population engine (built 2026-10-28; `sperm_fluorescence/population/`)
+
+Status: `populate` does the gates, feature-set selection, PCA, k-means / GMM / HDBSCAN,
+halves-and-bootstrap stability, discriminating features and galleries described below;
+UMAP falls back to t-SNE until umap-learn is installed. Gates are pandas queries, so a gate
+is a line of text in the summary, never code.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):
