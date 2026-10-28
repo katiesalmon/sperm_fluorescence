@@ -1,232 +1,262 @@
 # Whole-ejaculate morphology from virtual fluorescence: the framework
 
-*Plan, 2026-10-28, revised the same day after the literature survey in `morphology_research.md`
-(its Section 6 lists what changed and why). Builds on the ImageStream stems model (`runs/srv_isx_stems`: LDHC/AKAP4,
-TOMM20, DAPI, ACRV1 from brightfield ×2 + darkfield at 60×, 0.333 µm/px) and the A8 model.
-Nothing here is built yet; the sections "What exists" and "Facts that shape the design" are
-measured, the rest is the proposal.*
+*Rewritten 2026-10-28 around a feature engine and population analysis, after the survey in
+`morphology_research.md`. The first draft was a rule engine on compartment masks; the survey
+showed that fixed rules are the arm of the field that agrees worst with manual scoring, that
+IDEAS itself analyses populations by gating a large generic feature catalogue, and that
+unsupervised clustering of label-free imaging-cytometry features with stains used only as
+post-hoc truth is an established design (Zhang 2023) that nobody has applied to sperm. The
+"What exists" and "Facts" sections are measured; the rest is the proposal.*
 
-## The idea in one paragraph
+## The idea
 
-The four ImageStream markers are exactly the compartments WHO morphology is scored on: DAPI is
-the nucleus, ACRV1 the acrosome (together the head), TOMM20 the midpiece, LDHC/AKAP4 the
-principal piece. The model predicts each of them from label-free images at r = 0.77–0.98 within
-sperm and at mask IoU 0.60–0.73 against the instrument's own masks. So for every object in an
-unstained whole-ejaculate acquisition we can get compartment masks, measure them, and score the
-sample three ways: with WHO-style rules (per-cell defects, % normal forms, a deformity index),
-with unsupervised structure (clusters of head and tail shape), and at the population level
-(sperm / round cells / debris, feature distributions, scatter populations). The stain is never
-applied, so the same aliquot stays usable.
+The four ImageStream markers are the compartments morphology is scored on: DAPI the nucleus,
+ACRV1 the acrosome (together the head), TOMM20 the midpiece, LDHC/AKAP4 the principal piece.
+The stems model predicts them from label-free images at r = 0.77–0.98 within sperm, with
+masks at IoU 0.60–0.73 against the instrument's own. So an unstained acquisition can be given
+the same per-object feature table the instrument would have computed on a stained one. The
+analysis then proceeds the way flow cytometry always has: a large feature vector per object,
+populations found by gating and clustering in that space, labels attached to populations, and
+clinical quantities read off as counts over labelled populations. Hand-written morphology rules
+do not decide anything; they survive only as a sanity check on the population named "ideal".
+
+```
+.cif (unstained or stained)
+   └─ predict     predicted stain images per object ─────────────┐
+   └─ masks       compartment masks from the predictions         ├─ virtual-stain store
+   └─ features    the catalogue: generic features × masks × channels, plus learned embeddings ─ features table
+        ├─ populate   gates, PCA/UMAP, clustering, galleries per population
+        ├─ label      labels for populations: stains (free), technician tags, named clusters
+        └─ report     WHO quantities as counts over labelled populations; per-sample report
+   validate    features vs IDEAS on the stained tube; cluster stability; post-hoc stains; patients
+```
 
 ## What exists
 
 | piece | state |
 |---|---|
-| Predicted stain images per object | `evaluate` returns them at native size; nothing writes them to disk yet |
-| Compartment masks from predictions | `masks` command: per-channel threshold (`rel` 0.10–0.15 of the object's own peak), scored against IDEAS masks, IoU 0.60–0.73, 87–100 % detected |
-| Population labels | `accuracy.groups_for`: sperm / round / DAPI-dim from the DAPI scalar (ISX); wells on the A8 |
-| Object selection by rule | `slides.pick`, `panel.choose`, `panel.sperm_shaped` (nucleus area, flagellum-to-nucleus distance): the first two morphology features, already in use |
-| IDEAS features for the stained tube | the `.daf` feature block (`analysis/isx_daf.py`): Area, Length, Width, Aspect Ratio, Circularity, Major/Minor axis and the rest, per channel mask, for all 20,000 objects |
-| Geometry from stains | `isx_ch03_vs_ch11` analysis: stain centroid along the head→tail axis; the measurement that fixed the channel swap |
+| Predicted stain images | `evaluate` returns them at native size; no writer yet |
+| Compartment masks | `masks`: per-channel threshold (`rel` 0.10–0.15 of the object's peak), IoU 0.60–0.73 vs IDEAS, 87–100 % detected |
+| Population labels | `accuracy.groups_for`: sperm / round / DAPI-dim by the DAPI scalar (ISX); wells on the A8; sperm-vs-PBMC AUC 0.95 on predicted CD45 (A8) |
+| Object selection by rule | `panel.sperm_shaped` (nucleus area, flagellum-to-nucleus distance), `slides.pick`: first features, already used |
+| IDEAS's own features | the `.daf` feature block (`analysis/isx_daf.py`): Area, Length, Width, Aspect Ratio, Circularity, Major/Minor axis, intensities, per channel mask, all 20,000 objects of the stained tube. Decoded intensities match IDEAS at r = 1.000 |
 | Rendering | `render`, `slides`, `panel`: galleries by rule, one display range per marker |
 
 ## Facts that shape the design
 
-1. **Tails fit the frame.** On the held-out half of the tube, the LDHC stain touches the frame
-   edge on 1 % of objects (frames are object-sized, median 80 × 64 px = 27 × 21 µm). Principal
-   piece length is therefore measurable, but a 27 µm frame holding a 45 µm tail means tails are
-   folded or coiled in these fixed cells, which is what the panels show. Whether that is
-   fixation, the flow cell, or the sample is the first thing to measure (tail length
-   distribution, straight versus coiled).
-2. **Resolution is marginal for WHO head thresholds.** WHO head width 2.5–3.5 µm is 7.5–10.5 px;
-   the thresholds that separate normal from tapered or small heads are 2–3 px apart. Sub-pixel
-   fits (ellipse to the DAPI+ACRV1 mask, not pixel counts) and calibration against IDEAS's own
-   Length/Width on the same cells are required, and head-vacuole criteria (brightfield, not a
-   stain) are probably out of reach at 0.333 µm/px.
-3. **WHO morphology is defined on smears.** Fixed, flattened, Papanicolaou-stained cells scored
-   at 1000× by eye. Cells in flow are in suspension, randomly oriented, imaged over a few µm
-   depth of field, and not flattened. The numbers will not be WHO's numbers. The aim is
-   *WHO-informed* criteria whose % normal forms tracks the andrology lab's manual result across
-   patients, not a replication of the smear protocol.
-4. **The model has only seen fixed, stained cells.** Every brightfield image it was trained on is
-   of a fixed, permeabilised, antibody-stained cell. An unstained live aliquot may look different
-   in brightfield (no fixation shrinkage, motility blur). The domain shift is the biggest risk in
-   the whole plan, and it is testable with one acquisition: the same sample run unstained.
-5. **Darkfield is required for the acrosome** (0.30 → 0.96). Brightfield-only instruments (CytPix)
-   get head (DAPI, partly), midpiece and tail, not the acrosome, so no acrosome-area criterion.
-6. **One sample so far**, split by acquisition order. Nothing population-level can be validated
-   until there are several patients with manual morphology results.
+1. **Tails fit the frame.** The LDHC stain touches the frame edge on 1 % of held-out objects
+   (frames are object-sized, median 80 × 64 px = 27 × 21 µm), so tail features are
+   computable, but a 45 µm tail in a 27 µm frame means tails are folded or coiled in these
+   fixed cells. Whether that is fixation, flow or the sample is the first measurement.
+2. **Resolution.** 0.333 µm/px at 60×. WHO head width limits (2.5–3.2 µm) are 7.5–9.6 px
+   apart; midpiece width (0.5–0.7 µm) is under 2 px and not measurable as a width. Sub-pixel
+   fits and calibration against IDEAS Length/Width on the same cells are mandatory.
+3. **60× is required for the acrosome** (our ablation: 0.30 → 0.96 with darkfield; the boar
+   data: acrosome learnable only at 60×). The bovine group chose 40× to fit whole cells; a 40×
+   acquisition is a measured trade-off for tails, not a default.
+4. **Domain shift is expected.** The model has seen only fixed, stained cells; the bovine
+   model lost 6–8 points between fresh and frozen. One unstained acquisition of the same
+   sample measures ours.
+5. **The clinical reference is noisy.** Automated morphology agrees poorly with manual
+   scoring, and manual scoring varies between technicians. Cell-level agreement of
+   measurements and population-level stability are stronger validations than matching one
+   manual percentage.
+6. **One sample so far**, split by acquisition order.
 
-## Revisions after the survey (`morphology_research.md`, Section 6)
+## 1. `predict` and the virtual-stain store
 
-- Outputs follow the WHO reporting structure: ideal/abnormal per sperm with four region flags
-  (head, neck/midpiece, tail, residual cytoplasm), % ideal, the four regional percentages, TZI
-  (1.00–4.00) with MAI and SDI as extras, free heads and free tails tallied separately, non-sperm
-  objects counted separately, and the Fig. 2.11 decision order.
-- The feature table carries the standard CASMA set with formulas stated (area, perimeter, Feret
-  length and width, L/W, rugosity, elongation, regularity, acrosome fraction, midpiece
-  length/width/insertion angle, tail length/width/curvature), so numbers can be set against WHO
-  reference values and vendor systems.
-- Midpiece width (0.6 µm, under 2 px) is not measured directly; thin/thick is proxied by TOMM20
-  mask area per unit length and brightfield darkness, and labelled as a proxy.
-- A categorical CNN classifier on technician-labelled brightfield crops (5–8 classes plus
-  "multiple" and "debris") is added beside the rule engine; it is the arm the IFC literature has
-  validated, and the vendor's Amnis AI module is run once as a baseline.
-- Validation copies the QART design: same cells, predicted versus measured versus IDEAS
-  measurements, Bland–Altman with acceptance limits from the reference's repeatability; then
-  patient-level agreement judged against the known CASMA-versus-manual noise.
-- Subpopulations: PCA on the morphometric set then clustering (expect three head
-  subpopulations) before anything novel; tail-shape clustering is flagged exploratory.
-- Gating mirrors IDEAS practice (focus, single cell, whole cell in frame, explicit debris and
-  multiple classes) and the fraction removed at each gate is reported.
-- 60× is kept (acrosome needs it, in the boar data as in our ablation); a 40× acquisition is a
-  measured trade-off for tail capture, not a default.
+Run a trained model over a `.cif`, stained or unstained, and write per object the predicted
+channels at native size, the label-free inputs, the masks, and (when present) the measured
+channels and the IDEAS masks, in the ragged cache layout so every downstream command reads
+one store. The unstained path needs `prepare` to accept a `.cif` with no stain channels.
 
-## The pipeline
+## 2. The feature engine
 
+The catalogue is deliberately generic and large, after IDEAS: nothing in it is a sperm
+defect. Features are computed for every (mask, channel) pair that makes sense, and the table
+is the hand-off to everything else.
+
+**Masks** (from `masks`, plus derived ones by the same generic operators IDEAS offers):
+nucleus (DAPI), acrosome (ACRV1), head = nucleus ∪ acrosome refined by the brightfield outline,
+midpiece (TOMM20), principal piece (LDHC/AKAP4 minus midpiece), whole tail (midpiece ∪
+principal piece), whole cell (brightfield object mask), and the skeletons of midpiece, tail
+and whole cell. Derivations are limited to threshold, erode/dilate, fill, largest component,
+skeleton, and boolean combinations, each with its parameters recorded.
+
+**Per-mask shape features** (the IDEAS and CASA-Morph sets, formulas fixed in the config):
+area, perimeter, Feret length and width (0°, 30°, …, 150°), major and minor axis of the fitted
+ellipse (sub-pixel, from moments), aspect ratio, ellipticity L/W, elongation (L − W)/(L + W),
+rugosity 4πA/P², regularity πLW/4A, circularity, compactness, thickness min/max, lobe count,
+symmetry 2/3/4, centroid, bounding box, and for skeletons: path length, end-to-end distance,
+tortuosity (path / end-to-end), maximum and mean curvature along the path, number of
+sharp bends, branch count, endpoint count, self-proximity (coiling), and the curvature profile
+resampled to a fixed number of arc-length points.
+
+**Cross-mask features:** delta centroid between any two masks (the stain-geometry measurement
+that fixed the channel swap), angle between the major axes of head and midpiece (insertion
+alignment), insertion offset of the midpiece from the head's posterior pole, acrosome area ÷
+head area, nucleus area ÷ head area, midpiece length ÷ head length, tail length ÷ head length,
+TOMM20 area ÷ midpiece skeleton length (the midpiece-thickness proxy), area of brightfield
+object outside every stain mask (cytoplasmic residue proxy).
+
+**Per-channel intensity and texture features** on each mask, for predicted and (when
+present) measured channels: integrated intensity, max pixel, mean, background, bright detail
+intensity, gradient RMS (focus), contrast, standard deviation, Haralick entropy and
+homogeneity; and between channels: similarity and bright-detail similarity.
+
+**Learned embeddings**, as further columns: the pooled bottleneck of the stems U-Net (what the
+model needed to paint the stains), and a convolutional autoencoder trained on the label-free
+crops alone (the Zhang 2023 design), each as a vector. These are the columns clustering tends
+to find structure in that engineered features miss, and the engineered columns are how such
+structure is read back.
+
+**Quality features** that later become gates: brightfield gradient RMS, object count per
+frame, number of nuclei, stain-touches-edge fraction, skeleton endpoints near the frame edge,
+and the population-from-DAPI feature (predicted DAPI area and intensity, since the DAPI scalar
+does not exist on an unstained run).
+
+The table has one row per object and the feature definitions as a versioned header. Scikit-
+image is the only new dependency.
+
+## 3. The population engine
+
+Three operations on the feature table, all producing *populations* (sets of object ids with a
+name and a provenance):
+
+- **Gates.** Thresholds and polygons on one or two features, drawn on data, saved as a
+  template and applied in batch; hierarchical, like IDEAS. The first gates are the quality
+  gates (in focus, single object, whole cell in frame, not overlapped) and the coarse
+  populations (sperm / round cells / debris / free heads / free tails), and every gate's loss
+  is reported.
+- **Reduction and clustering.** Standardise, PCA (Kaiser criterion on the engineered
+  features, the established morphometry recipe), UMAP for display, then clustering: GMM or
+  k-means for the conventional three-cluster head analysis, HDBSCAN for structure whose count
+  is unknown (tails). Run on three feature spaces separately and compared: engineered features
+  only, each embedding only, and all together.
+- **Galleries.** Every population gets a panel of its nearest-to-centre and most-peripheral
+  members drawn with the existing rendering, and a table of the features that separate it
+  from the rest (the Feature Finder idea: rank features by discriminant ratio against the
+  complement). A population without a readable gallery is not named.
+
+**Stability** is the test that a population is real: the same clustering on the two halves
+of the tube, on bootstrap resamples, and later across patients, with adjusted Rand index
+and per-cluster persistence reported. The cluster count is conventional in the literature;
+stability is what stands in for a principled choice.
+
+## 4. Labels
+
+Labels attach to populations, never to thresholds, in descending order of trust:
+
+1. **Stains**, free and objective. Measured CD45 (A8) labels leukocytes; a DAPI mask with no
+   flagellum mask is a free head; a flagellum mask with no nucleus is a free tail; two nuclei
+   in one object is an aggregate; the DAPI scalar labels round cells and debris. On a stained
+   tube these labels are the post-hoc truth for every unsupervised population, exactly as in
+   Zhang 2023; on an unstained run they are what the predicted channels reproduce.
+2. **Technician tags.** A few hundred cells per category, tagged from the ImageStream images
+   in the WHO decision order (residue → tail → midpiece → head), so that each tag is one of
+   the four regional flags. A classifier on the feature table (a shallow tree or logistic
+   model, so its thresholds are readable) learns the gate; Feature Finder-style ranking says
+   which features carried it.
+3. **Named clusters.** An unsupervised population gets a name only after gallery review, with
+   the reviewer and date recorded. These rows carry the least trust and are the ones the
+   stability test is for.
+
+A categorical CNN on technician-labelled brightfield crops (the bovine and boar design, 5–8
+classes plus "multiple" and "debris") is kept as a parallel arm, because it is the one the
+IFC literature has validated, and the vendor's Amnis AI module is run once as a baseline.
+Disagreement between the CNN and the feature-space populations is itself a finding.
+
+## 5. `report`: WHO quantities as a mapping layer
+
+The report is the WHO 6th-edition structure, read off labelled populations. Per sperm: a
+1-plus-4 record, ideal or abnormal plus the four regional flags (head, neck/midpiece, tail,
+excess residual cytoplasm). Per sample: % ideal, %H, %NM, %T, %C (summing above 100 if
+multiple entry is right), TZI = total defects ÷ abnormal sperm (1.00–4.00), MAI and SDI as
+extras, free heads and free tails tallied separately (reported when over 20 per 100), and
+non-sperm objects counted separately.
+
+**The mapping** is a versioned config with one row per population: the population, the WHO
+flag it carries, the label source (stain / technician / named cluster), the evidence (gallery
+path), the reviewer. A population can carry more than one flag; several populations can carry
+the same one. No thresholds live here, only correspondences; when the clustering changes the
+config is re-derived and the galleries re-audited.
+
+```toml
+[[map]]
+population = "tail_hdbscan_3"       # from populate
+flag       = "T"                    # H | NM | T | C
+source     = "named_cluster"        # stain | technician | named_cluster
+evidence   = "figures/populations/tail_hdbscan_3.png"
+reviewer   = "…"
+date       = 2026-11-…
+note       = "coiled > 360°, self-proximity high, tortuosity > 3"
 ```
-.cif (unstained or stained)
-   └─ predict      predicted stain images per object  ──┐      (new; evaluate + writer)
-   └─ segment      compartment masks + skeletons + QC   ├─ virtual-stain store (npz per class, like the cache)
-   └─ features     one row per object, WHO-named measurements ─ features.csv / parquet
-        ├─ who       rules → defects per sperm, % normal, TZI / SDI, galleries per defect
-        ├─ cluster   feature-space and embedding clustering, UMAP, cluster galleries
-        └─ population  sperm / round / debris counts, scatter populations, distributions, a per-sample report
-   validate       the same features from the measured stains and from IDEAS, on the stained tube
-```
 
-### 1. `predict`: virtual stains for every object
+**Decision order.** Each object passes the WHO gate first (is it a sperm; can it be
+classified: in focus, single, whole, not overlapped), and failures leave the denominator but
+enter a gate-loss table. Then the flags are read in the manual's order, residue, tail,
+midpiece, head; ideal is the absence of all four; borderline populations map to a defect
+because the manual says borderline is abnormal, which fixes the tie in a direction that
+cannot inflate the normal count.
 
-Run a trained model over a `.cif` and write, per object, the predicted channels at native
-size plus the label-free inputs it used, in the same ragged layout as the cache, so every
-downstream command reads one store. For a stained acquisition the measured channels ride
-along so validation is a column comparison. For an unstained acquisition the stain columns
-are empty and only the predictions exist. (Half of this is `evaluate`; the writer and the
-"cif without stain channels" path through `prepare` are new.)
+**Sanity check, not rule.** The manual's reference dimensions (head length 3.7–4.7 µm,
+width 2.5–3.2, L/W 1.3–1.8, acrosome 40–70 % of head area, midpiece ≈ one head length, tail ≈
+ten) are compared once with the measurements of the population mapped to ideal. A miss points
+at either a biased feature or a misnamed population, and the provenance says which.
 
-### 2. `segment`: from stain images to geometry
+**What the report states beyond the numbers:** the sample size and its sampling error (200
+sperm is the manual's minimum; 1,500 distinguishes 3 % from 5 %), the share of each flag that
+came from stains, technician gates or named clusters, and the gate losses (the bovine IFC work
+kept 24 % of events).
 
-Per object, from the four predicted channels:
+**The A8 version** has no head or tail morphology; its report is the non-morphology rows:
+sperm / leukocyte / debris from predicted CD45 and LDHC with darkfield texture, free heads and
+tails if the masks support them, non-sperm counts. That is the "other cells and specific
+defects" part of the WHO report and the part a sorter needs.
 
-- **Head** = DAPI mask ∪ ACRV1 mask, refined against the brightfield outline (the dark head
-  in brightfield is the sharpest edge we have). Ellipse fit → length, width, area, aspect
-  ratio, ellipticity residual (how un-oval), symmetry about the long axis.
-- **Acrosome** = ACRV1 mask ∩ head: area fraction of the head (WHO: 40–70 %), position on the
-  anterior pole (the geometry already measured: centroid 0.8 µm ahead of the nucleus).
-- **Midpiece** = TOMM20 mask: skeleton length, mean width, straightness, angle between its axis
-  and the head's long axis (axial insertion), insertion offset from the head's posterior pole,
-  excess area beside the axis (cytoplasmic droplet proxy; brightfield can confirm).
-- **Principal piece** = LDHC/AKAP4 mask minus the midpiece: skeleton path (`skimage.morphology.
-  skeletonize` + longest-path), length, width profile, number of branches (double tails),
-  breaks (components), curvature along the path, tortuosity (path length / end-to-end
-  distance), coiled flag (path self-proximity), sharp-bend count.
-- **QC flags**: in frame, single object (one nucleus), in focus (brightfield gradient energy),
-  tail complete (path ends away from the frame edge), population (sperm / round / debris by
-  predicted DAPI area and intensity, since the DAPI *scalar* will not exist on an unstained run).
+## 6. Validation, in the order it can be done
 
-Mask thresholds come from `masks.py` (already calibrated against IDEAS). Skeletons and fits
-are scikit-image / numpy; no new dependency beyond scikit-image, which `requirements.txt`
-does not yet list.
-
-### 3. `features`: one row per object
-
-A flat table with QC flags, population, and every measurement above in µm, plus the
-intensity sums already used for event r. Also IDEAS-style descriptors (Area, Major/Minor
-axis, Circularity, Aspect Ratio) computed the same way IDEAS defines them, so that on a
-stained tube the predicted-mask features can be set against the `.daf`'s own columns
-cell by cell. This table is the hand-off point: everything after it is statistics.
-
-### 4. `who`: rules, defects, indices
-
-A TOML config (`configs/morphology/who6.toml`) holding thresholds per criterion, with the
-WHO 6th-edition strict values as the starting point and each threshold marked as
-"calibrated" once it has been set against manual scores:
-
-- head: length, width, length/width ratio, ellipticity residual, acrosome fraction, amorphous
-  (residual above threshold), tapered, pyriform (width asymmetry front/back), round, small
-- midpiece: length relative to head, width, bent (angle), asymmetric insertion (offset),
-  thick / thin, residual cytoplasm
-- principal piece: short (length < k × head length), coiled, bent (sharp-bend count),
-  irregular width, double, broken
-- outputs per sperm: a defect list; per sample: % normal forms, defect prevalences,
-  **TZI** (defects per abnormal sperm) and **SDI** (defects per sperm, Aziz), plus a
-  gallery per defect class drawn by `panel`-style rendering so a technician can audit each
-  rule on real cells.
-
-Calibration needs manual WHO scoring of the same samples (the lab's routine result, and ideally
-a few hundred cells scored by a technician from the ImageStream brightfield images themselves,
-so that the rule set is tuned to what the instrument shows rather than to a smear).
-
-### 5. `cluster`: unsupervised structure, tails first
-
-Two feature spaces, both worth trying:
-
-- **Measured features**: the `features` rows (standardised) → UMAP → HDBSCAN. Interpretable;
-  clusters are described by which features separate them.
-- **Shape descriptors of the tail skeleton**: curvature sampled along the arc length (resampled
-  to a fixed number of points), or elliptic Fourier descriptors of the path, rotation- and
-  scale-normalised. This is the direct answer to "unsupervised clustering of tail morphology":
-  straight, hooked, coiled, hairpin, double emerge as clusters without naming them first.
-- **Encoder embeddings**: the stems U-Net bottleneck already encodes what the model needed to
-  paint the tail; pooled bottleneck vectors cluster for free and can be compared with the
-  feature-space clusters.
-
-Each cluster gets a gallery (the same rendering as the panels) and a feature summary. Stability
-across the two halves of the tube and across patients is the test that a cluster is real.
-
-### 6. `population`: the sample report
-
-Per acquisition: object counts by population (sperm / round cells / debris; on the A8 also
-CD45-positive leukocytes), % normal forms with the WHO rule set, defect prevalences, TZI/SDI,
-feature distributions (head length, tail length, tortuosity), a darkfield-versus-DAPI (ISX) or
-FSC-versus-SSC (A8) scatter coloured by predicted marker sums, which is the "population
-scatter" of the goals list, and the cluster composition. One HTML or PDF per sample, and a CSV
-row per sample for cross-patient comparison.
-
-## Validation, in the order it can be done
-
-1. **Now, on the stained tube** (no new data): features from predicted masks versus features
-   from measured masks versus IDEAS's `.daf` columns, cell by cell. Per-feature r and bias.
-   This says which measurements survive virtual staining at 60× and which do not (expect head
-   length and tail length to be fine, head width and midpiece width marginal).
-2. **Now**: tail length and coiling distribution on the stained tube, to decide whether the
-   fixed cells' tails are usable for principal-piece criteria at all.
-3. **One acquisition**: the same ejaculate unstained (and unstained-but-fixed, to separate
-   fixation from staining). Compare the feature distributions from predicted masks between
-   stained and unstained runs. If they match, the domain-shift risk is retired; if not, the
-   model needs unstained brightfield in training (a self-supervised or paired-aliquot scheme).
-4. **Several patients with manual morphology**: % normal forms and TZI from the pipeline
-   against the lab's manual result; the rule thresholds are calibrated here, on half the
-   patients, and tested on the other half. This is the clinical claim and it cannot be made
-   from one sample.
-5. **Technician audit** of defect galleries: precision of each rule on a few hundred cells.
+1. **Now, feature against feature.** On the stained tube, every feature the catalogue shares
+   with IDEAS, computed on predicted masks, against the `.daf` value on the real masks, cell
+   by cell: Bland–Altman with acceptance limits from the reference's own repeatability (the
+   QART design), per feature. This says which measurements survive virtual staining at 60×.
+2. **Now, the conventional result.** PCA plus clustering on the head features should give
+   three subpopulations of roughly a third each, as in every human morphometry paper. If it
+   does not, something upstream is wrong before anything new is claimed.
+3. **Now, post-hoc stains.** Unsupervised populations on label-free features scored against
+   the stain-derived labels (round cells, free heads, aggregates; on the A8, leukocytes): the
+   balanced accuracy Zhang reported for blood cells is the comparator.
+4. **Now, stability.** Tube halves and bootstraps.
+5. **One acquisition.** The same sample unstained (and unstained-but-fixed): feature
+   distributions and population proportions against the stained run. This retires or
+   confirms the domain-shift risk; the fix if it fails is training on unstained brightfield.
+6. **Patients.** Ten normospermic and ten teratozoospermic ejaculates with manual morphology on
+   record: % ideal and TZI from the report against the lab's numbers, judged against the
+   known spread between technicians, and population proportions across patients.
+7. **Technician audit** of every mapped population's gallery.
 
 ## Data to acquire
 
-- The same sample unstained, on the ImageStream (step 3 above). This is the single most
-  informative acquisition available.
-- A tail-capture test: the same sample at 40× (0.5 µm/px, wider frame) versus 60×, to see
-  whether coiling is real or a frame effect, and whether 40× keeps the acrosome.
-- Patients: normospermic and teratozoospermic ejaculates with routine semen analysis and
-  manual morphology on record; ten of each is the minimum for calibrating and testing rules.
-- A few hundred ImageStream brightfield images scored by a technician into WHO categories.
+- The same sample unstained on the ImageStream (step 5): the single most informative run.
+- The same sample at 40× and 60×, to settle coiling versus frame and acrosome loss.
+- Patients with routine semen analysis and manual morphology on record.
+- A few hundred ImageStream images tagged by a technician in the WHO decision order.
 
 ## Risks, ranked
 
 1. Domain shift from fixed-stained to unstained cells (testable with one run).
-2. Fixed cells' tails coiled, so principal-piece criteria measure fixation, not the sperm.
-3. Resolution at the head: WHO width thresholds are 2–3 px apart; vacuoles likely unmeasurable.
-4. WHO numbers will not transfer; the deliverable is agreement with manual scoring across
-   patients, which needs patients.
+2. Clusters that are artefacts of fixation, focus or flow orientation rather than biology;
+   stability and the post-hoc stains are the defence.
+3. Resolution at the head and midpiece; vacuoles and midpiece width are probably out of reach.
+4. Cluster naming is judgement; galleries and recorded provenance are the only control.
 5. n = 1 for everything so far.
 
 ## Build order
 
-1. `predict` + the store (a day): unblocks everything, including the unstained run.
-2. `segment` + `features` on the stained tube, with the predicted-versus-measured-versus-IDEAS
-   comparison (validation step 1) as the first result.
-3. `who` with uncalibrated WHO thresholds and defect galleries, so the lab can react to real
-   cells before any calibration data exists.
-4. `cluster` on tails.
-5. `population` report, then the A8 version (sperm / leukocyte / debris counts and the FSC–SSC
-   scatter; no morphology there beyond head and tail presence).
+1. `predict` and the store (unblocks everything, including the unstained run).
+2. The feature engine on the stained tube, with validation step 1 as its first result.
+3. `populate` with galleries and stability; validation steps 2–4.
+4. `label` and `report` with the mapping config; the conventional three-cluster head result and
+   the stain-derived rows first, technician tags when they exist.
+5. The autoencoder embedding and the CNN arm.
+6. The unstained acquisition, then patients.
