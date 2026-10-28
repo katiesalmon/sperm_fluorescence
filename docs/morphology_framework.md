@@ -118,7 +118,7 @@ homogeneity; and between channels: similarity and bright-detail similarity.
 
 **Learned embeddings**, as further columns: the pooled bottleneck of the stems U-Net (what the
 model needed to paint the stains), and a convolutional autoencoder trained on the label-free
-crops alone (the Zhang 2023 design), each as a vector. These are the columns clustering tends
+crops alone, each as a vector. These are the columns clustering tends
 to find structure in that engineered features miss, and the engineered columns are how such
 structure is read back.
 
@@ -193,8 +193,7 @@ Labels attach to populations, never to thresholds, in descending order of trust:
 1. **Stains**, free and objective. Measured CD45 (A8) labels leukocytes; a DAPI mask with no
    flagellum mask is a free head; a flagellum mask with no nucleus is a free tail; two nuclei
    in one object is an aggregate; the DAPI scalar labels round cells and debris. On a stained
-   tube these labels are the post-hoc truth for every unsupervised population, exactly as in
-   Zhang 2023; on an unstained run they are what the predicted channels reproduce.
+   tube these labels are the post-hoc truth for every unsupervised population; on an unstained run they are what the predicted channels reproduce.
 2. **Technician tags.** A few hundred cells per category, tagged from the ImageStream images
    in the WHO decision order (residue → tail → midpiece → head), so that each tag is one of
    the four regional flags. A classifier on the feature table (a shallow tree or logistic
@@ -267,8 +266,8 @@ defects" part of the WHO report and the part a sorter needs.
    three subpopulations of roughly a third each, as in every human morphometry paper. If it
    does not, something upstream is wrong before anything new is claimed.
 3. **Now, post-hoc stains.** Unsupervised populations on label-free features scored against
-   the stain-derived labels (round cells, free heads, aggregates; on the A8, leukocytes): the
-   balanced accuracy Zhang reported for blood cells is the comparator.
+   the stain-derived labels (round cells, free heads, aggregates; on the A8, leukocytes), as
+   balanced accuracy and adjusted Rand index.
 4. **Now, stability.** Tube halves and bootstraps.
 5. **One acquisition.** The same sample unstained (and unstained-but-fixed): feature
    distributions and population proportions against the stained run. This retires or
