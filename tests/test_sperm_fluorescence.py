@@ -138,7 +138,7 @@ def test_feature_engine_on_a_drawn_sperm():
     assert row["pred.DAPI.nucleus.frac_in_mask"] > 0.9
     qc = qc_features(M, K, row, valid); assert qc["n_nuclei"] == 1 and qc["n_objects"] == 1
     assert all(c in docs for c in row)
-    assert row["preds.along.DAPI_TOMM20"] > 2.0 and row["preds.along.TOMM20_LDHC/AKAP4"] > 0   # DAPI, then midpiece, then tail along the axis
+    assert row["preds.along.DAPI_TOMM20"] > 2.0 and row["preds.along.TOMM20_LDHC_AKAP4"] > 0   # DAPI, then midpiece, then tail along the axis
 
 
 
