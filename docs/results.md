@@ -467,6 +467,43 @@ the ImageStream reads like the A8 one level up: stained versus not, then tail co
 with the large non-sperm bodies that the "stained" gate admits as a third group that a sperm
 gate would remove.
 
+### Compartment measurements from virtual stains agree with the measured stains (2026-10-28)
+
+*The evidence for "compartment morphology from virtual fluorescence", as the abstract will
+state it: the same measurement on the same cell from the virtual and the measured stain.
+`analysis/compartment_agreement.py`; figures `isx_compartment_agreement_moments.png`,
+`isx_compartment_agreement_masks_rule.png`, `a8_compartment_agreement_moments_sperm.png`.*
+
+Three measurement decisions mattered more than the model. (1) **Masks compared like with
+like.** The first comparison set our threshold masks against the instrument's masks and
+read r 0.78–0.86 with a 1 µm bias on head dimensions; with the same threshold rule on both
+sides (`features --reference rule`) nucleus length and width reach **r 0.92 / 0.93, bias
+±0.05 µm**, head 0.90 / 0.93, nucleus-to-midpiece distance 0.92, flagellum path 0.82. Most
+of the original disagreement was the mask definition. (2) **Threshold-free moments.**
+Intensity-weighted spreads along and across each compartment's own axis and the fraction
+of intensity within a radius of its centroid use every pixel and no boundary: on the
+ImageStream, nucleus σ r 0.86 / 0.86 (bias 0.03 µm), midpiece σ **0.96**, flagellum σ
+**0.96**, within-radius fractions 0.92–0.94, acrosome 0.71–0.76. (3) **Noise floor and
+region.** Moments are taken above each channel's noise floor (median + 3 MAD) and within
+the brightfield object dilated by 3 µm, the same region on both sides. On the ImageStream
+this changes little; on the A8 it is the difference between nonsense and a result: the
+A8's measured stains carry noise and diffuse signal across the wide strip (only 39–72 % of
+clipped measured intensity is above the noise floor, against 81–91 % on the ImageStream),
+and frame-wide moments read 11–14 µm spreads, the size of the frame.
+
+A8, 370 sperm, within the cell region: flagellum σ across **0.89** (bias 0.04 µm),
+flagellum anisotropy 0.73, acrosome σ along 0.74 (bias 0.02), flagellum σ along 0.65
+(virtual tail 1.1 µm longer), acrosome within 2 µm 0.50, acrosome σ across 0.35; CD45 on
+sperm is a null by construction. So the ImageStream supports compartment morphology at
+r 0.86–0.96 with sub-micron bias on nucleus, midpiece and flagellum; the A8 supports tail
+calibre and acrosome extent, not head width, which is the instruments' resolution gap and
+matches their stain-prediction gap.
+
+The one compartment that lags on both instruments is the acrosome: the virtual ACRV1 is
+more compact than the measured one (ImageStream r 0.71–0.76; A8 0.35–0.74). It is the
+dimmest stain and the one that needs darkfield, so this is a model limitation to state,
+not a measurement artefact.
+
 ### The same pipeline on the A8 (2026-10-28)
 
 *`predict` with `runs/srv_a8_stems` (the 40-epoch model) on the laptop's held-out sample
