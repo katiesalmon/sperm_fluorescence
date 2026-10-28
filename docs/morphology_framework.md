@@ -139,7 +139,12 @@ is a line of text in the summary, never code.
 First result (results.md, 2026-10-28): clustering on all 465 features at once agrees with
 the measured-side clustering at ARI 0.77 and separates sperm with extended tails, sperm with
 folded tails, and everything else; the head and tail sets alone reach 0.18 and 0.44. Use
-`--set all` by default and the named sets to read a result, not to find it.
+`--set all` by default and the named sets to read a result, not to find it. Then the
+intensity set alone (37 columns) reached 0.81–0.89: finding populations is first an
+intensity question, and the 360 mask-geometry columns dilute it. The order that follows:
+cluster on intensity (and similarity) to find the populations, then on shape within a
+population to describe it; and weight or select columns rather than letting the count of
+shape features set the metric.
 
 Three operations on the feature table, all producing *populations* (sets of object ids with a
 name and a provenance):

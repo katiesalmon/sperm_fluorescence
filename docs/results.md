@@ -274,6 +274,24 @@ similarity between predicted channels (the sperm pattern has DAPI, TOMM20 and LD
 distinct places; on a round cell they all paint the same blob, r ≈ 0.99), the texture of
 the predicted channels, and tail skeleton length, which no single set carries.
 
+**And intensity alone beats everything** (`runs/pop_isx_intensity_k3`; the 37 columns of
+predicted-channel sums, maxima, means and mask fractions in the cell, the twelve channel
+similarities, and the input intensities). Agreement with the measured side: **ARI 0.89 at
+k = 2, 0.81 at k = 3, 0.86 at k = 4**, against 0.45–0.56 for the 235 shape columns and
+0.49–0.77 for all 465 together; stability 0.93–0.98. The three intensity clusters are
+sperm (1,308: median measured DAPI 75,500, LDHC 4,940, nucleus 7.8 µm; the galleries show
+sperm with tails), unstained objects (1,805: DAPI 13,200, LDHC 257) and very bright bodies
+(498: DAPI 222,000, three times a sperm's, LDHC 7,540: aggregates and bright round
+objects). 91 % of objects fall on the diagonal against the measured-side clustering.
+
+Why: the question "is this a sperm" is first a question of how much of each marker the
+object carries and whether the markers sit in different places (the channel similarities),
+and the predicted intensities answer it at event r 0.93–0.98. The shape columns outnumber
+the intensity ones six to one, and because the masks are cut at a fraction of each object's
+own peak they are blind to absolute intensity and every object gets one; in the combined
+space they dilute the signal. Shape earns its place only after the sperm are found
+(the extended-versus-folded tail split), and even then from a few skeleton columns.
+
 So the dominant structure in the label-free features is "carries the stain
 pattern of a sperm or not", then "tail extended or folded", and the measured stains agree
 on both. Finer morphological subpopulations are not yet reproducible between the two sides,
