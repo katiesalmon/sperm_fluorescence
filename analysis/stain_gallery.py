@@ -21,6 +21,7 @@ def main(argv=None):
     ap.add_argument("--names", nargs="*", default=[], help="cluster=name"); ap.add_argument("--title", default=None)
     ap.add_argument("--order", default="centre", choices=["centre", "random"], help="members from the cluster centre outward, or a random draw")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--measured", action="store_true", help="draw the MEASURED stains (from the cache) instead of the virtual ones; the clusters are unchanged")
     a = ap.parse_args(argv)
     import pandas as pd
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -37,7 +38,11 @@ def main(argv=None):
     t = t[t["gate.passed"]].reset_index(drop=True); pcs = [c for c in t.columns if c.startswith("pc") and c[2:].isdigit()]
     ks = sorted(c for c in t["cluster"].unique() if c >= 0); per = a.cols * a.rows; rng = np.random.default_rng(a.seed)
     sample = t["id.index"].to_numpy()[:: max(1, len(t) // 300)]
-    hi = [max(float(np.percentile(np.concatenate([np.clip(st.item(int(i))[0][k][st.item(int(i))[2] > 0], 0, None) for i in sample]), 99.5)), 1e-4) for k in range(st.cout)]
+    def stain_of(i):
+        if a.measured:
+            _, y, mm = ds.item(int(i)); return y, mm
+        p, _, mm, _ = st.item(int(i)); return p, mm
+    hi = [max(float(np.percentile(np.concatenate([np.clip(stain_of(i)[0][k][stain_of(i)[1] > 0], 0, None) for i in sample]), 99.5)), 1e-4) for k in range(st.cout)]
     legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
     colours = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#8e5bd6"]
     import textwrap
@@ -45,7 +50,7 @@ def main(argv=None):
     what = s["set"] if not s.get("pixels") else "pixels"
     header = "%d of %d objects after gates: %s  ·  features: %s (%d columns, %d PCs)  ·  %s, k = %d  ·  run %s" % (
         len(t), s["n"], gates, what, len(s["columns"]), s["pca"]["n_components"], s["method"], s["k"], os.path.basename(a.run.rstrip("/")))
-    lines = textwrap.wrap(header, int(11 * a.cols)) + ["virtual stains only: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % (legend, a.store, ",".join(st.classes))]
+    lines = textwrap.wrap(header, int(11 * a.cols)) + ["%s: %s  ·  one display range per marker across the figure  ·  store %s, classes %s" % ("MEASURED (true) stains" if a.measured else "virtual stains only", legend, a.store, ",".join(st.classes))]
     head_in = 0.55 + 0.16 * len(lines)
     fig = plt.figure(figsize=(0.62 * a.cols + 0.3, (0.62 * a.rows + 0.55) * len(ks) + head_in + 0.3), facecolor="white")
     outer = gridspec.GridSpec(len(ks), 1, figure=fig, hspace=0.18, left=0.01, right=0.99, top=1 - (head_in + 0.25) / fig.get_figheight(), bottom=0.01)
@@ -60,7 +65,7 @@ def main(argv=None):
         for j in range(per):
             ax = fig.add_subplot(inner[j // a.cols, j % a.cols]); ax.set_xticks([]); ax.set_yticks([])
             if j >= len(members): ax.axis("off"); continue
-            i = int(members[j]); x, y, m = ds.item(i); p, pm, _, _ = st.item(i)
+            i = int(members[j]); x, y, m = ds.item(i); p, _ = stain_of(i)
             _, _, _, pw = window(x, y, m, p, a.size)
             ax.imshow(render.composite([render.colorize(np.clip(pw[k], 0, None), render.color_for(st.names[k], k), 0, hi[k]) for k in range(st.cout)]), interpolation="nearest")
             for sp in ax.spines.values(): sp.set_edgecolor("#333333"); sp.set_linewidth(0.3)
