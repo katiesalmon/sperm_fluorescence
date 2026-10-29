@@ -82,5 +82,5 @@ unstained spermatozoa from whole ejaculate at cytometer throughput for downstrea
   isolates the leukocytes); this abstract rests on the feature path only.
 - Sort-rate latency of U-Net plus features has not been measured; the last sentence of the
   conclusions says so.
-- Length ≈ 3,700 characters with spaces; the mixed-well and pilot sentences are the first to
+- Length ≈ 4,000 characters with spaces (body, headings excluded); the mixed-well and pilot sentences are the first to
   cut if the AUA limit bites.
