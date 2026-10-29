@@ -656,6 +656,30 @@ measured k-means put with the sperm for want of CD45. So of the 571 well contrad
 are the wells, about 16 are doublets, and about 21 are the measured truth's ambiguity rather
 than the label-free clustering's.
 
+**The 774 disagreements, in pictures** (`runs/pop_srv_a8_feat_k2_disagree`, six groups by well
+and direction; `figures/srv_a8_pop_feat_k2_disagree{,_lightloss,_ssc,_measured}.png`, server run
+of 2026-10-29 16:23). Read across the three views the groups sort into three kinds:
+
+- *Dim measured stains, label-free right* (groups 0, 3 and most of 4 and 5; ≈ 600 objects). The
+  247 PBMC-well objects the measured side calls sperm are round ring-shaped bodies in light
+  loss, the leukocyte appearance, whose measured CD45 is faint, a dim smudge in a noisy frame;
+  the measured k-means put them with the sperm for want of CD45. The 159 sperm-well objects it
+  calls leukocytes are compact dark heads in light loss with a bright predicted ACRV1 cap and a
+  measured stain that is mostly noise: sperm whose LDHC/AKAP4 did not stain or whose tail left
+  the frame. The mixed-well groups repeat both patterns.
+- *Doublets* (group 1 and part of 4 and 5; a few dozen). A CD45-bright body with a sperm head
+  or tail attached, in both stain images; each side picks a different member of the pair.
+- *LDHC-positive round cells* (group 2, 21 objects, all from the sperm well). Bright, round,
+  measured LDHC/AKAP4 with no CD45 and a ring-shaped light-loss image: round germ cells
+  (LDHC is a germ-cell enzyme, expressed from the spermatocyte on). The measured side calls
+  them sperm by stain, the label-free side not-sperm by shape; for a sort toward ICSI the
+  label-free call is the useful one.
+
+So the measured-stain truth is the weaker party in most of the 1.3 %: its failure mode is dim
+staining, which the label-free side, reading shape from light loss, does not share. The
+apples-to-apples measured side (`--measured-inputs`, stains plus the same light-loss and
+scatter columns) is still to be run on the server; this zip was a galleries-only pass.
+
 **Galleries with the label-free inputs need the server's store.** The 60,000-object store (12 GB)
 stays on the server, so light-loss and side-scatter galleries of these clusters are drawn there:
 `server_populations.ps1 -GalleriesOnly` redraws, for every `runs\pop_srv_a8_*`, the virtual-stain,
