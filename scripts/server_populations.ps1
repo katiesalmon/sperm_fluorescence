@@ -60,6 +60,19 @@ foreach ($k in 2, 3, 4) {
     if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k $k --no-gates --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k$k" }
     Draw-Galleries "runs\pop_srv_a8_feat_k$k" "A8, full held-out replicate, k = $k on all features" "figures\srv_a8_pop_feat_k$k"
 }
+# the objects the k = 2 clustering places against their well, split by what the measured stains say (sperm carried into the
+# PBMC preparation, leukocytes in the ejaculate, and the genuinely misassigned); drawn in the same four views
+$mis = "runs\pop_srv_a8_feat_k2_misplaced"
+& $py analysis\subset_run.py "runs\pop_srv_a8_feat_k2" --out $mis `
+    --group "PBMC well, sperm cluster, sperm by measured stains=``id.class`` == '3P' and cluster == 1 and measured_cluster == 1" `
+    --group "PBMC well, sperm cluster, leukocyte by measured stains=``id.class`` == '3P' and cluster == 1 and measured_cluster == 0" `
+    --group "sperm well, leukocyte cluster, leukocyte by measured stains=``id.class`` == '3S' and cluster == 0 and measured_cluster == 0" `
+    --group "sperm well, leukocyte cluster, sperm by measured stains=``id.class`` == '3S' and cluster == 0 and measured_cluster == 1"
+$misNames = @("0=PBMC well -> sperm cluster: sperm by measured stains", "1=PBMC well -> sperm cluster: leukocyte by measured stains", "2=sperm well -> leukocyte cluster: leukocyte by measured stains", "3=sperm well -> leukocyte cluster: sperm by measured stains")
+foreach ($v in @(@("", ""), @("--input", "lightloss"), @("--input", "ssc"), @("--measured", ""))) {
+    $suffix = if ($v[1]) { "_$($v[1])" } elseif ($v[0]) { "_measured" } else { "" }
+    & $py analysis\stain_gallery.py $mis --store $store --rows 4 $v[0] $v[1] --names $misNames --title "A8, full held-out replicate, k = 2: objects placed against their well$suffix" --out "figures\srv_a8_pop_feat_k2_misplaced$suffix.png"
+}
 & $py analysis\compare_galleries.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_latent_k2" --store $store --labels "features" "latent" --title "A8, full held-out replicate, k = 2: features versus autoencoder latent" --out "figures\srv_a8_pop_feature_vs_latent_k2.png"
 # the sperm cluster is cluster 1 of the feature k = 2 run (the larger one; the 2026-10-29 run used the latent k = 2 cluster 0, which at 60,000 objects was not the sperm)
 if (-not $GalleriesOnly) { & $py analysis\compartment_agreement.py $feat --within "runs\pop_srv_a8_feat_k2\populations.csv:1" --prefixes preds refs --measures LDHC_AKAP4.sigma_major_um LDHC_AKAP4.sigma_minor_um LDHC_AKAP4.anisotropy ACRV1.sigma_major_um ACRV1.within_2um CD45.sigma_major_um --title "A8, full held-out replicate: compartment measurements, virtual against measured (sperm cluster)" --out "figures\srv_a8_pop_compartment_agreement.png" }
