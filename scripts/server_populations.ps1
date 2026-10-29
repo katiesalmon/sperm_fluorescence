@@ -50,7 +50,8 @@ foreach ($k in 2, 3, 4) {
     & $py analysis\stain_gallery.py "runs\pop_srv_a8_feat_k$k" --store $store --rows 6 --title "A8, full held-out replicate, k = $k on all features" --out "figures\srv_a8_pop_feat_k$k.png"
 }
 & $py analysis\compare_galleries.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_latent_k2" --store $store --labels "features" "latent" --title "A8, full held-out replicate, k = 2: features versus autoencoder latent" --out "figures\srv_a8_pop_feature_vs_latent_k2.png"
-& $py analysis\compartment_agreement.py $feat --within "runs\pop_srv_a8_latent_k2\populations.csv:0" --prefixes preds refs --measures LDHC_AKAP4.sigma_major_um LDHC_AKAP4.sigma_minor_um LDHC_AKAP4.anisotropy ACRV1.sigma_major_um ACRV1.within_2um CD45.sigma_major_um --title "A8, full held-out replicate: compartment measurements, virtual against measured (sperm cluster)" --out "figures\srv_a8_pop_compartment_agreement.png"
+# the sperm cluster is cluster 1 of the feature k = 2 run (the larger one; the 2026-10-29 run used the latent k = 2 cluster 0, which at 60,000 objects was not the sperm)
+& $py analysis\compartment_agreement.py $feat --within "runs\pop_srv_a8_feat_k2\populations.csv:1" --prefixes preds refs --measures LDHC_AKAP4.sigma_major_um LDHC_AKAP4.sigma_minor_um LDHC_AKAP4.anisotropy ACRV1.sigma_major_um ACRV1.within_2um CD45.sigma_major_um --title "A8, full held-out replicate: compartment measurements, virtual against measured (sperm cluster)" --out "figures\srv_a8_pop_compartment_agreement.png"
 
 # ---- zip: populations, summaries, embeddings, figures (features.csv only with -WithFeatures)
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"; $zip = "server_populations_$stamp.zip"

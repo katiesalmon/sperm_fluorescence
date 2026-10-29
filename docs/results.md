@@ -545,6 +545,79 @@ same body.
 600 objects is the laptop sample; the full held-out replicate (60,000) is on the server
 (`predict` then `features` there, `docs/server-setup.md`).
 
+### The A8 populations at full scale: 60,000 objects on the server (2026-10-29)
+
+*`scripts/server_populations.ps1` at commit 46a6f0c: `predict` with the 40-epoch stems model on
+the whole held-out replicate (3S, 3P, 3SP, 20,000 objects each, TTA) → `data\server_cache\
+a8_vstain`; `features` (358 label-free columns, aligned stacks); autoencoder (latent 16, 60
+epochs) trained on the training replicate's stacks and applied; `populate` on all features at
+k = 2..4 and on the latent at k = 2..5, no gates. Brought back as
+`server_populations_20261029_0336.zip` → `runs/pop_srv_a8_*`, `figures/srv_a8_pop_*`
+(`scripts/unpack_results.py`). The zip carries populations, summaries, embeddings and figures
+but not features.csv (`-WithFeatures` would), so anything below that needs the feature table
+was computed on the server; the halves check was recomputed here from the saved PC scores.*
+
+**k = 2 on all features reproduces the laptop result at 100× the objects** (`runs/
+pop_srv_a8_feat_k2`; 20 PCs, 68 % of variance): 36,874 sperm, 23,126 leukocytes.
+
+| | PBMC well | sperm well | mixed well |
+|---|---:|---:|---:|
+| leukocyte cluster | 19,491 | 62 | 3,573 |
+| sperm cluster | 509 | 19,938 | 16,427 |
+
+ARI against the two pure wells 0.94, Hungarian balanced accuracy 0.986 (recalls 0.975 PBMC,
+0.997 sperm). The off-diagonal cells are mostly the wells, not the clustering: of the 509
+PBMC-well objects in the sperm cluster, 493 are sperm by the measured-side clustering (the
+laptop's "one misplaced PBMC" was the first of these, sperm carried into the PBMC preparation),
+and of the 62 sperm-well objects in the leukocyte cluster, 41 are leukocytes by the measured
+side. Scored against the measured-side clustering instead of the wells the label-free clusters
+agree on 98.7 % of objects (59,226 of 60,000; 98.7 % in the PBMC well, 99.1 % sperm well,
+98.4 % mixed well), ARI 0.95. In the mixed well the measured side finds 3,626 leukocytes; 3,434
+(94.7 %) land in the leukocyte cluster and 139 of the 16,374 measured sperm (0.8 %) go with
+them. Bootstrap ARI 0.9999 (ten resamples). Discriminators are the same as on the laptop:
+minor axis, minimum Feret and thickness of the predicted head / acrosome / CD45 masks, 9.4 vs
+3.9 µm.
+
+**k = 3 splits the sperm by tail configuration and leaves the leukocytes alone** (`runs/
+pop_srv_a8_feat_k3`, `figures/srv_a8_pop_feat_k3.png`): leukocytes 23,070 (76 objects moved),
+sperm 19,201 with straight tails (tail minimum Feret 3.5 vs 8.4 µm) and 17,729 looped or folded
+(brighter, more compact LDHC/AKAP4). Within the pure sperm well the split is 10,574 / 9,369.
+Bootstrap ARI 0.996. The measured-side k = 3 agrees at ARI 0.70: it keeps the leukocytes and the
+straight-tail group (17,877 of 19,201) but divides the looped group differently (11,636 /
+5,987). At k = 4 the leukocytes split into a CD45-bright group (8,026) and the rest (15,070),
+bootstrap 0.995.
+
+**The halves check was confounded by well order, now fixed.** `stability()` split the objects
+at the median of the store index, which is well-ordered (all of 3P, then 3S, then 3SP), so one
+"half" held 20,000 PBMCs and 10,000 sperm and the other 10,000 sperm and the mixed well. Fitting
+k = 2 on the second (13 % leukocytes) split the sperm instead, halves ARI 0.35 against 1.00 by
+bootstrap; on the laptop's 200/200/200 sample the same split happened to work. `halves_order`
+now ranks objects within each class so both halves hold the first and second half of every well,
+and `cluster_validation.py` uses it too. Recomputed on the saved PC scores: k = 2 halves ARI
+1.000 / 1.000, k = 3 0.991 / 0.991, k = 4 0.990 / 0.989. The laptop k = 2 run is unchanged at
+1.00 / 1.00.
+
+**The autoencoder latent does not reproduce at this scale** (`runs/pop_srv_a8_latent_k*`; the
+encoder was trained on the training replicate's stacks, not on the held-out objects as on the
+laptop). GMM at k = 2 on the 16-d latent splits 33,175 / 26,825 along something other than cell
+type: each cluster holds ~40–60 % of every well (ARI vs wells 0.04, measured side 0.01), and
+nine of ten bootstrap refits disagree with it (mean 0.14; one refit found the 0.99 solution). At
+k = 3 the leukocytes come out as one cluster, 19,447 of 20,000 PBMC-well objects with 3,490 of
+the mixed well, bootstrap 0.996, and the sperm split 24,189 / 12,837 (ARI vs wells 0.72 because
+of that split; measured side 0.59). At k = 4 and 5 the leukocytes divide into two groups
+(11,774 + 7,681 PBMC-well) and the bootstrap drops to 0.86. So the latent carries the
+leukocyte/sperm distinction but not as its first axis of variance, where the feature space has it
+as PC1; the feature path is the one the clustering abstract rests on, and the Kruger/latent
+abstract needs either a contrastive objective or the features' guidance before it is written.
+
+**The compartment-agreement figure in this zip is not a sperm-only figure.** The script took
+"sperm" to be cluster 0 of the latent k = 2 run, which at this scale is the mixed 33,175-object
+cluster above, so `figures/srv_a8_pop_compartment_agreement.png` (LDHC σ along r 0.80,
+σ across 0.77, anisotropy 0.76, ACRV1 within-2 µm 0.71, CD45 σ 0.13) mixes leukocytes into
+every row. The script now uses cluster 1 of the feature k = 2 run; the figure needs the server's
+features.csv, so it is rerun there (the compartment-agreement line of `server_populations.ps1`
+alone, or the whole script).
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing

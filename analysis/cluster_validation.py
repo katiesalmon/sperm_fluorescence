@@ -21,7 +21,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sperm_fluorescence.population.engine import CLIP, SETS, select_columns, standardise, reduce_pca  # noqa: E402
+from sperm_fluorescence.population.engine import CLIP, SETS, select_columns, standardise, reduce_pca, halves_order  # noqa: E402
 
 
 def fit(scores, k, seed):
@@ -69,7 +69,7 @@ def main(argv=None):
         Z = PCA(n_components=min(a.components, X.shape[1]), random_state=a.seed).fit_transform(X); Z = Z / (Z.std(0) + 1e-6); what = "autoencoder latent (%d-d)" % E.shape[1]
     else:
         cols, _ = select_columns(df, SETS[a.set], 0.3); Zs, _, _ = standardise(df[cols].to_numpy(float)); Z, _ = reduce_pca(Zs); what = "%s features (%d columns)" % (a.set, len(cols))
-    order = df["id.index"].to_numpy(float); half = order < np.median(order)
+    order = halves_order(df); half = order < np.median(order)      # first / second half of every well
     ks = [int(v) for v in a.ks.split(",")]; R = {}
     for k in ks:
         lab, model = fit(Z, k, a.seed)

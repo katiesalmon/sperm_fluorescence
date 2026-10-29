@@ -136,8 +136,21 @@ def assign(model, scores, method):
     return KNeighborsClassifier(n_neighbors=min(15, ok.sum())).fit(model._fit_X[ok], lab[ok]).predict(scores)
 
 
+def halves_order(df):
+    """Acquisition rank of each object within its own class, so the two halves of the stability
+    check each hold the first and second half of every well. The raw store index is
+    well-ordered (all of 3P, then 3S, then 3SP), and splitting it at its median gave halves of
+    different composition: on the 60,000-object A8 replicate one half had 13 % leukocytes and
+    k-means at k = 2 split the sperm there instead (halves ARI 0.35 against 1.00 by bootstrap)."""
+    order = np.zeros(len(df), dtype=float); idx = df["id.index"].to_numpy(dtype=float)
+    for cls in df["id.class"].unique():
+        m = (df["id.class"] == cls).to_numpy(); order[m] = np.argsort(np.argsort(idx[m])) / max(1, m.sum() - 1)
+    return order
+
+
 def stability(scores, labels, order, method, k, seed, min_cluster_size, n_boot=10):
-    """Adjusted Rand index between: the clustering refit on each acquisition half and applied
+    """Adjusted Rand index between: the clustering refit on each acquisition half (`order` below
+    its median; use halves_order so every well is in both halves) and applied
     to the other (vs the full clustering there), and bootstrap refits (vs the full clustering
     on the resampled objects). Mean ARI near 1 = the populations survive resampling."""
     from sklearn.metrics import adjusted_rand_score
@@ -243,7 +256,7 @@ def main(argv=None):
     labels, model = fit_cluster(scores, a.method, a.k, a.seed, a.min_cluster_size); model._fit_X = scores
     sizes = {str(c): int((labels == c).sum()) for c in sorted(set(labels))}
     print("clusters (%s): %s" % (a.method, sizes))
-    order = sub["id.index"].to_numpy(dtype=float)
+    order = halves_order(sub)
     stab = stability(scores, labels, order, a.method, a.k, a.seed, a.min_cluster_size)
     print("stability: halves ARI %s, bootstrap ARI mean %s" % (["%.2f" % v for v in stab["halves_ari"]], "%.2f" % stab["bootstrap_ari_mean"] if stab["bootstrap_ari_mean"] is not None else "-"))
     disc = discriminators(sub, cols, labels)
