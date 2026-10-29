@@ -60,6 +60,11 @@ foreach ($k in 2, 3, 4) {
     if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k $k --no-gates --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k$k" }
     Draw-Galleries "runs\pop_srv_a8_feat_k$k" "A8, full held-out replicate, k = $k on all features" "figures\srv_a8_pop_feat_k$k"
 }
+# same k = 2, but the measured side also gets the light-loss / FSC / SSC columns: both sides see identical feature families and only
+# the stain source differs (virtual vs measured); the confusion matrix against this side is the apples-to-apples one
+if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k 2 --no-gates --measured-inputs --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_mi" }
+& $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains alone" --out "figures\srv_a8_pop_feat_k2_confusion.png"
+if (Test-Path "runs\pop_srv_a8_feat_k2_mi\populations.csv") { & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_mi" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains + the same label-free inputs" --out "figures\srv_a8_pop_feat_k2_mi_confusion.png" }
 # the objects the k = 2 clustering places against their well, split by what the measured stains say (sperm carried into the
 # PBMC preparation, leukocytes in the ejaculate, and the genuinely misassigned); drawn in the same four views
 $mis = "runs\pop_srv_a8_feat_k2_misplaced"

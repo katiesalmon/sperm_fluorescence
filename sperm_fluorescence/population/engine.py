@@ -202,6 +202,7 @@ def main(argv=None):
     ap.add_argument("--pixels", default=None, help="<features>.pixels.npz: append PCA scores of the aligned pixel stacks (or use them alone with --set pixels); the measured side uses the matching .pixels_ref.npz when present")
     ap.add_argument("--pixel-components", type=int, default=30)
     ap.add_argument("--embedding", action="append", default=[], metavar="name=file.npz", help="append an embedding (fields: embedding (N, D), index) reduced to --pixel-components PCs; use alone with --set pixels")
+    ap.add_argument("--measured-inputs", action="store_true", help="give the measured side the label-free input columns (in.*) of the set too, so both sides see identical families and only the stain source differs (default: the measured side sees stains alone)")
     ap.add_argument("--measured-set", default=None, choices=sorted(SETS), help="which set's ref.* columns the measured side is clustered on (default: the mirror of --set; needed when the label-free side is an embedding)")
     a = ap.parse_args(argv)
     import pandas as pd
@@ -278,7 +279,9 @@ def main(argv=None):
     from .gallery import embedding_plot, galleries
     # the measured side, when the table has reference features: the same recipe on ref.* columns, for the plot and the summary
     measured_labels = None
-    ref_cols, _ = select_columns(sub, [p.replace("preds.", "refs.").replace("pred.", "ref.") for p in SETS[a.measured_set or a.set] + a.features if p.startswith("pred")], a.max_nan)
+    ref_pats = [p.replace("preds.", "refs.").replace("pred.", "ref.") for p in SETS[a.measured_set or a.set] + a.features if p.startswith("pred")]
+    if a.measured_inputs: ref_pats += [p for p in SETS[a.measured_set or a.set] + a.features if p.startswith("in.")]
+    ref_cols, _ = select_columns(sub, ref_pats, a.max_nan)
     ref_pix = a.pixels.replace(".pixels.npz", ".pixels_ref.npz") if a.pixels else None
     if (len(ref_cols) >= 2 or (ref_pix and os.path.exists(ref_pix))) and a.method != "hdbscan":
         Zr = standardise(sub[ref_cols].to_numpy(float))[0] if ref_cols else np.zeros((len(sub), 0))
@@ -287,7 +290,7 @@ def main(argv=None):
         sr, _ = reduce_pca(Zr, fixed=a.components or None)
         measured_labels, _ = fit_cluster(sr, a.method, a.k, a.seed, a.min_cluster_size)
         from sklearn.metrics import adjusted_rand_score
-        summary["measured_side"] = {"columns": ref_cols, "ari_vs_label_free": float(adjusted_rand_score(labels, measured_labels)),
+        summary["measured_side"] = {"columns": ref_cols, "with_inputs": bool(a.measured_inputs), "ari_vs_label_free": float(adjusted_rand_score(labels, measured_labels)),
                                     "contingency": {str(c): {str(m): int(((labels == c) & (measured_labels == m)).sum()) for m in sorted(set(measured_labels))} for c in sorted(set(labels))}}
         print("measured side (same recipe on ref.*): ARI vs label-free %.3f" % summary["measured_side"]["ari_vs_label_free"])
         json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
