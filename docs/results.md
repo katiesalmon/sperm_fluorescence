@@ -618,6 +618,17 @@ every row. The script now uses cluster 1 of the feature k = 2 run; the figure ne
 features.csv, so it is rerun there (the compartment-agreement line of `server_populations.ps1`
 alone, or the whole script).
 
+**Galleries with the label-free inputs need the server's store.** The 60,000-object store (12 GB)
+stays on the server, so light-loss and side-scatter galleries of these clusters are drawn there:
+`server_populations.ps1 -GalleriesOnly` redraws, for every `runs\pop_srv_a8_*`, the virtual-stain,
+light-loss, side-scatter and measured-stain galleries (`figures\srv_a8_pop_<run>{,_lightloss,_ssc,
+_measured}.png`) and zips them without recomputing anything. The laptop's 600-object equivalents
+are `figures/stains_a8_all_feat_k{2,3}_{lightloss,ssc}.png`. Unpacking the zip had overwritten the
+laptop store's `meta.json` and `emb_dcae.npz` with the server's (same model, same `--tta`, 20,000
+per well instead of 200); the meta was rebuilt with the laptop paths and counts, the embedding
+retrained with its original settings, the server copies live in `data/srv_a8_vstain/`, and
+`unpack_results.py` now routes a zip's `data/<store>/` files to `data/srv_<store>/`.
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing

@@ -3,7 +3,8 @@ runs/ and figures/ so every laptop command can read them. Standard library only.
 
     python scripts/unpack_results.py ~/Downloads/server_results_20261026_2209.zip
 
-Zips written by Windows PowerShell's Compress-Archive name their members with backslashes,
+A zip's data/<store>/ files land in data/srv_<store>/ so they never overwrite the laptop's own store
+(2026-10-29: a server meta.json replaced data/a8_vstain/meta.json). Zips written by Windows PowerShell's Compress-Archive name their members with backslashes,
 which `unzip` on macOS keeps as literal characters in file names; this converts them.
 """
 import os
@@ -21,6 +22,8 @@ def main(argv):
             name = info.filename.replace("\\", "/")
             if name.endswith("/") or name.startswith("/") or ".." in name.split("/"):
                 continue
+            if name.startswith("data/") and not name.startswith("data/srv_"):
+                name = "data/srv_" + name[len("data/"):]      # the server's store files (meta.json, embeddings) must not overwrite the laptop store of the same name
             if "/" not in name:     # commit.txt, environment.txt: keep them with the runs, not at the repo root
                 name = "runs/%s/%s" % (os.path.splitext(os.path.basename(argv[1]))[0], name)
             dest = os.path.join(root, name)
