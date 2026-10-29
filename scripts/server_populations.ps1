@@ -69,8 +69,11 @@ $mis = "runs\pop_srv_a8_feat_k2_misplaced"
     --group "sperm well, leukocyte cluster, leukocyte by measured stains=``id.class`` == '3S' and cluster == 0 and measured_cluster == 0" `
     --group "sperm well, leukocyte cluster, sperm by measured stains=``id.class`` == '3S' and cluster == 0 and measured_cluster == 1"
 $misNames = @("0=PBMC well -> sperm cluster: sperm by measured stains", "1=PBMC well -> sperm cluster: leukocyte by measured stains", "2=sperm well -> leukocyte cluster: leukocyte by measured stains", "3=sperm well -> leukocyte cluster: sperm by measured stains")
-foreach ($v in @(@("", ""), @("--input", "lightloss"), @("--input", "ssc"), @("--measured", ""))) {
-    $suffix = if ($v[1]) { "_$($v[1])" } elseif ($v[0]) { "_measured" } else { "" }
+$misTitle = "A8, full held-out replicate, k = 2: objects placed against their well"
+& $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --title $misTitle --out "figures\srv_a8_pop_feat_k2_misplaced.png"
+& $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --input lightloss --title "$misTitle (light loss)" --out "figures\srv_a8_pop_feat_k2_misplaced_lightloss.png"
+& $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --input ssc --title "$misTitle (side scatter)" --out "figures\srv_a8_pop_feat_k2_misplaced_ssc.png"
+& $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --measured --title "$misTitle (measured stains)" --out "figures\srv_a8_pop_feat_k2_misplaced_measured.png"
     & $py analysis\stain_gallery.py $mis --store $store --rows 4 $v[0] $v[1] --names $misNames --title "A8, full held-out replicate, k = 2: objects placed against their well$suffix" --out "figures\srv_a8_pop_feat_k2_misplaced$suffix.png"
 }
 & $py analysis\compare_galleries.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_latent_k2" --store $store --labels "features" "latent" --title "A8, full held-out replicate, k = 2: features versus autoencoder latent" --out "figures\srv_a8_pop_feature_vs_latent_k2.png"
