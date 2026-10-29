@@ -618,6 +618,44 @@ every row. The script now uses cluster 1 of the feature k = 2 run; the figure ne
 features.csv, so it is rerun there (the compartment-agreement line of `server_populations.ps1`
 alone, or the whole script).
 
+**Confusion matrix against the measured stains as ground truth** (`analysis/confusion_matrix.py
+runs/pop_srv_a8_feat_k2 --names sperm leukocyte`, `figures/srv_a8_pop_feat_k2_confusion.png`;
+truth = the same k-means recipe on the measured stain images, clusters matched by Hungarian
+assignment):
+
+| measured \ label-free | sperm | leukocyte | recall |
+|---|---:|---:|---:|
+| sperm | 36,507 | 407 | 98.9 % |
+| leukocyte | 367 | 22,719 | 98.4 % |
+| precision | 99.0 % | 98.2 % | |
+
+Accuracy 98.7 %, balanced accuracy 98.7 %, Cohen's κ 0.973, ARI 0.949; sperm as the positive
+class: sensitivity 98.9 %, specificity 98.4 %, PPV 99.0 %, NPV 98.2 %. Per well 99.1 % (sperm),
+98.7 % (PBMC), 98.4 % (mixed). The laptop 600-object run reads 99.7 % (`figures/
+a8_all_feat_k2_confusion.png`). The truth is itself unsupervised, so some of the 774
+disagreements are the measured side's: in the PBMC well 247 objects the measured clustering
+calls sperm sit at median margin −4.7 on the leukocyte side of the label-free space (ordinary
+leukocytes −7.7, ordinary sperm +6.7), that is, well inside the leukocyte cluster and not near
+the boundary, which is what a dim-CD45 leukocyte mis-called by the measured k-means would look
+like. Only 155 of the 774 disagreements (20 %) lie within two units of the label-free boundary,
+against 296 of the 59,226 agreements, so most disagreements are not borderline label-free
+calls. Which side is right needs a look at the images; the 2026-10-29 galleries below cover the
+571 that also contradict their well.
+
+**The objects placed against their well, in pictures** (`analysis/subset_run.py` carves them
+out of the k = 2 run; `figures/srv_a8_pop_feat_k2_misplaced{,_lightloss,_ssc,_measured}.png`):
+the 493 PBMC-well objects in the sperm cluster that the measured stains call sperm are plainly
+sperm in every view, head and tail in light loss and LDHC/AKAP4 tails in both stain images, and
+at k = 3 they split 254 straight / 239 looped like the sperm well; the 16 PBMC-well objects the
+measured side calls leukocytes are mostly a CD45 body with a sperm tail attached or alongside,
+doublets, with a few dim round bodies; the 41 sperm-well objects both sides call leukocytes are
+CD45-bright round cells in a ring-like light-loss image, leukocytes the ejaculate itself
+contained; and the 21 sperm-well objects the measured side calls sperm but the label-free side
+leukocyte are round bodies with faint, mixed stains and no tail, round cells or debris the
+measured k-means put with the sperm for want of CD45. So of the 571 well contradictions, 534
+are the wells, about 16 are doublets, and about 21 are the measured truth's ambiguity rather
+than the label-free clustering's.
+
 **Galleries with the label-free inputs need the server's store.** The 60,000-object store (12 GB)
 stays on the server, so light-loss and side-scatter galleries of these clusters are drawn there:
 `server_populations.ps1 -GalleriesOnly` redraws, for every `runs\pop_srv_a8_*`, the virtual-stain,
