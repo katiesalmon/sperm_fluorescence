@@ -79,6 +79,21 @@ $misTitle = "A8, full held-out replicate, k = 2: objects placed against their we
 & $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --input lightloss --title "$misTitle (light loss)" --out "figures\srv_a8_pop_feat_k2_misplaced_lightloss.png"
 & $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --input ssc --title "$misTitle (side scatter)" --out "figures\srv_a8_pop_feat_k2_misplaced_ssc.png"
 & $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --measured --title "$misTitle (measured stains)" --out "figures\srv_a8_pop_feat_k2_misplaced_measured.png"
+# every object on which the label-free and measured-side k = 2 clusterings disagree, by well and direction, in the four views
+$dis = "runs\pop_srv_a8_feat_k2_disagree"
+& $py analysis\subset_run.py "runs\pop_srv_a8_feat_k2" --out $dis `
+    --group "PBMC well: measured sperm, label-free leukocyte=``id.class`` == '3P' and measured_cluster == 1 and cluster == 0" `
+    --group "PBMC well: measured leukocyte, label-free sperm=``id.class`` == '3P' and measured_cluster == 0 and cluster == 1" `
+    --group "sperm well: measured sperm, label-free leukocyte=``id.class`` == '3S' and measured_cluster == 1 and cluster == 0" `
+    --group "sperm well: measured leukocyte, label-free sperm=``id.class`` == '3S' and measured_cluster == 0 and cluster == 1" `
+    --group "mixed well: measured sperm, label-free leukocyte=``id.class`` == '3SP' and measured_cluster == 1 and cluster == 0" `
+    --group "mixed well: measured leukocyte, label-free sperm=``id.class`` == '3SP' and measured_cluster == 0 and cluster == 1"
+$disNames = @("0=PBMC well: measured sperm, label-free leukocyte", "1=PBMC well: measured leukocyte, label-free sperm", "2=sperm well: measured sperm, label-free leukocyte", "3=sperm well: measured leukocyte, label-free sperm", "4=mixed well: measured sperm, label-free leukocyte", "5=mixed well: measured leukocyte, label-free sperm")
+$disTitle = "A8, full held-out replicate, k = 2: label-free and measured-side clusterings disagree"
+& $py analysis\stain_gallery.py $dis --store $store --rows 4 --names $disNames --title $disTitle --out "figures\srv_a8_pop_feat_k2_disagree.png"
+& $py analysis\stain_gallery.py $dis --store $store --rows 4 --names $disNames --input lightloss --title "$disTitle (light loss)" --out "figures\srv_a8_pop_feat_k2_disagree_lightloss.png"
+& $py analysis\stain_gallery.py $dis --store $store --rows 4 --names $disNames --input ssc --title "$disTitle (side scatter)" --out "figures\srv_a8_pop_feat_k2_disagree_ssc.png"
+& $py analysis\stain_gallery.py $dis --store $store --rows 4 --names $disNames --measured --title "$disTitle (measured stains)" --out "figures\srv_a8_pop_feat_k2_disagree_measured.png"
 & $py analysis\compare_galleries.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_latent_k2" --store $store --labels "features" "latent" --title "A8, full held-out replicate, k = 2: features versus autoencoder latent" --out "figures\srv_a8_pop_feature_vs_latent_k2.png"
 # the sperm cluster is cluster 1 of the feature k = 2 run (the larger one; the 2026-10-29 run used the latent k = 2 cluster 0, which at 60,000 objects was not the sperm)
 if (-not $GalleriesOnly) { & $py analysis\compartment_agreement.py $feat --within "runs\pop_srv_a8_feat_k2\populations.csv:1" --prefixes preds refs --measures LDHC_AKAP4.sigma_major_um LDHC_AKAP4.sigma_minor_um LDHC_AKAP4.anisotropy ACRV1.sigma_major_um ACRV1.within_2um CD45.sigma_major_um --title "A8, full held-out replicate: compartment measurements, virtual against measured (sperm cluster)" --out "figures\srv_a8_pop_compartment_agreement.png" }
