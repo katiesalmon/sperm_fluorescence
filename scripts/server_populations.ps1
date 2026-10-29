@@ -74,8 +74,6 @@ $misTitle = "A8, full held-out replicate, k = 2: objects placed against their we
 & $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --input lightloss --title "$misTitle (light loss)" --out "figures\srv_a8_pop_feat_k2_misplaced_lightloss.png"
 & $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --input ssc --title "$misTitle (side scatter)" --out "figures\srv_a8_pop_feat_k2_misplaced_ssc.png"
 & $py analysis\stain_gallery.py $mis --store $store --rows 4 --names $misNames --measured --title "$misTitle (measured stains)" --out "figures\srv_a8_pop_feat_k2_misplaced_measured.png"
-    & $py analysis\stain_gallery.py $mis --store $store --rows 4 $v[0] $v[1] --names $misNames --title "A8, full held-out replicate, k = 2: objects placed against their well$suffix" --out "figures\srv_a8_pop_feat_k2_misplaced$suffix.png"
-}
 & $py analysis\compare_galleries.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_latent_k2" --store $store --labels "features" "latent" --title "A8, full held-out replicate, k = 2: features versus autoencoder latent" --out "figures\srv_a8_pop_feature_vs_latent_k2.png"
 # the sperm cluster is cluster 1 of the feature k = 2 run (the larger one; the 2026-10-29 run used the latent k = 2 cluster 0, which at 60,000 objects was not the sperm)
 if (-not $GalleriesOnly) { & $py analysis\compartment_agreement.py $feat --within "runs\pop_srv_a8_feat_k2\populations.csv:1" --prefixes preds refs --measures LDHC_AKAP4.sigma_major_um LDHC_AKAP4.sigma_minor_um LDHC_AKAP4.anisotropy ACRV1.sigma_major_um ACRV1.within_2um CD45.sigma_major_um --title "A8, full held-out replicate: compartment measurements, virtual against measured (sperm cluster)" --out "figures\srv_a8_pop_compartment_agreement.png" }
