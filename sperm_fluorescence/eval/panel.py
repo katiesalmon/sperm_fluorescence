@@ -4,6 +4,8 @@ to it.
 
     python -m sperm_fluorescence panel runs/srv_isx_stems --cache data/isx_roles --test 3 \\
         --rows "best:2,typical:2,dim:1" --um-per-px 0.333 --out figures/aua_isx_panel.png
+        ... --rows best:12 --exclude 6709,9794 --out candidates.png      # a sheet to choose from by eye
+        ... --objects 766,2395,640,1234,5678 --out final.png           # then pin the chosen objects in row order
 
 Rows are chosen by rule, not by eye. `best:n`: sperm (ISX: by the DAPI scalar; A8: the S
 well) stained above the median on every marker, ranked by mean per-object pixel r, top n.
@@ -30,7 +32,8 @@ from .metrics import evaluate
 from .slides import crop, window
 
 ROLE_LABEL = {"lightloss": "Light loss", "fsc": "FSC", "ssc": "SSC", "brightfield": "Brightfield 1", "brightfield2": "Brightfield 2", "darkfield": "Darkfield (SSC)"}
-WHERE = {"LDHC/AKAP4": "flagellum", "TOMM20": "midpiece", "DAPI": "nucleus", "ACRV1": "acrosome", "CD45": "leukocytes"}
+WHERE = {"LDHC/AKAP4": "Flagellum", "TOMM20": "Midpiece", "DAPI": "Nucleus", "ACRV1": "Acrosome", "CD45": "Leukocytes"}
+DISPLAY = {"LDHC/AKAP4": "LDHC"}          # the marker name as the figure prints it (the antibody cocktail stays LDHC/AKAP4 in the data)
 GROUP_LABEL = {"best": "Sperm,\nbest cases", "typical": "Sperm,\ntypical", "dim": "Debris /\nDAPI-dim", "round": "Round\ncells",
                "S": "Sperm well", "SP": "Mixed well", "P": "PBMC well"}
 
@@ -158,13 +161,13 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
         ax = axes[(0, col_of[("in", r_i)])]; ax.set_title(ROLE_LABEL.get(role, role), fontsize=7, fontweight="bold", pad=3)
     for k in ks + (["all"] if overlay else []):
         at, ap_ = axes[(0, col_of[("t", k)])], axes[(0, col_of[("p", k)])]
-        at.set_title("measured", fontsize=6.2, color="#444444", pad=2); ap_.set_title("predicted", fontsize=6.2, color="#444444", pad=2)
+        at.set_title("Measured", fontsize=6.2, color="#444444", pad=2); ap_.set_title("Predicted", fontsize=6.2, color="#444444", pad=2)
         bt, bp = at.get_position(), ap_.get_position(); xm = (bt.x0 + bp.x1) / 2
         col = tuple(0.7 * v for v in render.color_for(names[k], k)) if k != "all" else "black"
-        fig.text(xm, bt.y1 + 0.17 / figh, names[k] if k != "all" else "All markers", fontsize=8, fontweight="bold", color=col, ha="center", va="bottom")
-        fig.text(xm, bt.y1 + 0.17 / figh + 0.14 / figh, WHERE.get(names[k], "") if k != "all" else "overlay", fontsize=6.2, color="#444444", ha="center", va="bottom")
+        fig.text(xm, bt.y1 + 0.17 / figh, DISPLAY.get(names[k], names[k]) if k != "all" else "All markers", fontsize=8, fontweight="bold", color=col, ha="center", va="bottom")
+        fig.text(xm, bt.y1 + 0.17 / figh + 0.14 / figh, WHERE.get(names[k], "") if k != "all" else "Overlay", fontsize=6.2, color="#444444", ha="center", va="bottom")
     b0 = axes[(0, 0)].get_position(); b1 = axes[(0, col_of[("in", len(roles) - 1)])].get_position()
-    fig.text((b0.x0 + b1.x1) / 2, b0.y1 + 0.17 / figh + 0.14 / figh, "Label-free inputs", fontsize=8, fontweight="bold", ha="center", va="bottom")
+    fig.text((b0.x0 + b1.x1) / 2, b0.y1 + 0.17 / figh + 0.14 / figh, "Microscopy Imaging", fontsize=8, fontweight="bold", ha="center", va="bottom")
     # row-group labels (none when every row is the same group: the legend says what they are)
     i = 0
     for name, n in (groups if len(groups) > 1 else []):
@@ -189,11 +192,16 @@ def main(argv=None):
     ap.add_argument("--stained", default=None, help="comma list of markers that count for 'stained above the median' and the ranking (default: all; on the A8 leave CD45 out)")
     ap.add_argument("--approx-scale", action="store_true", help="prefix the scale bar with ~ (A8: the pixel size is approximate)")
     ap.add_argument("--range", default="rows", choices=["rows", "sample"], help="display range per marker from the rows shown (default) or from the whole scored sample (A8: so CD45, absent on sperm, is scaled by the leukocytes that carry it)")
+    ap.add_argument("--objects", default=None, help="comma list of held-out object ids to show, in row order, instead of the rule (chosen by eye from a candidates panel); the legend says so")
+    ap.add_argument("--exclude", default=None, help="comma list of object ids the rule must not pick")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); te, wte, names, roles = R.te, R.wte, R.names, list(R.te.roles)
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
+    pinned = [int(v) for v in a.objects.split(",")] if a.objects else []
+    if pinned: idx = np.sort(np.union1d(idx, np.array(pinned)))                   # pinned objects join the sample so they are scored and ranged like the rest
+    excluded = {int(v) for v in a.exclude.split(",")} if a.exclude else set()
     _, P = evaluate(R.model, te, wte[idx], R.scale, R.dev, names, idx=idx, tta=a.tta)
     av = te.avail[idx] if te.avail is not None else np.ones((len(idx), te.cout), bool)
     g = groups_for(te, wte, idx).astype(str)
@@ -201,7 +209,11 @@ def main(argv=None):
     r, ev, inside = per_object(te, P, idx, av)
     spec = [(s.split(":")[0].strip(), int(s.split(":")[1])) for s in a.rows.split(",") if s.strip()]
     use = [names.index(s.strip()) for s in a.stained.split(",")] if a.stained else None
-    rows = choose(spec, g, r, ev, inside, main_, rng, sperm_shaped(te, idx, names, av, a.um_per_px), use)
+    if pinned:
+        pos = {int(i): q for q, i in enumerate(idx)}; rows = [("best", pos[o]) for o in pinned]
+    else:
+        keep = np.array([int(i) not in excluded for i in idx]); inside = inside & keep
+        rows = choose(spec, g, r, ev, inside, main_, rng, sperm_shaped(te, idx, names, av, a.um_per_px), use)
     objs = []
     for name, q in rows:
         x, y, m = crop(te, idx[q]); x, y, m, p = window(x, y, m, P[q], a.size)
@@ -230,14 +242,15 @@ def main(argv=None):
     others = ", ".join("%d %s" % (n, GROUP_LABEL.get(s, s).replace("\n", " ").lower()) for s, n in spec if s not in ("best", "typical"))
     parts = []
     on = "every marker" if not a.stained else ("%s" % " and ".join(s.strip() for s in a.stained.split(",")))
-    if n_best: parts.append("%d sperm with the highest per-object pixel correlation among sperm stained above the median on %s" % (n_best, on))
+    if pinned: parts.append("%d sperm chosen by eye from the highest-ranked candidates (per-object pixel correlation among sperm stained above the median on %s)" % (len(pinned), on))
+    elif n_best: parts.append("%d sperm with the highest per-object pixel correlation among sperm stained above the median on %s" % (n_best, on))
     if n_typ: parts.append("%d sperm closest to the median correlation" % n_typ)
     if others: parts.append(others + " chosen at random")
     legend = ("Held-out objects, one per row: %s label-free inputs (left) and, for each marker, the measured fluorescence beside the "
-              "image predicted from the inputs alone%s. Rows were chosen by rule from %d randomly sampled held-out objects: %s"
+              "image predicted from the inputs alone%s. Rows were chosen %sfrom %d randomly sampled held-out objects: %s"
               "; objects whose stain touches the frame edge were excluded%s. Each marker is shown on one intensity range across all "
               "rows (black = 0, full colour = the 99.5th percentile of the measured stain over %s). r = per-object pixel correlation "
-              "between predicted and measured images within the cell. Scale bar %s5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", len(idx), "; ".join(parts),
+              "between predicted and measured images within the cell. Scale bar %s5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", "" if pinned else "by rule ", len(idx), "; ".join(parts),
                  ", and sperm rows were required to show one nucleus under 30 \u00b5m\u00b2 with the flagellum stain centred at least 2 \u00b5m from it" if (a.um_per_px and "DAPI" in names and "LDHC/AKAP4" in names) else "", "the objects shown" if a.range == "rows" else "the brightest quarter of the sampled held-out objects, of every population, for that marker", "approximately " if a.approx_scale else ""))
     open(stem + ".txt", "w", encoding="utf-8").write(legend + "\n")
     print("wrote", a.out, "(+ .txt legend, .json picks)")
