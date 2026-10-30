@@ -709,6 +709,32 @@ per well instead of 200); the meta was rebuilt with the laptop paths and counts,
 retrained with its original settings, the server copies live in `data/srv_a8_vstain/`, and
 `unpack_results.py` now routes a zip's `data/<store>/` files to `data/srv_<store>/`.
 
+### A8 accuracy against denoised measured stains, no retraining (2026-10-30)
+
+*`--denoise-measured smooth` on `accuracy`, `masks`, `panel` and `slides`: the cache reader hands
+out each measured stain frame after a 1-px Gaussian and subtraction of the frame's noise floor
+(median + 3 MAD; `data/denoise.py`), so an existing run is scored and drawn against the stain
+without its read noise. Server, `runs/srv_a8_stems`, all 60,000 held-out events for the
+correlations and for the IoU (`figures/srv_a8_accuracy_denoised/summary.json`,
+`runs/srv_a8_stems/masks_denoised_smooth.json`); the raw-stain scores sit beside them.*
+
+| marker | event r | pixel r | event r, sperm well | event r, PBMC well | event r, mixed well | mask IoU | Dice |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| LDHC/AKAP4 | 0.75 (0.75) | 0.79 (0.76) | 0.75 (0.75) | 0.51 (0.52) | 0.76 (0.76) | 0.66 (0.68) | 0.79 |
+| CD45 | 0.83 (0.78) | 0.77 (0.60) | −0.05 (0.10) | 0.66 (0.61) | 0.76 (0.71) | 0.65 (0.62) | 0.75 |
+| ACRV1 | 0.66 (0.66) | 0.80 (0.59) | 0.36 (0.37) | 0.51 (0.44) | 0.53 (0.53) | 0.48 (0.42) | 0.60 |
+
+Raw-stain values in parentheses (correlations on the same 60,000; raw IoU on 3,000). Every stained
+event is detected (100 %). The signature is the one a noisy reference predicts: pixel r rises by
+0.2 for the two noisy channels and 0.03 for LDHC, event r barely moves because the per-cell sum had
+already averaged the noise, and IoU rises where the measured mask was being fragmented by speckle
+(CD45, ACRV1) and dips slightly where smoothing widens it (LDHC). The thresholds the mask scoring
+picked on denoised training frames moved to 0.25 / 0.30 / 0.20 of the per-channel maximum. On the
+laptop's 600-event sample the same scoring gave pixel r 0.79 / 0.81 / 0.82 and IoU 0.66 / 0.67 /
+0.48, so the sample was representative. The A8 abstract now quotes these; the input-ablation
+sentence there is still raw-scored. Panel: `figures/aua_a8_panel_denoised.png` (laptop cells, the
+same five as before, measured stains denoised, columns ACRV1 / CD45 / LDHC).
+
 ### What to run next
 
 - The A8 for its full 40 epochs under bfloat16, to confirm that epochs 20–40 add nothing
