@@ -19,8 +19,9 @@ from .metrics import evaluate
 from .sheets import sheet
 
 
-def load_run(run, cache, test, include=None, checkpoint="best.pt"):
-    """A finished run, loaded: model, dev, scale, te, wte, te_cls, res, names (as a namespace)."""
+def load_run(run, cache, test, include=None, checkpoint="best.pt", denoise=None):
+    """A finished run, loaded: model, dev, scale, te, wte, te_cls, res, names (as a namespace).
+    denoise: 'floor' or 'smooth' reads the held-out measured stains denoised (data/denoise.py)."""
     import torch
     meta = json.load(open(os.path.join(cache, "meta.json")))
     names = list(meta["target_names"]) if "target_names" in meta else ["LDHC/AKAP4", "CD45", "ACRV1"]
@@ -28,7 +29,7 @@ def load_run(run, cache, test, include=None, checkpoint="best.pt"):
     classes = sorted({os.path.basename(p).split("_")[0] for p in glob.glob(os.path.join(cache, "*_x.npy"))})
     if include: classes = [c for c in classes if c in include.split(",")]
     te_cls = [c for c in classes if c[0] in test]
-    te, wte, scal = open_cache(cache, te_cls, roles=res.get("roles") if res.get("roles") and res.get("arch") else None); te.scalars = scal   # ISX: DAPI intensity; NaN on the A8
+    te, wte, scal = open_cache(cache, te_cls, roles=res.get("roles") if res.get("roles") and res.get("arch") else None, denoise=denoise); te.scalars = scal   # ISX: DAPI intensity; NaN on the A8
     dev = pick_device()
     model = stems.build(res.get("arch", "stack"), te.roles, res.get("width", 32), te.cin, te.cout).to(dev)
     model.load_state_dict(torch.load(os.path.join(run, checkpoint), map_location=dev)); model.eval()

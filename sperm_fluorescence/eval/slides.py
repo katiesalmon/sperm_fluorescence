@@ -123,6 +123,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence slides")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
+    ap.add_argument("--denoise-measured", default="none", choices=["none", "floor", "smooth"], help="read the measured stains denoised (noise floor removed; smooth = 1-px Gaussian first), so the prediction is scored and shown against the stain without its read noise")
     ap.add_argument("--title", required=True); ap.add_argument("--input-name", required=True)
     ap.add_argument("--um-per-px", type=float, default=0.0); ap.add_argument("--approx-scale", action="store_true")
     ap.add_argument("--well", default=None, help="restrict candidates to one well type (e.g. S)")
@@ -131,7 +132,7 @@ def main(argv=None):
     ap.add_argument("--sample", type=int, default=600); ap.add_argument("--n", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
-    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); model, dev, scale, te, wte, names = R.model, R.dev, R.scale, R.te, R.wte, R.names
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint, denoise=a.denoise_measured); model, dev, scale, te, wte, names = R.model, R.dev, R.scale, R.te, R.wte, R.names
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
     _, P = evaluate(model, te, wte[idx], scale, dev, names, idx=idx)

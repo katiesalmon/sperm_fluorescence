@@ -91,12 +91,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence masks")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
+    ap.add_argument("--denoise-measured", default="none", choices=["none", "floor", "smooth"], help="read the measured stains denoised (noise floor removed; smooth = 1-px Gaussian first), so the prediction is scored and shown against the stain without its read noise")
     ap.add_argument("--isx", default=None, help=".cif the ISX classes were cut from, for the IDEAS masks")
     ap.add_argument("--limit", type=int, default=600, help="held-out objects per class to score")
     ap.add_argument("--calib", type=int, default=200, help="training objects per class to pick thresholds on")
     ap.add_argument("--per-well", type=int, default=3); ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args(argv)
-    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); model, dev, scale, te, wte, te_cls, res, names = R.model, R.dev, R.scale, R.te, R.wte, R.te_cls, R.res, R.names
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint, denoise=a.denoise_measured); model, dev, scale, te, wte, te_cls, res, names = R.model, R.dev, R.scale, R.te, R.wte, R.te_cls, R.res, R.names
     meta = json.load(open(os.path.join(a.cache, "meta.json")))
     inst_of = {c: v["instrument"] for c, v in meta["classes"].items()}
     cif = isx_io.CIF(a.isx) if a.isx else None
@@ -136,7 +137,7 @@ def main(argv=None):
 
     # ---- thresholds, from training objects ----
     tr_cls = [c for c in res["train"]]
-    tr, wtr, _ = open_cache(a.cache, tr_cls)
+    tr, wtr, _ = open_cache(a.cache, tr_cls, denoise=a.denoise_measured)
     pick = [int(i) for c in tr_cls for i in rng.choice(np.flatnonzero(tr.classes == c), min(a.calib, (tr.classes == c).sum()), replace=False)]
     cal = collect(tr, wtr[pick], pick)
     unit = scale.view(-1).numpy() / 10.0             # the channel's mean |y| in cache units

@@ -88,7 +88,7 @@ def cache_roles(cache):
     return list(meta.get("roles") or meta.get("inputs") or []) or None
 
 
-def open_cache(cache, classes, target_k=None, roles=None):
+def open_cache(cache, classes, target_k=None, roles=None, denoise=None):
     """A dataset plus its per-object wells, scalars, and class names. `ds.avail` is an
     (N, C) bool of which target channels each object actually has, or None for all;
     `ds.present` the same for input roles. `roles`: names to keep, in that order."""
@@ -102,6 +102,9 @@ def open_cache(cache, classes, target_k=None, roles=None):
     if avail is not None and target_k is not None:
         avail = avail[:, target_k:target_k + 1]
     ds.avail = avail; ds.classes = clsarr; ds.present = present
+    if denoise and denoise != "none":
+        if not getattr(ds, "ragged", False): raise SystemExit("denoise= is only implemented for ragged caches")
+        ds.denoise = denoise
     all_roles = cache_roles(cache)
     ds.roles = list(all_roles) if all_roles else ["ch%d" % i for i in range(ds.cin)]
     if roles:

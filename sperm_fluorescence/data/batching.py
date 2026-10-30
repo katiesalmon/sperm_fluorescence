@@ -1,6 +1,8 @@
 """Datasets over the cache arrays, and how batches are formed from them."""
 import numpy as np
 
+from .denoise import denoise_target
+
 
 def avail_of(ds, idx):
     import torch
@@ -59,6 +61,7 @@ class RaggedCached:
     Nothing is cropped at any point, so evaluation is on whole objects."""
     ragged = True
     avail = None
+    denoise = None
     present = None
     role_idx = None
 
@@ -79,6 +82,7 @@ class RaggedCached:
         if self.role_idx is not None: x = x[self.role_idx]
         y = np.asarray(self.ys[k][:, a:b]).reshape(-1, h, w).astype(np.float32)
         if self.target_k is not None: y = y[self.target_k:self.target_k + 1]
+        if self.denoise: y = np.stack([denoise_target(y[c], self.denoise) for c in range(len(y))])     # measured stains read denoised (open_cache denoise=)
         return x, y, np.asarray(self.ms[k][a:b]).reshape(h, w)
     def sample_idx(self, n):
         return np.unique(np.linspace(0, len(self) - 1, n).astype(int))   # spread over every class

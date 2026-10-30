@@ -45,14 +45,15 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence accuracy")
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
     ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
+    ap.add_argument("--denoise-measured", default="none", choices=["none", "floor", "smooth"], help="read the measured stains denoised (noise floor removed; smooth = 1-px Gaussian first), so the prediction is scored and shown against the stain without its read noise")
     ap.add_argument("--title", required=True); ap.add_argument("--sample", type=int, default=3000)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); model, dev, scale, te, wte, res, names = R.model, R.dev, R.scale, R.te, R.wte, R.res, R.names
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint, denoise=a.denoise_measured); model, dev, scale, te, wte, res, names = R.model, R.dev, R.scale, R.te, R.wte, R.res, R.names
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
-    _, P = evaluate(model, te, wte[idx], scale, dev, names, idx=idx)
+    res_eval, P = evaluate(model, te, wte[idx], scale, dev, names, idx=idx)
     av = te.avail[idx] if te.avail is not None else np.ones((len(idx), te.cout), bool)
     ks = [k for k in range(te.cout) if av[:, k].any()]
     ev_t = np.full((len(idx), te.cout), np.nan); ev_p = np.full((len(idx), te.cout), np.nan)
@@ -63,6 +64,11 @@ def main(argv=None):
     g = groups_for(te, wte, idx)
     order = [x for x in ["sperm", "round", "dim", "S", "P", "SP", "I"] if x in set(g)]
     os.makedirs(a.out, exist_ok=True)
+    json.dump({"run": a.run, "n": int(len(idx)), "denoise_measured": a.denoise_measured, "metrics": res_eval}, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
+    for nm, d in res_eval.items():
+        if isinstance(d, dict) and d.get("event_r") is not None:
+            print("%-12s event r %.3f  pixel r %.3f  within well %s" % (nm, d["event_r"], d.get("pixel_r", float("nan")), {k: round(v, 3) for k, v in (d.get("within_well_event_r") or {}).items() if v is not None}))
+    if a.denoise_measured != "none": a.title = a.title + " (measured stains denoised: %s)" % a.denoise_measured
 
     # ---- scatter ----
     n = len(ks); fig, axes = plt.subplots(1, n, figsize=(4.2 * n + 0.4, 5.3), facecolor="white", squeeze=False)

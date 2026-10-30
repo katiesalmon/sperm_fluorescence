@@ -182,7 +182,8 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence panel", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run"); ap.add_argument("--cache", required=True); ap.add_argument("--test", required=True)
-    ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt"); ap.add_argument("--tta", action="store_true")
+    ap.add_argument("--include", default=None); ap.add_argument("--checkpoint", default="best.pt")
+    ap.add_argument("--denoise-measured", default="none", choices=["none", "floor", "smooth"], help="read the measured stains denoised (noise floor removed; smooth = 1-px Gaussian first), so the prediction is scored and shown against the stain without its read noise"); ap.add_argument("--tta", action="store_true")
     ap.add_argument("--rows", default="best:2,typical:2,dim:1", help="comma list of group:n in row order")
     ap.add_argument("--main", default=None, help="the sperm population for best/typical (default: 'sperm' if present, else 'S')")
     ap.add_argument("--sample", type=int, default=1500, help="held-out objects scored before choosing"); ap.add_argument("--seed", type=int, default=0)
@@ -197,7 +198,7 @@ def main(argv=None):
     ap.add_argument("--marker-order", default=None, help="comma list of marker names, the column order left to right (default: the model's order), e.g. ACRV1,DAPI,TOMM20,LDHC/AKAP4")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
-    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); te, wte, names, roles = R.te, R.wte, R.names, list(R.te.roles)
+    R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint, denoise=a.denoise_measured); te, wte, names, roles = R.te, R.wte, R.names, list(R.te.roles)
     rng = np.random.default_rng(a.seed)
     idx = np.sort(rng.choice(len(te), min(a.sample, len(te)), replace=False))
     pinned = [int(v) for v in a.objects.split(",")] if a.objects else []
@@ -259,6 +260,7 @@ def main(argv=None):
               "rows (black = 0, full colour = the 99.5th percentile of the measured stain over %s). r = per-object pixel correlation "
               "between predicted and measured images within the cell. Scale bar %s5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", "" if pinned else "by rule ", len(idx), "; ".join(parts),
                  ", and sperm rows were required to show one nucleus under 30 \u00b5m\u00b2 with the flagellum stain centred at least 2 \u00b5m from it" if (a.um_per_px and "DAPI" in names and "LDHC/AKAP4" in names) else "", "the objects shown" if a.range == "rows" else "the brightest quarter of the sampled held-out objects, of every population, for that marker", "approximately " if a.approx_scale else ""))
+    if a.denoise_measured != "none": legend += " Measured stains are shown and scored after noise-floor removal (%s)." % ("1-px Gaussian, then the frame's noise floor subtracted" if a.denoise_measured == "smooth" else "the frame's noise floor subtracted")
     open(stem + ".txt", "w", encoding="utf-8").write(legend + "\n")
     print("wrote", a.out, "(+ .txt legend, .json picks)")
     return 0

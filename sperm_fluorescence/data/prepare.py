@@ -140,18 +140,7 @@ def a8_run_records(cfg, source, limit=0):
 READERS = {"a8_bundle": a8_records, "a8_run": a8_run_records, "isx_cif": isx_records}
 
 
-def denoise_target(img, how):
-    """A measured stain frame with its read noise removed, as features/stain.py does for the
-    moments: the noise floor (median + 3 MAD of the frame) subtracted and the result clipped at
-    0; 'smooth' blurs with a 1-px Gaussian first so single-pixel noise does not survive the
-    floor. 'none' returns the frame unchanged (background-subtracted but noisy)."""
-    if how == "none": return img
-    from ..features.stain import denoise
-    img = np.asarray(img, dtype=np.float32)
-    if how == "smooth":
-        from scipy.ndimage import gaussian_filter
-        img = gaussian_filter(img, 1.0)
-    return denoise(img, None)
+from .denoise import denoise_target
 
 
 def main(argv=None):
