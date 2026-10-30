@@ -6,7 +6,8 @@ the second plot).
     python analysis/agreement_snapshot.py data/isx_vstain/features.csv --within runs/pop_isx_all_k2/populations.csv:1 \\
         --measures ACRV1.sigma_major_um DAPI.sigma_major_um TOMM20.sigma_major_um LDHC_AKAP4.sigma_major_um \\
         --names "ACRV1=Acrosome (ACRV1)" "DAPI=Nucleus (DAPI)" "TOMM20=Midpiece (TOMM20)" "LDHC_AKAP4=Flagellum (LDHC)" \\
-        --quantity "spread along the axis, σ (µm)" --out figures/aua_isx_agreement_snapshot.png
+        --out figures/aua_isx_agreement_snapshot.png
+    python analysis/agreement_snapshot.py data/isx_vstain/features.csv --query "\`id.pop_scalar\` == 'sperm'" --measures ... # sperm by the DAPI scalar, no clustering needed
 
 The virtual side is preds.<measure>, the measured side refs.<measure> (the stain-image features,
 computed above each frame's noise floor within the cell region; features/stain.py).
@@ -25,8 +26,10 @@ def main(argv=None):
     ap.add_argument("--measures", nargs="+", required=True, help="<channel>.<stat> suffixes, left to right")
     ap.add_argument("--names", nargs="*", default=[], help="channel=panel title")
     ap.add_argument("--prefixes", nargs=2, default=["preds", "refs"])
-    ap.add_argument("--quantity", default="", help="what the axes measure, printed once under the row")
-    ap.add_argument("--title", default=None); ap.add_argument("--out", required=True)
+    ap.add_argument("--query", default=None, help="pandas query on the feature table to select the cells, e.g. \"`id.pop_scalar` == 'sperm'\" (sperm by the DAPI scalar); an alternative to --within")
+    ap.add_argument("--footer", action="store_true", help="print the one-line explanation of the statistics under the row (off by default)")
+    ap.add_argument("--quantity", default="", help="what the axes measure, for the footer")
+    ap.add_argument("--title", default=None, help="default: the covered-length title; pass \"\" for none"); ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     import pandas as pd
     from scipy.stats import gaussian_kde
@@ -35,6 +38,7 @@ def main(argv=None):
     if a.within:
         path, c = a.within.rsplit(":", 1); p = pd.read_csv(path, usecols=["id.index", "cluster"])
         keep = set(p[p.cluster == int(c)]["id.index"]); df = df[df["id.index"].isin(keep)]
+    if a.query: df = df.query(a.query)
     names = dict(s.split("=", 1) for s in a.names)
     n_panels = len(a.measures)
     fig, axes = plt.subplots(1, n_panels, figsize=(3.1 * n_panels + 0.4, 3.75), facecolor="white")
@@ -52,18 +56,19 @@ def main(argv=None):
         ax.plot([lo, hi], [lo, hi], color=INK, lw=0.8, ls="--", zorder=3)
         ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect("equal")
         ax.set_title("%s\nr = %.2f, n = %s" % (names.get(ch, ch), r, "{:,}".format(int(ok.sum()))), fontsize=9.5, fontweight="bold", color=INK, pad=6)
-        ax.text(0.04, 0.96, "bias %+.2f\n95%% limits %+.2f to %+.2f" % (bias, bias - 1.96 * sd, bias + 1.96 * sd), transform=ax.transAxes, fontsize=7.2, color=MUTED, va="top", ha="left", linespacing=1.3)
-        ax.set_xlabel("measured stain", fontsize=8.5, color=MUTED); ax.set_ylabel("virtual stain", fontsize=8.5, color=MUTED)
+        ax.text(0.04, 0.96, "95%% CI: (%.2f, %.2f)" % (bias - 1.96 * sd, bias + 1.96 * sd), transform=ax.transAxes, fontsize=7.6, color=MUTED, va="top", ha="left")
+        ax.set_xlabel("Measured Stain", fontsize=8.5, color=MUTED); ax.set_ylabel("Virtual Stain", fontsize=8.5, color=MUTED)
         ax.tick_params(labelsize=7.5, colors=MUTED, length=2.5)
         for sp in ("top", "right"): ax.spines[sp].set_visible(False)
         for sp in ("left", "bottom"): ax.spines[sp].set_color(GRID)
         ax.grid(color=GRID, lw=0.5, zorder=0)
-    if a.title: fig.suptitle(a.title, fontsize=10.5, fontweight="bold", color=INK, y=0.995)
+    title = a.title if a.title is not None else "Length of Covered Area Per Marker Calculated from Virtual Stain Compared to Measured Stain (\u03bcm)"
+    if title: fig.suptitle(title, fontsize=10.5, fontweight="bold", color=INK, y=0.995)
     foot = "Same held-out cells on both axes; %sdashed line = identity. r = Pearson correlation across cells; bias and 95 %% limits of agreement = mean and ±1.96 SD of virtual − measured." % (("each axis: %s. " % a.quantity) if a.quantity else "")
-    fig.text(0.5, 0.012, foot, ha="center", va="bottom", fontsize=7, color=MUTED, wrap=True)
-    fig.tight_layout(rect=(0, 0.07, 1, 0.97 if a.title else 1.0)); os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    if a.footer: fig.text(0.5, 0.012, foot, ha="center", va="bottom", fontsize=7, color=MUTED, wrap=True)
+    fig.tight_layout(rect=(0, 0.07 if a.footer else 0, 1, 0.94 if title else 1.0)); os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     fig.savefig(a.out, dpi=300, facecolor="white"); plt.close(fig)
-    import json; json.dump({"table": a.table, "within": a.within, "panels": stats}, open(os.path.splitext(a.out)[0] + ".json", "w"), indent=1)
+    import json; json.dump({"table": a.table, "within": a.within, "query": a.query, "panels": stats}, open(os.path.splitext(a.out)[0] + ".json", "w"), indent=1)
     for s_ in stats: print("%-28s n %5d  r %.2f  bias %+.2f  limits %+.2f..%+.2f" % (s_["measure"], s_["n"], s_["r"], s_["bias"], *s_["loa"]))
     print("wrote", a.out)
     return 0
