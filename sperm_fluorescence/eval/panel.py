@@ -194,6 +194,7 @@ def main(argv=None):
     ap.add_argument("--range", default="rows", choices=["rows", "sample"], help="display range per marker from the rows shown (default) or from the whole scored sample (A8: so CD45, absent on sperm, is scaled by the leukocytes that carry it)")
     ap.add_argument("--objects", default=None, help="comma list of held-out object ids to show, in row order, instead of the rule (chosen by eye from a candidates panel); the legend says so")
     ap.add_argument("--exclude", default=None, help="comma list of object ids the rule must not pick")
+    ap.add_argument("--marker-order", default=None, help="comma list of marker names, the column order left to right (default: the model's order), e.g. ACRV1,DAPI,TOMM20,LDHC/AKAP4")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     R = load_run(a.run, a.cache, a.test, a.include, a.checkpoint); te, wte, names, roles = R.te, R.wte, R.names, list(R.te.roles)
@@ -221,6 +222,11 @@ def main(argv=None):
         objs.append((pad_to(x, a.size, fill), pad_to(y, a.size, 0.0), pad_to(m, a.size, 0.0), pad_to(p, a.size, 0.0), r[q]))
         print("%-8s object %6d  %s" % (name, idx[q], "  ".join("%s %.2f" % (names[k], r[q][k]) for k in range(te.cout) if av[q, k])))
     ks = [k for k in range(te.cout) if all(av[q, k] for _, q in rows)]
+    if a.marker_order:
+        want = [n.strip() for n in a.marker_order.split(",")]
+        for n in want:
+            if n not in names: raise SystemExit("--marker-order: %r is not a marker here (have %s)" % (n, names))
+        ks = [names.index(n) for n in want if names.index(n) in ks] + [k for k in ks if names[k] not in want]
     if a.range == "sample":
         # per marker: the brightest quarter of the sampled objects by event sum, then the usual
         # 99.5th percentile of their pixels, so a marker absent on the rows shown (CD45 on sperm)
