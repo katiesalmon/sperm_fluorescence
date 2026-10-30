@@ -97,7 +97,8 @@ def main(argv=None):
         b = fig.add_subplot(outer[ri, 0]); b.axis("off"); pos = b.get_position()
         fig.text(0.22 / figw, (pos.y0 + pos.y1) / 2, "k = %d" % s["k"], fontsize=13, fontweight="bold", ha="center", va="center", rotation=90)
     import textwrap
-    fig.suptitle("\n".join(textwrap.wrap(a.title or "Clusterings side by side", 110)), fontsize=13, fontweight="bold", y=1 - 0.1 / figh, va="top")
+    title = a.title or "Clusterings side by side"
+    fig.suptitle(title.replace(" | ", "\n") if " | " in title else "\n".join(textwrap.wrap(title, 110)), fontsize=13, fontweight="bold", y=1 - 0.1 / figh, va="top")      # " | " in the title = a line break where you want it
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True); fig.savefig(a.out, dpi=a.dpi, facecolor="white"); plt.close(fig); print("wrote", a.out)
     return 0
 
