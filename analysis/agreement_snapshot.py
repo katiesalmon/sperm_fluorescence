@@ -69,8 +69,8 @@ def main(argv=None):
     if title: fig.suptitle(title, fontsize=10.5, fontweight="bold", color=INK, y=0.995)
     foot = "Same held-out cells on both axes; %sdashed line = identity. r = Pearson correlation across cells; bias and 95 %% limits of agreement = mean and ±1.96 SD of virtual − measured." % (("each axis: %s. " % a.quantity) if a.quantity else "")
     if a.footer: fig.text(0.5, 0.012, foot, ha="center", va="bottom", fontsize=7, color=MUTED, wrap=True)
-    fig.tight_layout(rect=(0, 0.07 if a.footer else 0, 1, 0.94 if title else 1.0)); os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    fig.savefig(a.out, dpi=300, facecolor="white"); plt.close(fig)
+    fig.tight_layout(rect=(0, 0.07 if a.footer else 0.03, 1, 0.94 if title else 1.0)); os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    fig.savefig(a.out, dpi=300, facecolor="white", bbox_inches="tight", pad_inches=0.15); plt.close(fig)     # tight bbox: axis labels never fall off the frame
     import json; json.dump({"table": a.table, "within": a.within, "query": a.query, "population": a.population, "panels": stats}, open(os.path.splitext(a.out)[0] + ".json", "w"), indent=1)
     for s_ in stats: print("%-28s n %5d  r %.2f  bias %+.2f  limits %+.2f..%+.2f" % (s_["measure"], s_["n"], s_["r"], s_["bias"], *s_["loa"]))
     print("wrote", a.out)
