@@ -22,6 +22,7 @@ def main(argv=None):
     ap.add_argument("--accuracy-raw", default=None, help="accuracy summary.json scored on raw stains (default: the run's results.json, the full evaluation)")
     ap.add_argument("--accuracy", default=None, help="accuracy summary.json scored with --denoise-measured")
     ap.add_argument("--label", default=None); ap.add_argument("--sperm-well", default="S")
+    ap.add_argument("--denoised-only", action="store_true", help="one column set, scored against the denoised measured stains only (no raw columns)")
     a = ap.parse_args(argv)
     raw, n_raw = metrics_from(a.accuracy_raw or os.path.join(a.run, "results.json"))
     dn, n_dn = metrics_from(a.accuracy) if a.accuracy else ({}, None)
@@ -33,6 +34,16 @@ def main(argv=None):
     f = lambda d, k: ("%.2f" % d[k]) if d and d.get(k) is not None else "–"
     fw = lambda d: ("%.2f" % d["within"][a.sperm_well]) if d and d.get("within", {}).get(a.sperm_well) is not None else "–"
     fi = lambda d: ("%.2f" % d["iou"]) if d and d.get("iou") is not None else "–"
+    if a.denoised_only:
+        wells = sorted({w for m in dn for w in dn[m]["within"]}, key=lambda w: ["S", "P", "SP", "I", "sperm", "round", "dim"].index(w) if w in ["S", "P", "SP", "I", "sperm", "round", "dim"] else 99)
+        wname = {"S": "sperm well", "P": "PBMC well", "SP": "mixed well", "I": "tube"}
+        lines = ["| marker | event r | pixel r | " + " | ".join("event r, %s" % wname.get(w, w) for w in wells) + " | mask IoU |", "|---|" + "---:|" * (3 + len(wells))]
+        for m in dn:
+            cells = [f(dn[m], "event_r"), f(dn[m], "pixel_r")] + [("%.2f" % dn[m]["within"][w]) if dn[m]["within"].get(w) is not None else "–" for w in wells] + [fi(md.get(m))]
+            lines.append("| %s | %s |" % (m, " | ".join(cells)))
+        print("\n".join(lines)); print()
+        print("%s: predictions scored against the measured stains denoised (%s); correlations on %s held-out cells, IoU on %s." % (a.label or os.path.basename(a.run.rstrip("/")), a.denoise, n_dn or "–", nmd or "–"))
+        return 0
     head = "| marker | event r raw | event r denoised | pixel r raw | pixel r denoised | sperm-well event r raw | denoised | IoU raw | IoU denoised |"
     lines = [head, "|---|" + "---:|" * 8]
     for m in raw:
