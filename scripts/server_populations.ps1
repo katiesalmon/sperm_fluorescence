@@ -6,6 +6,7 @@
 #   .\scripts\server_populations.ps1 -TrainOnHeldOut      # autoencoder trained on the held-out replicate itself (no replicate-2 pass; faster)
 #   .\scripts\server_populations.ps1 -WithFeatures        # also put features.csv (hundreds of MB) in the zip
 #   .\scripts\server_populations.ps1 -GalleriesOnly       # runs\pop_srv_a8_* exist: only redraw the galleries (stains, light loss, SSC, measured) and zip
+#   .\scripts\server_populations.ps1 -MeasuredInputsOnly   # features.csv exists: only the k = 2 run whose measured side also sees the inputs, both confusion matrices, its disagreement galleries, zip (~15 min)
 #   .\scripts\server_populations.ps1 -DenoiseRef -GalleriesOnly   # add a features pass with the measured stains denoised (~2 h), k = 2 against that measured side, its confusion matrix
 #
 # Time, RTX A6000: predict ~10 min per replicate, features ~2 h for 60,000 objects (single process),
@@ -19,6 +20,7 @@ param(
     [switch]$WithFeatures,
     [switch]$GalleriesOnly,
     [switch]$DenoiseRef,
+    [switch]$MeasuredInputsOnly,
     [int]$Epochs = 60,
     [int]$Latent = 16
 )
@@ -28,13 +30,14 @@ if ($Cache -eq "") { $Cache = Join-Path (Get-Location) "data\server_cache" }
 $a8cache = "$Cache\a8_roles"; $store = "$Cache\a8_vstain"; $store2 = "$Cache\a8_vstain_train"
 $feat = "$store\features.csv"; $pix = "$store\features.pixels.npz"; $emb = "$store\emb_dcae.npz"
 
-if (-not $GalleriesOnly) {
+if (-not $GalleriesOnly -and -not $MeasuredInputsOnly) {
 Write-Host "== virtual stains for the held-out replicate (3S, 3P, 3SP)"
-& $py -m sperm_fluorescence predict $Run --cache $a8cache --classes 3S,3P,3SP --tta --out $store
+if (-not (Test-Path "$store\meta.json")) { & $py -m sperm_fluorescence predict $Run --cache $a8cache --classes 3S,3P,3SP --tta --out $store } else { Write-Host "   store exists, skipped" }
 Write-Host "== feature catalogue + aligned stacks"
-& $py -m sperm_fluorescence features $store --out $feat
+if (-not (Test-Path $feat)) { & $py -m sperm_fluorescence features $store --out $feat } else { Write-Host "   features.csv exists, skipped" }
 
-if (-not $TrainOnHeldOut) {
+if (Test-Path $emb) { Write-Host "== autoencoder embedding exists, skipped" }
+elseif (-not $TrainOnHeldOut) {
     Write-Host "== training replicate (2S, 2P, 2SP): virtual stains and aligned stacks only, for the autoencoder"
     & $py -m sperm_fluorescence predict $Run --cache $a8cache --classes 2S,2P,2SP --tta --out $store2
     & $py -m sperm_fluorescence features $store2 --pixels-only --out "$store2\features.csv"
@@ -52,6 +55,7 @@ function Draw-Galleries($run, $title, $outStem) {
     & $py analysis\stain_gallery.py $run --store $store --rows 6 --measured --title "$title (measured stains)" --out "${outStem}_measured.png"
 }
 New-Item -ItemType Directory -Force -Path figures | Out-Null
+if (-not $MeasuredInputsOnly) {
 foreach ($k in 2, 3, 4, 5) {
     Write-Host "== latent, k = $k"
     if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set pixels --embedding "e=$emb" --pixel-components $Latent --measured-set stain+intensity --method gmm --k $k --no-gates --store $store --gallery-n 8 --out "runs\pop_srv_a8_latent_k$k" }
@@ -62,11 +66,25 @@ foreach ($k in 2, 3, 4) {
     if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k $k --no-gates --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k$k" }
     Draw-Galleries "runs\pop_srv_a8_feat_k$k" "A8, full held-out replicate, k = $k on all features" "figures\srv_a8_pop_feat_k$k"
 }
+}
 # same k = 2, but the measured side also gets the light-loss / FSC / SSC columns: both sides see identical feature families and only
 # the stain source differs (virtual vs measured); the confusion matrix against this side is the apples-to-apples one
 if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k 2 --no-gates --measured-inputs --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_mi" }
 & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains alone" --out "figures\srv_a8_pop_feat_k2_confusion.png"
-if (Test-Path "runs\pop_srv_a8_feat_k2_mi\populations.csv") { & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_mi" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains + the same label-free inputs" --out "figures\srv_a8_pop_feat_k2_mi_confusion.png" }
+if (Test-Path "runs\pop_srv_a8_feat_k2_mi\populations.csv") {
+    & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_mi" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains + the same label-free inputs" --out "figures\srv_a8_pop_feat_k2_mi_confusion.png"
+    # which objects still disagree once the truth can see the inputs (label-free cluster 1 = sperm, as in the stains-only run; subset_run prints the sizes)
+    $dmi = "runs\pop_srv_a8_feat_k2_mi_disagree"; $sp = (& $py -c "import pandas as pd; t = pd.read_csv(r'runs\pop_srv_a8_feat_k2_mi\populations.csv', low_memory=False); print(t.cluster.value_counts().idxmax())").Trim()
+    & $py analysis\subset_run.py "runs\pop_srv_a8_feat_k2_mi" --out $dmi `
+        --group "measured+inputs sperm, label-free leukocyte=measured_cluster == $sp and cluster != $sp" `
+        --group "measured+inputs leukocyte, label-free sperm=measured_cluster != $sp and cluster == $sp"
+    $dmiNames = @("0=measured+inputs sperm, label-free leukocyte", "1=measured+inputs leukocyte, label-free sperm")
+    $dmiTitle = "A8, full held-out replicate, k = 2: disagreements with the measured-stains-plus-inputs truth"
+    & $py analysis\stain_gallery.py $dmi --store $store --rows 4 --names $dmiNames --title $dmiTitle --out "figures\srv_a8_pop_feat_k2_mi_disagree.png"
+    & $py analysis\stain_gallery.py $dmi --store $store --rows 4 --names $dmiNames --input lightloss --title "$dmiTitle (light loss)" --out "figures\srv_a8_pop_feat_k2_mi_disagree_lightloss.png"
+    & $py analysis\stain_gallery.py $dmi --store $store --rows 4 --names $dmiNames --input ssc --title "$dmiTitle (side scatter)" --out "figures\srv_a8_pop_feat_k2_mi_disagree_ssc.png"
+    & $py analysis\stain_gallery.py $dmi --store $store --rows 4 --names $dmiNames --measured --title "$dmiTitle (measured stains)" --out "figures\srv_a8_pop_feat_k2_mi_disagree_measured.png"
+}
 # measured stains denoised (Gaussian 1 px + noise floor) before the reference masks: a second measured-side truth. On the laptop
 # sample it did not improve agreement (99.0 % vs 99.7 %); at 60,000 the question is whether the 247 dim-CD45 leukocytes move.
 if ($DenoiseRef) {
@@ -77,6 +95,7 @@ if ($DenoiseRef) {
     & $py -m sperm_fluorescence populate $featDn --set all --k 2 --no-gates --measured-inputs --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_dn_mi"
     & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_dn_mi" --names sperm leukocyte --title "A8, full held-out replicate, k = 2: label-free clusters against the DENOISED measured stains + the same inputs" --out "figures\srv_a8_pop_feat_k2_dn_mi_confusion.png"
 }
+if (-not $MeasuredInputsOnly) {
 # the objects the k = 2 clustering places against their well, split by what the measured stains say (sperm carried into the
 # PBMC preparation, leukocytes in the ejaculate, and the genuinely misassigned); drawn in the same four views
 $mis = "runs\pop_srv_a8_feat_k2_misplaced"
@@ -109,6 +128,7 @@ $disTitle = "A8, full held-out replicate, k = 2: label-free and measured-side cl
 & $py analysis\compare_galleries.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_latent_k2" --store $store --labels "features" "latent" --title "A8, full held-out replicate, k = 2: features versus autoencoder latent" --out "figures\srv_a8_pop_feature_vs_latent_k2.png"
 # the sperm cluster is cluster 1 of the feature k = 2 run (the larger one; the 2026-10-29 run used the latent k = 2 cluster 0, which at 60,000 objects was not the sperm)
 if (-not $GalleriesOnly) { & $py analysis\compartment_agreement.py $feat --within "runs\pop_srv_a8_feat_k2\populations.csv:1" --prefixes preds refs --measures LDHC_AKAP4.sigma_major_um LDHC_AKAP4.sigma_minor_um LDHC_AKAP4.anisotropy ACRV1.sigma_major_um ACRV1.within_2um CD45.sigma_major_um --title "A8, full held-out replicate: compartment measurements, virtual against measured (sperm cluster)" --out "figures\srv_a8_pop_compartment_agreement.png" }
+}
 
 # ---- zip: populations, summaries, embeddings, figures (features.csv only with -WithFeatures)
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"; $zip = "server_populations_$stamp.zip"
