@@ -238,6 +238,7 @@ def main(argv=None):
     json.dump({"run": a.run, "checkpoint": a.checkpoint, "sample": int(len(idx)), "seed": a.seed, "size_px": a.size, "main_population": main_,
                "rows": [{"group": name, "object": int(idx[q]), "pixel_r": {names[k]: (float(r[q][k]) if np.isfinite(r[q][k]) else None) for k in range(te.cout)}} for name, q in rows],
                "display_range_max": {names[k]: rng_[k][1] for k in ks}}, open(stem + ".json", "w"), indent=1)
+    if pinned: spec = []                                          # the legend describes the pinned rows, not the unused rule
     n_best = sum(n for s, n in spec if s == "best"); n_typ = sum(n for s, n in spec if s == "typical")
     others = ", ".join("%d %s" % (n, GROUP_LABEL.get(s, s).replace("\n", " ").lower()) for s, n in spec if s not in ("best", "typical"))
     parts = []
