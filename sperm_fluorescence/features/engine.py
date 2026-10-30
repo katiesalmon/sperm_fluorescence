@@ -233,6 +233,18 @@ def populations(values):
     return g
 
 
+def denoise_measured(img, valid, how):
+    """A measured stain channel with its read noise reduced: 'floor' removes the frame's noise
+    floor (stain.denoise), 'smooth' first blurs with a 1-px Gaussian so single-pixel noise does
+    not seed the threshold masks, then removes the floor. Pixels outside the valid frame stay 0."""
+    img = np.asarray(img, dtype=np.float32)
+    if how == "smooth":
+        from scipy.ndimage import gaussian_filter
+        v = (valid > 0).astype(np.float32)
+        img = gaussian_filter(img * v, 1.0) / np.maximum(gaussian_filter(v, 1.0), 1e-3) * v     # normalised so the frame edge does not darken
+    return stn.denoise(img, valid)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence features", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("store"); ap.add_argument("--cache", default=None, help="default: the store's source cache")
@@ -241,6 +253,7 @@ def main(argv=None):
     ap.add_argument("--daf", default=None, help="ImageStream .daf: validate reference features against the instrument's table and predicted against reference")
     ap.add_argument("--limit", type=int, default=0); ap.add_argument("--no-ref", action="store_true", help="alias for --reference none")
     ap.add_argument("--no-pixels", action="store_true", help="skip the canonical aligned pixel stacks (<out>.pixels.npz)")
+    ap.add_argument("--denoise-ref", default="none", choices=["none", "floor", "smooth"], help="denoise the MEASURED stain images before the reference masks and features: floor = subtract the frame's noise floor (median + 3 MAD, stain.denoise); smooth = Gaussian sigma 1 px then the floor. The predicted side is untouched, so the measured truth gets a fairer footing against the smooth predictions")
     ap.add_argument("--pixels-only", action="store_true", help="write only the aligned pixel stacks (cell axis from the virtual stains; no feature catalogue, no CSV): fast, for autoencoder training data")
     a = ap.parse_args(argv)
     st = open_store(a.store, [c.strip() for c in a.classes.split(",")] if a.classes else None)
@@ -287,6 +300,8 @@ def main(argv=None):
             fill = [0.0] * len(names) + [float(np.median(np.concatenate([x[j][0], x[j][-1], x[j][:, 0], x[j][:, -1]]))) for j in range(len(roles))]
             pixels.append(stn.canonical_stack(imgs, valid, px_um, axis_pred[0], axis_pred[1], fill).astype(np.float16))
         if ref != "none" and av.any():
+            if a.denoise_ref != "none":
+                y = np.stack([denoise_measured(y[k], valid, a.denoise_ref) for k in range(len(y))])
             if ref == "ideas":
                 rparts = {COMPARTMENT[nm]: im[k] & valid for k, nm in enumerate(names) if nm in COMPARTMENT and av[k]}
             elif ref == "rule":
@@ -320,7 +335,7 @@ def main(argv=None):
     with open(a.out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore"); w.writeheader()
         for r in rows: w.writerow({c: ("" if (isinstance(v, float) and not np.isfinite(v)) else v) for c, v in r.items()})
-    side = {"store": st.meta, "cache": os.path.abspath(cache), "classes": st.classes, "pixel_um": px_um, "reference": ref, "n": len(rows),
+    side = {"store": st.meta, "cache": os.path.abspath(cache), "classes": st.classes, "pixel_um": px_um, "reference": ref, "denoise_ref": a.denoise_ref, "n": len(rows),
             "columns": {c: docs.get(c, "") for c in cols}, "created": time.strftime("%Y-%m-%d %H:%M")}
     json.dump(side, open(os.path.splitext(a.out)[0] + ".columns.json", "w"), indent=1)
     if pixels:

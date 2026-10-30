@@ -6,6 +6,7 @@
 #   .\scripts\server_populations.ps1 -TrainOnHeldOut      # autoencoder trained on the held-out replicate itself (no replicate-2 pass; faster)
 #   .\scripts\server_populations.ps1 -WithFeatures        # also put features.csv (hundreds of MB) in the zip
 #   .\scripts\server_populations.ps1 -GalleriesOnly       # runs\pop_srv_a8_* exist: only redraw the galleries (stains, light loss, SSC, measured) and zip
+#   .\scripts\server_populations.ps1 -DenoiseRef -GalleriesOnly   # add a features pass with the measured stains denoised (~2 h), k = 2 against that measured side, its confusion matrix
 #
 # Time, RTX A6000: predict ~10 min per replicate, features ~2 h for 60,000 objects (single process),
 # pixels-only for the training replicate ~10 min, autoencoder ~30 min, clustering and galleries ~20 min.
@@ -17,6 +18,7 @@ param(
     [switch]$TrainOnHeldOut,
     [switch]$WithFeatures,
     [switch]$GalleriesOnly,
+    [switch]$DenoiseRef,
     [int]$Epochs = 60,
     [int]$Latent = 16
 )
@@ -65,6 +67,16 @@ foreach ($k in 2, 3, 4) {
 if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k 2 --no-gates --measured-inputs --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_mi" }
 & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains alone" --out "figures\srv_a8_pop_feat_k2_confusion.png"
 if (Test-Path "runs\pop_srv_a8_feat_k2_mi\populations.csv") { & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_mi" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the measured stains + the same label-free inputs" --out "figures\srv_a8_pop_feat_k2_mi_confusion.png" }
+# measured stains denoised (Gaussian 1 px + noise floor) before the reference masks: a second measured-side truth. On the laptop
+# sample it did not improve agreement (99.0 % vs 99.7 %); at 60,000 the question is whether the 247 dim-CD45 leukocytes move.
+if ($DenoiseRef) {
+    $featDn = "$store\features_dn.csv"
+    if (-not (Test-Path $featDn)) { & $py -m sperm_fluorescence features $store --denoise-ref smooth --no-pixels --out $featDn }
+    & $py -m sperm_fluorescence populate $featDn --set all --k 2 --no-gates --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_dn"
+    & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_dn" --names sperm leukocyte --title "A8, full held-out replicate, k = 2 on all features: label-free clusters against the DENOISED measured stains" --out "figures\srv_a8_pop_feat_k2_dn_confusion.png"
+    & $py -m sperm_fluorescence populate $featDn --set all --k 2 --no-gates --measured-inputs --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_dn_mi"
+    & $py analysis\confusion_matrix.py "runs\pop_srv_a8_feat_k2_dn_mi" --names sperm leukocyte --title "A8, full held-out replicate, k = 2: label-free clusters against the DENOISED measured stains + the same inputs" --out "figures\srv_a8_pop_feat_k2_dn_mi_confusion.png"
+}
 # the objects the k = 2 clustering places against their well, split by what the measured stains say (sperm carried into the
 # PBMC preparation, leukocytes in the ejaculate, and the genuinely misassigned); drawn in the same four views
 $mis = "runs\pop_srv_a8_feat_k2_misplaced"

@@ -680,6 +680,24 @@ staining, which the label-free side, reading shape from light loss, does not sha
 apples-to-apples measured side (`--measured-inputs`, stains plus the same light-loss and
 scatter columns) is still to be run on the server; this zip was a galleries-only pass.
 
+**Denoising the measured stains does not make them a better truth** (laptop sample; `features
+--denoise-ref {floor,smooth}` → `data/a8_vstain/features_{fl,dn}.csv`, `runs/pop_a8_all_k2_{fl,dn}`,
+`figures/a8_all_feat_k2_{fl,dn}_confusion.png`). The measured side was recomputed with the
+measured stain images either floor-subtracted (median + 3 MAD) or Gaussian-smoothed (1 px) and
+floor-subtracted before the reference masks and features; the label-free side is identical.
+Agreement with the label-free k = 2 fell from 99.7 % (2 disagreements of 600) to 99.0 % (6,
+smooth) and 98.8 % (7, floor), and the three measured-side clusterings agree with one another
+only at ARI 0.95–0.97. The new disagreements are the same kinds as before: a lone dim head, a
+leukocyte with a sperm attached, a round body with faint stain (`figures/
+a8_all_feat_k2_dn_disagree{,_measured,_lightloss}.png`). Two readings. The measured truth is
+itself uncertain at the ~1 % level under preprocessing choices alone, which bounds how precisely
+any agreement with it can be read. And floor subtraction works against the dim cells that
+caused most of the 60,000-object disagreements, since it removes exactly the faint signal they
+have; smoothing helps diffuse signal but moves the masks. Whether the 247 dim-CD45 leukocytes
+move at scale is a server question (`server_populations.ps1 -DenoiseRef`, ~2 h for the features
+pass); the measured-plus-inputs truth (`--measured-inputs`) is the more promising fix, since it
+gives the truth the scatter view that the dim cells need.
+
 **Galleries with the label-free inputs need the server's store.** The 60,000-object store (12 GB)
 stays on the server, so light-loss and side-scatter galleries of these clusters are drawn there:
 `server_populations.ps1 -GalleriesOnly` redraws, for every `runs\pop_srv_a8_*`, the virtual-stain,
