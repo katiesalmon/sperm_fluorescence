@@ -35,7 +35,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run"); ap.add_argument("--out", required=True)
     ap.add_argument("--truth", default="measured_cluster", help="column holding the ground-truth label (default: the measured-side clustering)")
-    ap.add_argument("--names", nargs="*", default=[], help="class names in order of the matched truth classes (largest truth class first)")
+    ap.add_argument("--names", nargs="*", default=[], help="class names: either in order of the matched truth classes (largest truth class first) or as <label-free cluster id>=name, which is safer")
     ap.add_argument("--positive", default=None, help="which named class is 'positive' for sensitivity / PPV (default: the first)")
     ap.add_argument("--title", default=None)
     a = ap.parse_args(argv)
@@ -49,7 +49,12 @@ def main(argv=None):
     C = np.array([[int(((t[a.truth] == u) & (t["cluster"] == p)).sum()) for p in preds] for u in truths])
     r, c = linear_sum_assignment(-C); pred_order = [preds[j] for _, j in sorted(zip(r, c))] + [p for p in preds if p not in [preds[j] for j in c]]
     cm = np.array([[int(((t[a.truth] == u) & (t["cluster"] == p)).sum()) for p in pred_order] for u in truths])
-    names = list(a.names) + ["class %d" % u for u in truths[len(a.names):]]
+    if a.names and all("=" in n for n in a.names):       # "<label-free cluster>=name": name each truth row by the cluster it matched
+        by_pred = {int(n.split("=", 1)[0]): n.split("=", 1)[1] for n in a.names}
+        names = [by_pred.get(int(p), "cluster %d" % p) for p in pred_order]
+    else:
+        names = list(a.names) + ["class %d" % u for u in truths[len(a.names):]]
+    print("matched: " + ", ".join("label-free cluster %d <-> measured class %d = %s" % (p, u, n) for p, u, n in zip(pred_order, truths, names)))
     pos = names.index(a.positive) if a.positive else 0
     res = {"run": os.path.abspath(a.run), "truth": a.truth, "classes": names, "truth_ids": [int(u) for u in truths], "matched_clusters": [int(p) for p in pred_order],
            "matrix_truth_rows_pred_cols": cm.tolist(), "overall": rates(cm, pos),
