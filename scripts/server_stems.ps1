@@ -1,6 +1,7 @@
 # Full-scale stems models on the GPU machine: A8 (CellView family) and ImageStream (camera family).
 # Run from the repo folder in PowerShell after docs/server-setup.md's install:
 #
+#   .\scripts\server_stems.ps1 -A8Run <run> -DenoiseTargets smooth   # retrain on denoised measured stains -> runs\srv_a8_stems_smooth, figures\srv_a8_smooth_*
 #   .\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" `
 #                              -IsxCif "Z:\...\260813_Blair_Sperm_ISX\ALL_1_400_1.cif" -IsxDaf "Z:\...\ALL_1_400_1.daf" `
 #                              -Cache C:\sf_cache -Width 64        (any LOCAL disk; default <repo>\data\server_cache)
@@ -17,6 +18,7 @@ param(
     [int]$A8Epochs = 40,
     [int]$IsxEpochs = 30,
     [int]$Limit = 0,            # events per class, 0 = all; use e.g. 2000 for a first smoke run
+    [string]$DenoiseTargets = "",   # "smooth" or "floor": measured stains denoised before training; cache a8_roles_<mode>, run srv_a8_stems_<mode>, figures srv_a8_<mode>_*
     [switch]$SkipPrepare,
     [switch]$SkipTrain,         # reuse runs\srv_*: no prepare, train or ablate; redraw views, sheet, masks, accuracy, slides, panel
     [switch]$Checkpoints        # also put each run's best.pt (~30 MB) in the zip, so the laptop can redraw figures from the full model
@@ -29,20 +31,22 @@ $common = @("--train", "2", "--test", "3", "--batch", "32", "--width", "$Width",
             "--eval-every", "5", "--arch", "stems", "--role-dropout", "0.3", "--select-on", "val_event_r", "--tta")
 
 if ($A8Run -ne "") {
-    $a8cache = "$Cache\a8_roles"
+    $sfx = if ($DenoiseTargets -ne "") { "_$DenoiseTargets" } else { "" }
+    $a8cache = "$Cache\a8_roles$sfx"; $a8run = "runs\srv_a8_stems$sfx"; $a8fig = "figures\srv_a8$sfx"
+    $dn = if ($DenoiseTargets -ne "") { @("--denoise-targets", $DenoiseTargets) } else { @() }
     if (-not $SkipPrepare -and -not $SkipTrain) {
-        & $py -m sperm_fluorescence prepare --instrument a8 --reader a8_run --source $A8Run --cache $a8cache --limit $Limit
+        & $py -m sperm_fluorescence prepare --instrument a8 --reader a8_run --source $A8Run --cache $a8cache --limit $Limit @dn
     }
     if (-not $SkipTrain) {
-        & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out runs\srv_a8_stems @common
-        & $py -m sperm_fluorescence ablate runs\srv_a8_stems --cache $a8cache --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc; ssc"
+        & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out $a8run @common
+        & $py -m sperm_fluorescence ablate $a8run --cache $a8cache --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc; ssc"
     }
-    & $py -m sperm_fluorescence views  runs\srv_a8_stems --cache $a8cache --test 3 --subsets "lightloss,fsc,ssc; lightloss; ssc" --per-well 2 --crop 56 --out figures\srv_a8_views.png
-    & $py -m sperm_fluorescence sheet  runs\srv_a8_stems --cache $a8cache --test 3 --per-well 3
-    & $py -m sperm_fluorescence masks  runs\srv_a8_stems --cache $a8cache --test 3 --limit 1000 --calib 400
-    & $py -m sperm_fluorescence accuracy runs\srv_a8_stems --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out figures\srv_a8_accuracy
-    & $py -m sperm_fluorescence slides runs\srv_a8_stems --cache $a8cache --test 3 --well S --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out figures\srv_a8_slides
-    & $py -m sperm_fluorescence panel  runs\srv_a8_stems --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out figures\srv_a8_panel.png
+    & $py -m sperm_fluorescence views  $a8run --cache $a8cache --test 3 --subsets "lightloss,fsc,ssc; lightloss; ssc" --per-well 2 --crop 56 --out ${a8fig}_views.png
+    & $py -m sperm_fluorescence sheet  $a8run --cache $a8cache --test 3 --per-well 3
+    & $py -m sperm_fluorescence masks  $a8run --cache $a8cache --test 3 --limit 1000 --calib 400
+    & $py -m sperm_fluorescence accuracy $a8run --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out ${a8fig}_accuracy
+    & $py -m sperm_fluorescence slides $a8run --cache $a8cache --test 3 --well S --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out ${a8fig}_slides
+    & $py -m sperm_fluorescence panel  $a8run --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out ${a8fig}_panel.png
 }
 
 if ($IsxCif -ne "") {
@@ -66,7 +70,7 @@ $stamp = Get-Date -Format "yyyyMMdd_HHmm"
 $zip = "server_results_$stamp.zip"
 $staging = Join-Path $env:TEMP "sf_results_$stamp"
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
-foreach ($run in @("runs\srv_a8_stems", "runs\srv_isx_stems")) {
+foreach ($run in @((if ($A8Run -ne "") { $a8run } else { "runs\srv_a8_stems" }), "runs\srv_isx_stems")) {
     if (Test-Path $run) {
         $dest = Join-Path $staging $run
         New-Item -ItemType Directory -Force -Path $dest | Out-Null

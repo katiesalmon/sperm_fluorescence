@@ -140,6 +140,20 @@ def a8_run_records(cfg, source, limit=0):
 READERS = {"a8_bundle": a8_records, "a8_run": a8_run_records, "isx_cif": isx_records}
 
 
+def denoise_target(img, how):
+    """A measured stain frame with its read noise removed, as features/stain.py does for the
+    moments: the noise floor (median + 3 MAD of the frame) subtracted and the result clipped at
+    0; 'smooth' blurs with a 1-px Gaussian first so single-pixel noise does not survive the
+    floor. 'none' returns the frame unchanged (background-subtracted but noisy)."""
+    if how == "none": return img
+    from ..features.stain import denoise
+    img = np.asarray(img, dtype=np.float32)
+    if how == "smooth":
+        from scipy.ndimage import gaussian_filter
+        img = gaussian_filter(img, 1.0)
+    return denoise(img, None)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sperm_fluorescence prepare", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--instrument", action="append", required=True, help="config name (a8, isx, ...) or path; repeat for several")
@@ -147,6 +161,7 @@ def main(argv=None):
     ap.add_argument("--daf", action="append", default=[], help="ImageStream .daf (features), one per isx instrument")
     ap.add_argument("--cache", required=True); ap.add_argument("--limit", type=int, default=0, help="events per class (0 = all)")
     ap.add_argument("--reader", default=None, help="override the config's reader, e.g. a8_run for a full run folder on the server")
+    ap.add_argument("--denoise-targets", default="none", choices=["none", "floor", "smooth"], help="denoise every measured stain image before it becomes a target: floor = subtract the frame's noise floor (median + 3 MAD) and clip at 0; smooth = a 1-px Gaussian first, then the floor. The model then learns, and is scored against, the stain without its read noise (recorded in meta.json)")
     ap.add_argument("--unstained", action="store_true", help="the source carries no stains: targets are written as zeros and no marker is marked available (ISX: one class, 1I)")
     a = ap.parse_args(argv)
     if len(a.source) != len(a.instrument): ap.error("one --source per --instrument")
@@ -155,7 +170,7 @@ def main(argv=None):
     for cfg in cfgs:
         roles += [r for r in cfg["roles"] if r not in roles]; markers += [m for m in cfg["stains"] if m not in markers]
     os.makedirs(a.cache, exist_ok=True)
-    meta = {"layout": "ragged", "roles": roles, "target_names": markers, "classes": {}, "scales": {}, "instruments": {}, "source_rows": True}
+    meta = {"layout": "ragged", "roles": roles, "target_names": markers, "classes": {}, "scales": {}, "instruments": {}, "source_rows": True, "denoise_targets": a.denoise_targets}
     dafs = list(a.daf)
     for cfg, src in zip(cfgs, a.source):
         inst = cfg["name"]; meta["instruments"][inst] = {"family": cfg.get("family"), "pixel_um": cfg.get("pixel_um"), "zoom_to_reference": cfg.get("zoom_to_reference", 1.0)}
@@ -172,7 +187,7 @@ def main(argv=None):
                 for j, k in enumerate(rk):
                     if k is not None: X[j] = x[k]
                 for j, k in enumerate(mk):
-                    if k is not None and not a.unstained: Y[j] = y[k]
+                    if k is not None and not a.unstained: Y[j] = denoise_target(y[k], a.denoise_targets)
                 full.append((X, Y, s, row))
             return full
         # pass 1: the per-marker scale (unit mean |y|) from a short draw of the training-digit classes
