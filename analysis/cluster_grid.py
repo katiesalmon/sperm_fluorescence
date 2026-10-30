@@ -63,9 +63,10 @@ def main(argv=None):
     # layout: outer grid rows = runs (height by number of clusters), cols = views
     heights = [len(ks) * (a.rows + 0.55) for _, _, _, _, ks in runs]
     tile = 0.5
-    figw = tile * a.cols * len(a.views) + 0.6 * (len(a.views) + 1); figh = tile * sum(heights) + 1.4
+    figw = tile * a.cols * len(a.views) + 0.6 * (len(a.views) + 1) + 0.7; figh = tile * sum(heights) + 1.6 + 0.6 * (len(runs) - 1)
     fig = plt.figure(figsize=(figw, figh), facecolor="white")
-    outer = gridspec.GridSpec(len(runs), len(a.views), figure=fig, height_ratios=heights, hspace=0.12, wspace=0.08, left=0.02, right=0.98, top=1 - 0.9 / figh, bottom=0.01)
+    outer = gridspec.GridSpec(len(runs), len(a.views), figure=fig, height_ratios=heights, hspace=0.3, wspace=0.08, left=0.75 / figw, right=0.99, top=1 - 1.15 / figh, bottom=0.01)
+    first_cell = {}
     for ri, (r, t, s, pcs, ks) in enumerate(runs):
         names = dict(n.split("=", 1) for n in (name_sets[ri] or []))
         for vi, view in enumerate(a.views):
@@ -83,14 +84,20 @@ def main(argv=None):
                         ax.imshow(render.grey(pw[0]), interpolation="nearest")
                     for sp in ax.spines.values(): sp.set_edgecolor("#333333"); sp.set_linewidth(0.3)
                 head = fig.add_subplot(cell[ci]); head.axis("off")
-                label = "cluster %d  (n = %s)%s" % (c, "{:,}".format(n), ("   " + names[str(c)]) if str(c) in names else "")
-                if ci == 0: label = "k = %d, %s        " % (s["k"], VIEW_LABEL.get(view, view)) + label
-                head.set_title(label, fontsize=9, fontweight="bold", color=COLOURS[c % len(COLOURS)], loc="left", pad=4)
-    legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
-    sub = "%s objects  ·  %s  ·  members shown from each cluster's centre outward  ·  virtual stains: %s, one display range per marker  ·  inputs in grey, per-object contrast" % (
-        "{:,}".format(len(runs[0][1])), "  /  ".join("%s: %s, k = %d, features %s (%d PCs)" % (os.path.basename(r.rstrip("/")), s["method"], s["k"], s["set"] if not s.get("pixels") else "pixels", s["pca"]["n_components"]) for r, _, s, _, _ in runs), legend)
-    fig.suptitle(a.title or "Clusterings side by side", fontsize=12, fontweight="bold", y=1 - 0.12 / figh)
-    fig.text(0.5, 1 - 0.5 / figh, sub, ha="center", va="top", fontsize=7, color="#52514e", wrap=True)
+                label = "Cluster %d" % c + (": %s" % names[str(c)] if str(c) in names else "")
+                head.set_title(label, fontsize=9.5, fontweight="bold", color=COLOURS[c % len(COLOURS)], loc="left", pad=4)
+                if ci == 0 and vi == 0:
+                    first_cell[ri] = head
+    # view headers along the top, k labels down the left margin
+    fig.canvas.draw()
+    for vi, view in enumerate(a.views):
+        b = fig.add_subplot(outer[0, vi]); b.axis("off"); pos = b.get_position()
+        fig.text((pos.x0 + pos.x1) / 2, 1 - 0.85 / figh, VIEW_LABEL.get(view, view)[0].upper() + VIEW_LABEL.get(view, view)[1:], fontsize=12, fontweight="bold", ha="center", va="bottom")
+    for ri, (r, t, s, pcs, ks) in enumerate(runs):
+        b = fig.add_subplot(outer[ri, 0]); b.axis("off"); pos = b.get_position()
+        fig.text(0.22 / figw, (pos.y0 + pos.y1) / 2, "k = %d" % s["k"], fontsize=13, fontweight="bold", ha="center", va="center", rotation=90)
+    import textwrap
+    fig.suptitle("\n".join(textwrap.wrap(a.title or "Clusterings side by side", 110)), fontsize=13, fontweight="bold", y=1 - 0.1 / figh, va="top")
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True); fig.savefig(a.out, dpi=a.dpi, facecolor="white"); plt.close(fig); print("wrote", a.out)
     return 0
 

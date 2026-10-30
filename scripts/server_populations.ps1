@@ -68,7 +68,7 @@ foreach ($k in 2, 3, 4) {
 }
 }
 # one page: k = 2 (top) and k = 3 (bottom) on all features, virtual stains (left) and side scatter (right)
-& $py analysis\cluster_grid.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_feat_k3" --store $store --views stains ssc --names2 "0=leukocytes" "1=sperm" --names3 "0=leukocytes" "1=sperm, straight tail" "2=sperm, looped tail" --title "A8, full held-out replicate (60,000 objects): feature clustering at k = 2 (top) and k = 3 (bottom), virtual stains (left) and side scatter (right)" --out "figures\srv_a8_pop_grid_k2_k3.png"
+& $py analysis\cluster_grid.py "runs\pop_srv_a8_feat_k2" "runs\pop_srv_a8_feat_k3" --store $store --views stains ssc --names2 "0=leukocytes" "1=sperm" --names3 "0=leukocytes" "1=sperm, straight tail" "2=sperm, looped tail" --title "Unsupervised Clustering on Virtual Fluorescence Enables Sorting of Mixed Sperm & PBMC Samples Based on Cell Identity and Morphology" --out "figures\srv_a8_pop_grid_k2_k3.png"
 # same k = 2, but the measured side also gets the light-loss / FSC / SSC columns: both sides see identical feature families and only
 # the stain source differs (virtual vs measured); the confusion matrix against this side is the apples-to-apples one
 if (-not $GalleriesOnly) { & $py -m sperm_fluorescence populate $feat --set all --k 2 --no-gates --measured-inputs --store $store --gallery-n 8 --out "runs\pop_srv_a8_feat_k2_mi" }
