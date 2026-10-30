@@ -76,8 +76,10 @@ def main(argv=None):
     # ---- figure: the matrix (counts + row %), then one small matrix per well
     ink, muted, grid = "#0b0b0b", "#52514e", "#e6e5e1"; blue = "#2a78d6"
     k = len(names); ncol = 1 + len(wells)
-    fig = plt.figure(figsize=(3.9 + 2.5 * len(wells), 4.6), facecolor="#fcfcfb")
-    gs = fig.add_gridspec(1, ncol, width_ratios=[1.6] + [1] * len(wells), wspace=0.45, left=0.09, right=0.98, top=0.78, bottom=0.2)
+    wrap = lambda n: n.replace(", ", ",\n")                 # "sperm, straight tail" on two lines so k = 3 labels do not collide
+    unit = 1.0 + 0.45 * (k - 2)                              # panels grow with the number of classes
+    fig = plt.figure(figsize=((3.9 + 2.5 * len(wells)) * unit, 4.6 + 0.6 * (k - 2)), facecolor="#fcfcfb")
+    gs = fig.add_gridspec(1, ncol, width_ratios=[1.6] + [1] * len(wells), wspace=0.55, left=0.09, right=0.98, top=0.78, bottom=0.2 + 0.03 * (k - 2))
     def draw(ax, M, title, big):
         rowsum = M.sum(1, keepdims=True); frac = M / np.maximum(rowsum, 1)
         ax.imshow(frac, cmap=matplotlib.colors.LinearSegmentedColormap.from_list("b", ["#fcfcfb", blue]), vmin=0, vmax=1, aspect="equal")
@@ -86,7 +88,7 @@ def main(argv=None):
                 col = "white" if frac[i, j] > 0.6 else ink
                 ax.text(j, i - (0.1 if big else 0.12), "{:,}".format(M[i, j]), ha="center", va="center", fontsize=12 if big else 9.5, fontweight="bold", color=col)
                 ax.text(j, i + (0.22 if big else 0.24), "%.1f%%" % (100 * frac[i, j]), ha="center", va="center", fontsize=8.5 if big else 7.5, color=col if frac[i, j] > 0.6 else muted)
-        ax.set_xticks(range(k)); ax.set_yticks(range(k)); ax.set_xticklabels(names, fontsize=9 if big else 8, color=ink); ax.set_yticklabels(names, fontsize=9 if big else 8, color=ink, rotation=90, va="center")
+        ax.set_xticks(range(k)); ax.set_yticks(range(k)); ax.set_xticklabels([wrap(n) for n in names], fontsize=9 if big else 7.5, color=ink); ax.set_yticklabels([wrap(n) for n in names], fontsize=9 if big else 7.5, color=ink, va="center")
         ax.set_xlabel("label-free cluster", fontsize=9 if big else 8, color=muted); ax.set_ylabel("measured stains (truth)", fontsize=9 if big else 8, color=muted)
         ax.set_title(title, fontsize=10.5 if big else 9, fontweight="bold", color=ink, pad=8)
         for sp in ax.spines.values(): sp.set_color(grid)
