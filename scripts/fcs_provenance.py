@@ -6,6 +6,7 @@ double data, either byte order, as the FACSDiscover A8 and the CytPix write it.
 
     python scripts/fcs_provenance.py path\\to\\export\\*.fcs
     python scripts/fcs_provenance.py path\\to\\export        # every .fcs under a directory
+    python scripts/fcs_provenance.py path\\to\\A3-3S.fcs --params [--match PE]   # the parameter names and the operator's labels ($PnN / $PnS)
 
 Separate acquisitions have distinct $BTIM/$ETIM, their own event counts, and Time columns that
 each start near zero and do not interleave; a gated split of one acquisition shares $BTIM and
@@ -65,7 +66,27 @@ def describe(path):
     return out
 
 
+def params(path, match=None):
+    """Every parameter's $PnN (detector / fluorophore name) and $PnS (the operator's label), one
+    line each, optionally only those whose name or label contains `match` (case-insensitive)."""
+    with open(path, "rb") as fh:
+        ver, kw, db, de = read_text(fh)
+    print("%s  (%s, %s parameters)" % (os.path.basename(path), kw.get("$CYT", "?"), kw.get("$PAR", "?")))
+    for i in range(1, int(kw.get("$PAR", 0)) + 1):
+        n, lab = kw.get("$P%dN" % i, ""), kw.get("$P%dS" % i, "")
+        if match and match.lower() not in (n + " " + lab).lower(): continue
+        print("  P%-3d %-28s %s" % (i, n, lab))
+
+
 def main(argv):
+    if "--params" in argv:
+        argv = [a for a in argv if a != "--params"]
+        match = None
+        if "--match" in argv:
+            k = argv.index("--match"); match = argv[k + 1]; argv = argv[:k] + argv[k + 2:]
+        for a in argv[1:]:
+            for p in (sorted(glob.glob(os.path.join(a, "**", "*.fcs"), recursive=True)) if os.path.isdir(a) else sorted(glob.glob(a))): params(p, match)
+        return 0
     paths = []
     for a in argv[1:]:
         if os.path.isdir(a): paths += sorted(glob.glob(os.path.join(a, "**", "*.fcs"), recursive=True))
