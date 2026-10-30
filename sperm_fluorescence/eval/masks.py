@@ -172,8 +172,9 @@ def main(argv=None):
             table[(inst, names[k])] = {"n": len(rk), "iou": float(np.mean(ious)), "dice": float(np.mean(dcs)), "detect": det,
                                          "truth_rule_vs_ideas_iou": float(np.mean(alt)) if alt else None, "threshold": list(thr[(inst, k)])}
             print("%-4s %-11s %6d %6.3f %6.3f %7.3f   %s" % (inst, names[k], len(rk), np.mean(ious), np.mean(dcs), det, ("%.3f" % np.mean(alt)) if alt else ""))
-    json.dump({"thresholds": {"%s:%s" % (i, names[k]): list(t) for (i, k), t in thr.items()}, "held_out": {"%s:%s" % k: v for k, v in table.items()}},
-              open(os.path.join(a.run, "masks.json"), "w"), indent=1)
+    stem = "masks" if a.denoise_measured == "none" else "masks_denoised_%s" % a.denoise_measured      # a denoised scoring never overwrites the raw one
+    json.dump({"thresholds": {"%s:%s" % (i, names[k]): list(t) for (i, k), t in thr.items()}, "held_out": {"%s:%s" % k: v for k, v in table.items()}, "denoise_measured": a.denoise_measured},
+              open(os.path.join(a.run, stem + ".json"), "w"), indent=1)
 
     # ---- sheet: BF with outlines, then per marker the reference and predicted masks ----
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -208,8 +209,8 @@ def main(argv=None):
         axes[i, 0].set_ylabel("%s (%s)" % (cls.lstrip("123"), inst), fontsize=7, color="white")
     fig.suptitle("%s: stain masks. white = reference (IDEAS on ISX, thresholded truth on A8), colour = predicted" % os.path.basename(a.run.rstrip("/")),
                  fontsize=9, color="white")
-    fig.tight_layout(); out = os.path.join(a.run, "masks.png"); fig.savefig(out, dpi=110, facecolor="black"); plt.close(fig)
-    print("wrote", os.path.join(a.run, "masks.json"), "and", out)
+    fig.tight_layout(); out = os.path.join(a.run, stem + ".png"); fig.savefig(out, dpi=110, facecolor="black"); plt.close(fig)
+    print("wrote", os.path.join(a.run, stem + ".json"), "and", out)
 
 
 if __name__ == "__main__":
