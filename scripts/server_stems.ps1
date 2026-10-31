@@ -1,7 +1,7 @@
 # Full-scale stems models on the GPU machine: A8 (CellView family) and ImageStream (camera family).
 # Run from the repo folder in PowerShell after docs/server-setup.md's install:
 #
-#   .\scripts\server_stems.ps1 -A8Run "Z:\...\260812" -A8Config configs\instruments\a8_260812.toml -Suffix _260812 -A8Well M   # the 2026-08-12 single-well, TOMM20 panel
+#   .\scripts\server_stems.ps1 -A8Run "Z:\...\260812" -A8Config configs\instruments\a8_260812.toml -Suffix _260812 -A8Well M -A8Stained "LDHC,ACRV1"   # the 2026-08-12 plate, TOMM20 panel
 #   .\scripts\server_stems.ps1 -A8Run <run> -DenoiseTargets smooth   # retrain on denoised measured stains -> runs\srv_a8_stems_smooth, figures\srv_a8_smooth_*
 #   .\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" `
 #                              -IsxCif "Z:\...\260813_Blair_Sperm_ISX\ALL_1_400_1.cif" -IsxDaf "Z:\...\ALL_1_400_1.daf" `
@@ -22,6 +22,7 @@ param(
     [string]$A8Config = "a8",        # instrument config name or path: a8 (July plate) or configs\instruments\a8_260812.toml (one well, TOMM20 panel)
     [string]$Suffix = "",            # run / cache / figure suffix for a second A8 dataset, e.g. _260812
     [string]$A8Well = "S",           # the well the slides figure draws (the July plate: S; a single mixed well: M)
+    [string]$A8Stained = "LDHC/AKAP4,ACRV1",   # markers that must be bright for a panel row to count as a stained sperm (2026-08-12 plate: LDHC,ACRV1)
     [string]$DenoiseTargets = "",   # "smooth" or "floor": measured stains denoised before training; cache a8_roles_<mode>, run srv_a8_stems_<mode>, figures srv_a8_<mode>_*
     [switch]$SkipPrepare,
     [switch]$SkipTrain,         # reuse runs\srv_*: no prepare, train or ablate; redraw views, sheet, masks, accuracy, slides, panel
@@ -50,7 +51,7 @@ if ($A8Run -ne "") {
     & $py -m sperm_fluorescence masks  $a8out --cache $a8cache --test 3 --limit 1000 --calib 400
     & $py -m sperm_fluorescence accuracy $a8out --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out ${a8fig}_accuracy
     & $py -m sperm_fluorescence slides $a8out --cache $a8cache --test 3 --well $A8Well --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out ${a8fig}_slides
-    & $py -m sperm_fluorescence panel  $a8out --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out ${a8fig}_panel.png
+    & $py -m sperm_fluorescence panel  $a8out --cache $a8cache --test 3 --rows "best:5" --stained $A8Stained --size 56 --um-per-px 0.333 --approx-scale --range sample --out ${a8fig}_panel.png
 }
 
 if ($IsxCif -ne "") {

@@ -211,7 +211,11 @@ def main(argv=None):
     main_ = a.main or ("sperm" if (g == "sperm").any() else "S")
     r, ev, inside = per_object(te, P, idx, av)
     spec = [(s.split(":")[0].strip(), int(s.split(":")[1])) for s in a.rows.split(",") if s.strip()]
-    use = [names.index(s.strip()) for s in a.stained.split(",")] if a.stained else None
+    if a.stained:
+        want = [x.strip() for x in a.stained.split(",")]; use = [names.index(x) for x in want if x in names]
+        if len(use) < len(want): print("note: --stained markers not in this run were ignored: %s (have %s)" % ([x for x in want if x not in names], names))
+        use = use or None
+    else: use = None
     if pinned:
         pos = {int(i): q for q, i in enumerate(idx)}; rows = [("best", pos[o]) for o in pinned]
     else:
