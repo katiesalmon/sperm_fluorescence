@@ -9,7 +9,7 @@ CANON_PX = 48          # canonical grid side
 CANON_UM = 0.667       # canonical pixel size, um (48 px = 32 um)
 N_AXIAL = 16           # axial profile bins over +-8 um
 RADII_UM = (1.0, 2.0, 4.0, 8.0)
-HEAD_PREFERENCE = ("DAPI", "ACRV1", "TOMM20", "LDHC/AKAP4", "CD45")
+HEAD_PREFERENCE = ("DAPI", "ACRV1", "TOMM20", "LDHC/AKAP4", "LDHC", "CD45")
 
 DOC = {
     "total": "sum of the channel above its noise floor (median + 3 MAD of the frame) over the valid frame", "peak": "maximum pixel",

@@ -32,7 +32,7 @@ from .metrics import evaluate
 from .slides import crop, window
 
 ROLE_LABEL = {"lightloss": "Light loss", "fsc": "FSC", "ssc": "SSC", "brightfield": "Brightfield 1", "brightfield2": "Brightfield 2", "darkfield": "Darkfield (SSC)"}
-WHERE = {"LDHC/AKAP4": "Flagellum", "TOMM20": "Midpiece", "DAPI": "Nucleus", "ACRV1": "Acrosome", "CD45": "Leukocytes"}
+WHERE = {"LDHC/AKAP4": "Flagellum", "LDHC": "Flagellum", "TOMM20": "Midpiece", "DAPI": "Nucleus", "ACRV1": "Acrosome", "CD45": "Leukocytes"}
 DISPLAY = {"LDHC/AKAP4": "LDHC"}          # the marker name as the figure prints it (the antibody cocktail stays LDHC/AKAP4 in the data)
 GROUP_LABEL = {"best": "Sperm,\nbest cases", "typical": "Sperm,\ntypical", "dim": "Debris /\nDAPI-dim", "round": "Round\ncells",
                "S": "Sperm well", "SP": "Mixed well", "P": "PBMC well"}
@@ -59,8 +59,9 @@ def sperm_shaped(ds, idx, names, av, um_per_px):
     (LDHC/AKAP4) is centred >= 2 um from it. Without DAPI or a flagellum marker, or without
     a pixel size, every object passes."""
     ok = np.ones(len(idx), bool)
-    if not um_per_px or "DAPI" not in names or "LDHC/AKAP4" not in names: return ok
-    kd, kf = names.index("DAPI"), names.index("LDHC/AKAP4")
+    flag = next((n for n in ("LDHC/AKAP4", "LDHC") if n in names), None)
+    if not um_per_px or "DAPI" not in names or flag is None: return ok
+    kd, kf = names.index("DAPI"), names.index(flag)
     for q, i in enumerate(idx):
         if not (av[q, kd] and av[q, kf]): continue
         _, y, m = crop(ds, i); d = y[kd] * m; f = np.clip(y[kf] * m, 0, None)

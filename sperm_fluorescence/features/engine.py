@@ -43,7 +43,7 @@ from . import shape as shp
 from . import skeleton as skel
 from . import stain as stn
 
-COMPARTMENT = {"DAPI": "nucleus", "ACRV1": "acrosome", "TOMM20": "midpiece", "LDHC/AKAP4": "flagellum", "CD45": "cd45"}
+COMPARTMENT = {"DAPI": "nucleus", "ACRV1": "acrosome", "TOMM20": "midpiece", "LDHC/AKAP4": "flagellum", "LDHC": "flagellum", "CD45": "cd45"}
 SKELETON_MASKS = ("midpiece", "principal", "flagellum", "tail", "cell")
 INPUT_MASKS = ("cell", "head")
 X_DOC = {

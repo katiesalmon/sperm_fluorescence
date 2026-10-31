@@ -1,11 +1,9 @@
-# BD FACSDiscover A8, the 2026-08-12 acquisition: one well ("B5-All Primary 1_002") with the full primary
-# panel. Same instrument and imaging block as a8.toml (name stays "a8" so thresholds, mask rules and
-# gallery labels apply), different panel and a single acquisition.
-#
-# BEFORE USING: run scripts/survey_a8_export.py on the folder and set [stains] from the TIFF page names
-# and the FCS labels it prints (page index = position in the 6-page TIFF, 0-based). The entries below
-# assume the July filter set with TOMM20 in place of CD45 on the PE page; change them if the survey
-# shows otherwise.
+# BD FACSDiscover A8, the 2026-08-12 plate (surveyed 2026-10-31, scripts/survey_a8_export.py): 20 wells = four antibody
+# dilutions (rows A-D: 1:400, 1:800, 1:1600, 1:3200) x five staining conditions (columns 1-5: no primary, no LDHC,
+# no TOMM20, no ACRV1, all primaries). Panel: LDHC on Alexa Fluor 488, TOMM20 on PE, ACRV-1 on PerCP-eFluor 710,
+# DAPI as a scalar only. Same instrument, filters and 6-page TIFFs as July (name stays "a8" so thresholds, mask rules
+# and gallery labels apply). Images have been exported for the two "All Primary" wells A5 and B5 (20,000 each);
+# the other wells' images are still inside their .cvw recordings.
 name = "a8"
 family = "cellview"
 pixel_um = 0.42
@@ -17,19 +15,23 @@ lightloss = 0
 fsc = 1
 ssc = 2
 
-[stains]                       # marker -> page; three pages, red-ward order (AF488, PE, PerCP) for the unmixing triangle
-"LDHC/AKAP4" = 3
+[stains]                       # marker -> page; AF488, PE, PerCP in red-ward order for the unmixing triangle
+"LDHC" = 3
 "TOMM20" = 4
 "ACRV1" = 5
 
 [classes]
-split_halves = true            # one acquisition: first half of the events -> 2M (train), second half -> 3M (held out)
+split_halves = false           # two separate acquisitions of the full panel: train on one, hold out the other
 repeat = 6
 
-[classes.samples]              # file stem (of the .fcs / .zip / _images folder) -> class letter
-"B5-All Primary 1_002" = "M"
+[classes.samples]              # file stem -> class; digit 2 = training, 3 = held out (the trainer's --train 2 --test 3)
+"A5-All Primary 1_001" = "2M"  # all primaries, 1:400 (row A), 16:59, 124,099 events, 20,000 imaged
+"B5-All Primary 1_002" = "3M"  # all primaries, 1:800 (row B), 17:57, 136,365 events, 20,000 imaged
 
 [spillover]
-# "estimate" needs pure S and P wells (none here). "identity" = no unmixing. Or the path of the July run's
-# cache / spillover.json to reuse its matrix (same fluorophores and filters required).
-source = "identity"
+# No pure S / P wells here, so "estimate" cannot run. Same fluorophores and filters as July, so July's matrix is
+# reused (docs/results.md, "the spillover is estimable": AF488->PE 0.202, AF488->PerCP 0.023, PE->PerCP 0.166).
+# Once the "No LDHC" / "No TOMM20" / "No ACRV1" wells' images are exported, estimate it from them instead.
+source = "matrix"
+M = [[1.0, 0.0, 0.0], [0.202, 1.0, 0.0], [0.023, 0.166, 1.0]]
+note = "July 2026 A8 matrix (same AF488 / PE / PerCP-eF710 filters)"

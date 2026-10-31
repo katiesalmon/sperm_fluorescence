@@ -52,7 +52,7 @@ def main(argv=None):
             return y, mm
         p, _, mm, _ = st.item(int(i)); return p, mm
     hi = [] if in_k is not None else [max(float(np.percentile(np.concatenate([np.clip(stain_of(i)[0][k][stain_of(i)[1] > 0], 0, None) for i in sample]), 99.5)), 1e-4) for k in range(st.cout)]
-    legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
+    legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "LDHC": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
     colours = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#8e5bd6"]
     import textwrap
     gates = ", ".join("%s (%s)" % (g["gate"], g["query"].replace("`", "")) for g in s["gates"]) or "none"

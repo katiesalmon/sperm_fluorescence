@@ -89,7 +89,8 @@ def a8_run_records(cfg, source, limit=0):
 
     Spillover ([spillover] source): "estimate" from the S and P wells (io.a8.spillover; the July
     design), "identity" (no unmixing), or the path of a spillover.json / cache holding "M" from an
-    earlier run. The scan-line streak is removed (prepare_a8.destreak) as before."""
+    earlier run, or "matrix" with M = [[...]] inline. The matrix used is saved as <cache>/spillover.json.
+    The scan-line streak is removed (prepare_a8.destreak) as before."""
     import glob
     import zipfile
     from ..io.fcs import fcs_data, fcs_probe
@@ -152,10 +153,14 @@ def a8_run_records(cfg, source, limit=0):
         M, fits = a8_io.spillover(mini); print("spillover:", {k: round(v[0], 3) for k, v in fits.items()})
     elif how == "identity":
         M = np.eye(3, dtype=np.float32); print("spillover: identity (no unmixing)")
+    elif how == "matrix":
+        M = np.array(sp["M"], np.float32); print("spillover: matrix from the config (%s)" % sp.get("note", "no note"))
     else:
         pth = how if how.endswith(".json") else os.path.join(how, "spillover.json")
         M = np.array(json.load(open(pth))["M"], np.float32); print("spillover: from %s" % pth)
     if len(stains) != 3 or M.shape != (3, 3): raise SystemExit("the A8 unmixing assumes three fluorescence pages; config has %d stains" % len(stains))
+    cache_dir = os.environ.get("SF_CACHE_DIR")
+    if cache_dir: json.dump({"M": M.tolist(), "source": how, "fits": {k: list(v) for k, v in fits.items()} if how == "estimate" else None}, open(os.path.join(cache_dir, "spillover.json"), "w"), indent=1)
 
     for cls, (stem, part) in samples.items():
         src = sources[stem]
@@ -203,7 +208,7 @@ def main(argv=None):
     roles = []; markers = []
     for cfg in cfgs:
         roles += [r for r in cfg["roles"] if r not in roles]; markers += [m for m in cfg["stains"] if m not in markers]
-    os.makedirs(a.cache, exist_ok=True)
+    os.makedirs(a.cache, exist_ok=True); os.environ["SF_CACHE_DIR"] = os.path.abspath(a.cache)      # readers may drop side files (spillover.json) there
     meta = {"layout": "ragged", "roles": roles, "target_names": markers, "classes": {}, "scales": {}, "instruments": {}, "source_rows": True, "denoise_targets": a.denoise_targets}
     dafs = list(a.daf)
     for cfg, src in zip(cfgs, a.source):

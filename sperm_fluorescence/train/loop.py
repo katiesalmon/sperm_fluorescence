@@ -201,7 +201,7 @@ def train(args):
     res, P = evaluate(model, te, wte, scale, dev, names, tta=args.tta)
     print("\nbest-by-validation model on the held-out replicate:")
     print("%-12s %9s %9s %12s %12s   %s" % ("marker", "pixel r", "event r", "pred P:S", "true P:S", "want"))
-    wants = dict(zip(["LDHC/AKAP4", "CD45", "ACRV1"], ["<< 1", ">> 1", "<< 1"]))
+    wants = dict(zip(["LDHC/AKAP4", "LDHC", "CD45", "ACRV1"], ["<< 1", "<< 1", ">> 1", "<< 1"]))
     for n in names:
         r = res[n]
         if r["event_r"] is None:

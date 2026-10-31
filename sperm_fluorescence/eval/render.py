@@ -12,6 +12,7 @@ import numpy as np
 # Marker -> RGB in [0, 1]. Brightfield-like inputs are drawn in grey.
 PALETTE = {
     "LDHC/AKAP4": (0.35, 1.00, 0.35),   # lime
+    "LDHC":       (0.35, 1.00, 0.35),   # the 2026-08-12 A8 panel: LDHC alone
     "ACRV1":      (1.00, 1.00, 0.30),   # yellow
     "DAPI":       (0.65, 0.35, 0.95),   # dark orchid
     "TOMM20":     (1.00, 0.30, 0.30),   # red

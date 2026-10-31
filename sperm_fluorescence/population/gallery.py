@@ -111,7 +111,7 @@ def galleries(store_path, tab, scores, labels, feature_set, out_dir, n=8, size=7
                 for ax in (ax_bf, ax_st):
                     for sp in ax.spines.values(): sp.set_edgecolor("#cccccc"); sp.set_linewidth(0.5)
             axes[2 * r, 0].set_ylabel(label + "\n" + bf_name, fontsize=6.5); axes[2 * r + 1, 0].set_ylabel("virtual stains", fontsize=6.5)
-        legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
+        legend = "   ".join("%s %s" % (nm, {"LDHC/AKAP4": "green", "LDHC": "green", "TOMM20": "red", "DAPI": "violet", "ACRV1": "yellow", "CD45": "magenta"}.get(nm, "")) for nm in st.names)
         inst = INSTRUMENT.get(st.meta["classes"][st.classes[0]]["instrument"], st.meta["classes"][st.classes[0]]["instrument"])
         fig.suptitle("%s  ·  cluster %d of %d  (n = %d of %d clustered)" % (inst, c, len([k for k in set(labels) if k >= 0]), len(sel), int((labels >= 0).sum())), fontsize=9.5, fontweight="bold", y=0.995)
         import textwrap
