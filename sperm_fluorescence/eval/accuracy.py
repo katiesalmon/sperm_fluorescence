@@ -62,7 +62,7 @@ def main(argv=None):
         for k in ks:
             if av[q, k]: ev_t[q, k] = (y[k] * m).sum(); ev_p[q, k] = (P[q][k] * m).sum()
     g = groups_for(te, wte, idx)
-    order = [x for x in ["sperm", "round", "dim", "S", "P", "SP", "I"] if x in set(g)]
+    known = ["sperm", "round", "dim", "S", "P", "SP", "I"]; order = [x for x in known if x in set(g)] + sorted(set(g) - set(known))      # unknown wells (e.g. a single mixed well M) still get a group
     os.makedirs(a.out, exist_ok=True)
     json.dump({"run": a.run, "n": int(len(idx)), "denoise_measured": a.denoise_measured, "metrics": res_eval}, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
     for nm, d in res_eval.items():
@@ -79,7 +79,7 @@ def main(argv=None):
         lim = 1.15 * np.percentile(t[main] if main.sum() > 10 else t, 99.5); lo = min(0.0, np.percentile(t, 0.5))   # axis on the main population; outliers run off
         for grp in order:
             sel = gg == grp
-            if sel.any(): ax.scatter(t[sel], p[sel], s=5, alpha=0.45, color=GROUP_COLOURS[grp], label=GROUP_NAMES[grp], linewidths=0, rasterized=True)
+            if sel.any(): ax.scatter(t[sel], p[sel], s=5, alpha=0.45, color=GROUP_COLOURS.get(grp, "#777777"), label=GROUP_NAMES.get(grp, "well " + str(grp)), linewidths=0, rasterized=True)
         ax.plot([lo, lim], [lo, lim], color="black", lw=0.8, ls="--")
         ax.set_xlim(lo, lim); ax.set_ylim(lo, lim); ax.set_aspect("equal")
         c = render.color_for(names[k], k); ax.set_title(names[k], fontsize=14, fontweight="bold", color=tuple(0.75 * v for v in c))
@@ -89,7 +89,7 @@ def main(argv=None):
         for grp in order:
             sel = gg == grp
             if sel.sum() > 10:
-                rr = r_of(t[sel], p[sel]); rtab[names[k]][grp] = rr; lines.append("r = %.2f  within %s" % (rr, GROUP_NAMES[grp]))
+                rr = r_of(t[sel], p[sel]); rtab[names[k]][grp] = rr; lines.append("r = %.2f  within %s" % (rr, GROUP_NAMES.get(grp, "well " + str(grp))))
         ax.text(0.03, 0.97, "\n".join(lines), transform=ax.transAxes, fontsize=8.5, va="top", ha="left",
                 bbox=dict(facecolor="white", alpha=0.85, edgecolor="#cccccc", pad=4))
         for sp in ax.spines.values(): sp.set_color("#888888")
@@ -104,8 +104,8 @@ def main(argv=None):
     w = 0.8 / len(cols); xs = np.arange(len(ks))
     for j, grp in enumerate(cols):
         vals = [rtab[names[k]].get(grp, np.nan) for k in ks]
-        colour = "#444444" if grp == "all" else GROUP_COLOURS[grp]
-        bars = ax.bar(xs + (j - (len(cols) - 1) / 2) * w, vals, w, color=colour, label="all objects" if grp == "all" else "within " + GROUP_NAMES[grp], edgecolor="white")
+        colour = "#444444" if grp == "all" else GROUP_COLOURS.get(grp, "#777777")
+        bars = ax.bar(xs + (j - (len(cols) - 1) / 2) * w, vals, w, color=colour, label="all objects" if grp == "all" else "within " + GROUP_NAMES.get(grp, "well " + str(grp)), edgecolor="white")
         for b, v in zip(bars, vals):
             if np.isfinite(v): ax.text(b.get_x() + b.get_width() / 2, max(v, 0) + 0.015, "%.2f" % v, ha="center", va="bottom", fontsize=8)
     ax.set_xticks(xs); ax.set_xticklabels([names[k] for k in ks], fontsize=11)

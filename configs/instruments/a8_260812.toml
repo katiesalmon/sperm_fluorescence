@@ -1,0 +1,35 @@
+# BD FACSDiscover A8, the 2026-08-12 acquisition: one well ("B5-All Primary 1_002") with the full primary
+# panel. Same instrument and imaging block as a8.toml (name stays "a8" so thresholds, mask rules and
+# gallery labels apply), different panel and a single acquisition.
+#
+# BEFORE USING: run scripts/survey_a8_export.py on the folder and set [stains] from the TIFF page names
+# and the FCS labels it prints (page index = position in the 6-page TIFF, 0-based). The entries below
+# assume the July filter set with TOMM20 in place of CD45 on the PE page; change them if the survey
+# shows otherwise.
+name = "a8"
+family = "cellview"
+pixel_um = 0.42
+zoom_to_reference = 1.25
+reader = "a8_run"
+
+[roles]
+lightloss = 0
+fsc = 1
+ssc = 2
+
+[stains]                       # marker -> page; three pages, red-ward order (AF488, PE, PerCP) for the unmixing triangle
+"LDHC/AKAP4" = 3
+"TOMM20" = 4
+"ACRV1" = 5
+
+[classes]
+split_halves = true            # one acquisition: first half of the events -> 2M (train), second half -> 3M (held out)
+repeat = 6
+
+[classes.samples]              # file stem (of the .fcs / .zip / _images folder) -> class letter
+"B5-All Primary 1_002" = "M"
+
+[spillover]
+# "estimate" needs pure S and P wells (none here). "identity" = no unmixing. Or the path of the July run's
+# cache / spillover.json to reuse its matrix (same fluorophores and filters required).
+source = "identity"

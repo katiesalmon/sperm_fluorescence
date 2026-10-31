@@ -77,54 +77,99 @@ def isx_records(cfg, source, daf, limit=0, unstained=False):
 
 
 def a8_run_records(cfg, source, limit=0):
-    """Yield (cls, items) for a full A8 run folder on the server: <stem>.fcs beside
-    <stem>_images/**/*_<row>.tiff per sample. Spillover is estimated from a deterministic
-    draw of the S and P wells (io.a8.spillover) and the scan-line streak removed
-    (prepare_a8.destreak), as the fixed-frame server runs did. If a sample has no .fcs the
-    images are still read (rows from the filenames; no FCS scalars)."""
+    """Yield (cls, items) for a full A8 run folder on the server. Per sample: <stem>.fcs beside
+    either <stem>_images/**/*_<row>.tiff or the instrument's <stem>.zip (read in place, no
+    extraction). Samples are found by the -<replicate><S|P|SP> suffix (prepare_a8.CLASS_RE) or
+    named in the instrument config:
+
+        [classes.samples]                 # file stem -> class letter
+        "B5-All Primary 1_002" = "M"
+        [classes]
+        split_halves = true               # one acquisition -> 2M (first half of events) and 3M (second half)
+
+    Spillover ([spillover] source): "estimate" from the S and P wells (io.a8.spillover; the July
+    design), "identity" (no unmixing), or the path of a spillover.json / cache holding "M" from an
+    earlier run. The scan-line streak is removed (prepare_a8.destreak) as before."""
     import glob
+    import zipfile
     from ..io.fcs import fcs_data, fcs_probe
     from .prepare_a8 import CLASS_RE, INDEX_RE, destreak
     skip = set(cfg["classes"].get("skip", [])); zoom = float(cfg.get("zoom_to_reference", 1.0))
     roles = cfg["roles"]; stains = cfg["stains"]
-    samples = {}
-    for d in sorted(glob.glob(os.path.join(source, "*_images"))):
-        stem = os.path.basename(d)[:-len("_images")]; m = CLASS_RE.search(stem)
-        if m and m.group("cls").upper() not in skip: samples[m.group("cls").upper()] = stem
-    if not samples: raise SystemExit("no <sample>_images folders under %s" % source)
+    named = dict(cfg["classes"].get("samples", {})); halves = bool(cfg["classes"].get("split_halves", False))
+    samples = {}                                   # class -> (stem, rows filter)
+    stems = set()
+    for d in sorted(glob.glob(os.path.join(source, "*_images"))): stems.add(os.path.basename(d)[:-len("_images")])
+    for z in sorted(glob.glob(os.path.join(source, "*.zip"))): stems.add(os.path.splitext(os.path.basename(z))[0])
+    for stem in sorted(stems):
+        m = CLASS_RE.search(stem)
+        if stem in named:
+            letter = named[stem]
+            if halves: samples["2" + letter] = (stem, "first"); samples["3" + letter] = (stem, "second")
+            else: samples[letter if letter[0].isdigit() else "2" + letter] = (stem, None)
+        elif m and m.group("cls").upper() not in skip: samples[m.group("cls").upper()] = (stem, None)
+    if not samples: raise SystemExit("no samples under %s: neither <stem>_images / <stem>.zip with a -2S style suffix nor a [classes.samples] entry" % source)
+    print("samples:", {c: st for c, (st, _) in samples.items()})
 
-    class _Mini:
-        def __init__(self): self.imgs = {}
-        def image(self, c, r): return a8_io.read_stack(open(self.imgs[c][r], "rb").read())[0]
-        def events(self, classes):
-            good = []
-            for c in classes:
-                for r, path in list(self.imgs.get(c, {}).items()):
-                    try: a8_io.read_stack(open(path, "rb").read())
-                    except Exception: del self.imgs[c][r]; continue
-                    good.append((c, r))
-            return good
-    mini = _Mini()
-    for cls in ("2S", "3S", "2P", "3P"):
-        if cls not in samples: continue
-        paths = sorted(glob.glob(os.path.join(source, samples[cls] + "_images", "**", "*.tif*"), recursive=True))
-        paths = paths[::max(1, len(paths) // 200)]
-        mini.imgs[cls] = {int(INDEX_RE.search(os.path.basename(p)).group("idx")): p for p in paths}
-    M, fits = a8_io.spillover(mini)
-    print("spillover:", {k: round(v[0], 3) for k, v in fits.items()})
-    for cls, stem in samples.items():
-        paths = {}
-        for p in glob.iglob(os.path.join(source, stem + "_images", "**", "*.tif*"), recursive=True):
-            paths[int(INDEX_RE.search(os.path.basename(p)).group("idx"))] = p
+    class _Source:
+        """row -> TIFF bytes for one sample, from the folder or straight from the zip."""
+        def __init__(self, stem):
+            self.paths, self.zf = {}, None
+            d = os.path.join(source, stem + "_images")
+            if os.path.isdir(d):
+                for p in glob.iglob(os.path.join(d, "**", "*.tif*"), recursive=True):
+                    m = INDEX_RE.search(os.path.basename(p))
+                    if m: self.paths[int(m.group("idx"))] = p
+            else:
+                self.zf = zipfile.ZipFile(os.path.join(source, stem + ".zip"))
+                for n in self.zf.namelist():
+                    m = INDEX_RE.search(os.path.basename(n))
+                    if m and not n.endswith("/"): self.paths[int(m.group("idx"))] = n
+        def read(self, r): return self.zf.read(self.paths[r]) if self.zf else open(self.paths[r], "rb").read()
+    sources = {stem: _Source(stem) for stem in {st for st, _ in samples.values()}}
+
+    # spillover
+    sp = cfg.get("spillover", {}); how = sp.get("source", "estimate")
+    if how == "estimate":
+        class _Mini:
+            def __init__(self): self.imgs = {}
+            def image(self, c, r): return a8_io.read_stack(sources[self.imgs[c][r][0]].read(r))[0]
+            def events(self, classes):
+                good = []
+                for c in classes:
+                    for r, (stem, _) in list(self.imgs.get(c, {}).items()):
+                        try: a8_io.read_stack(sources[stem].read(r))
+                        except Exception: del self.imgs[c][r]; continue
+                        good.append((c, r))
+                return good
+        mini = _Mini()
+        for cls in ("2S", "3S", "2P", "3P"):
+            if cls not in samples: continue
+            stem = samples[cls][0]; rows = sorted(sources[stem].paths)[::max(1, len(sources[stem].paths) // 200)]
+            mini.imgs[cls] = {r: (stem, None) for r in rows}
+        if not ({"2S", "3S"} & set(mini.imgs)) or not ({"2P", "3P"} & set(mini.imgs)):
+            raise SystemExit("spillover 'estimate' needs an S well and a P well (have %s); set [spillover] source = \"identity\" or the path of a spillover.json from the July run" % sorted(samples))
+        M, fits = a8_io.spillover(mini); print("spillover:", {k: round(v[0], 3) for k, v in fits.items()})
+    elif how == "identity":
+        M = np.eye(3, dtype=np.float32); print("spillover: identity (no unmixing)")
+    else:
+        pth = how if how.endswith(".json") else os.path.join(how, "spillover.json")
+        M = np.array(json.load(open(pth))["M"], np.float32); print("spillover: from %s" % pth)
+    if len(stains) != 3 or M.shape != (3, 3): raise SystemExit("the A8 unmixing assumes three fluorescence pages; config has %d stains" % len(stains))
+
+    for cls, (stem, part) in samples.items():
+        src = sources[stem]
         fcs_path = os.path.join(source, stem + ".fcs"); n_fcs = None
         if os.path.exists(fcs_path):
             raw = open(fcs_path, "rb").read(); kw = fcs_probe.read_text_segment(raw[: 1024 * 1024]); _, _, n_fcs = fcs_data.read_matrix(raw, kw)
-        rows = sorted(r for r in paths if n_fcs is None or r < n_fcs)
+        rows = sorted(r for r in src.paths if n_fcs is None or r < n_fcs)
+        if part == "first": rows = rows[: len(rows) // 2]
+        elif part == "second": rows = rows[len(rows) // 2:]
         if limit: rows = rows[:limit]
         items = []; bad = 0; t0 = time.time()
         for r in rows:
             try:
-                st, _ = a8_io.read_stack(open(paths[r], "rb").read())
+                st, _ = a8_io.read_stack(src.read(r))
                 st = destreak(a8_io.unmix(st, M))
             except Exception:
                 bad += 1; continue

@@ -1,6 +1,7 @@
 # Full-scale stems models on the GPU machine: A8 (CellView family) and ImageStream (camera family).
 # Run from the repo folder in PowerShell after docs/server-setup.md's install:
 #
+#   .\scripts\server_stems.ps1 -A8Run "Z:\...\260812" -A8Config configs\instruments\a8_260812.toml -Suffix _260812 -A8Well M   # the 2026-08-12 single-well, TOMM20 panel
 #   .\scripts\server_stems.ps1 -A8Run <run> -DenoiseTargets smooth   # retrain on denoised measured stains -> runs\srv_a8_stems_smooth, figures\srv_a8_smooth_*
 #   .\scripts\server_stems.ps1 -A8Run "Z:\Blair_Main\2026\260709_Blair_Sperm_A8\260709" `
 #                              -IsxCif "Z:\...\260813_Blair_Sperm_ISX\ALL_1_400_1.cif" -IsxDaf "Z:\...\ALL_1_400_1.daf" `
@@ -18,6 +19,9 @@ param(
     [int]$A8Epochs = 40,
     [int]$IsxEpochs = 30,
     [int]$Limit = 0,            # events per class, 0 = all; use e.g. 2000 for a first smoke run
+    [string]$A8Config = "a8",        # instrument config name or path: a8 (July plate) or configs\instruments\a8_260812.toml (one well, TOMM20 panel)
+    [string]$Suffix = "",            # run / cache / figure suffix for a second A8 dataset, e.g. _260812
+    [string]$A8Well = "S",           # the well the slides figure draws (the July plate: S; a single mixed well: M)
     [string]$DenoiseTargets = "",   # "smooth" or "floor": measured stains denoised before training; cache a8_roles_<mode>, run srv_a8_stems_<mode>, figures srv_a8_<mode>_*
     [switch]$SkipPrepare,
     [switch]$SkipTrain,         # reuse runs\srv_*: no prepare, train or ablate; redraw views, sheet, masks, accuracy, slides, panel
@@ -31,11 +35,11 @@ $common = @("--train", "2", "--test", "3", "--batch", "32", "--width", "$Width",
             "--eval-every", "5", "--arch", "stems", "--role-dropout", "0.3", "--select-on", "val_event_r", "--tta")
 
 if ($A8Run -ne "") {
-    $sfx = if ($DenoiseTargets -ne "") { "_$DenoiseTargets" } else { "" }
+    $sfx = $Suffix + $(if ($DenoiseTargets -ne "") { "_$DenoiseTargets" } else { "" })
     $a8cache = "$Cache\a8_roles$sfx"; $a8run = "runs\srv_a8_stems$sfx"; $a8fig = "figures\srv_a8$sfx"
     $dn = if ($DenoiseTargets -ne "") { @("--denoise-targets", $DenoiseTargets) } else { @() }
     if (-not $SkipPrepare -and -not $SkipTrain) {
-        & $py -m sperm_fluorescence prepare --instrument a8 --reader a8_run --source $A8Run --cache $a8cache --limit $Limit @dn
+        & $py -m sperm_fluorescence prepare --instrument $A8Config --reader a8_run --source $A8Run --cache $a8cache --limit $Limit @dn
     }
     if (-not $SkipTrain) {
         & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out $a8run @common
@@ -45,7 +49,7 @@ if ($A8Run -ne "") {
     & $py -m sperm_fluorescence sheet  $a8run --cache $a8cache --test 3 --per-well 3
     & $py -m sperm_fluorescence masks  $a8run --cache $a8cache --test 3 --limit 1000 --calib 400
     & $py -m sperm_fluorescence accuracy $a8run --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out ${a8fig}_accuracy
-    & $py -m sperm_fluorescence slides $a8run --cache $a8cache --test 3 --well S --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out ${a8fig}_slides
+    & $py -m sperm_fluorescence slides $a8run --cache $a8cache --test 3 --well $A8Well --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out ${a8fig}_slides
     & $py -m sperm_fluorescence panel  $a8run --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out ${a8fig}_panel.png
 }
 
