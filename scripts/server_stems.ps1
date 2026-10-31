@@ -36,21 +36,21 @@ $common = @("--train", "2", "--test", "3", "--batch", "32", "--width", "$Width",
 
 if ($A8Run -ne "") {
     $sfx = $Suffix + $(if ($DenoiseTargets -ne "") { "_$DenoiseTargets" } else { "" })
-    $a8cache = "$Cache\a8_roles$sfx"; $a8run = "runs\srv_a8_stems$sfx"; $a8fig = "figures\srv_a8$sfx"
+    $a8cache = "$Cache\a8_roles$sfx"; $a8out = "runs\srv_a8_stems$sfx"; $a8fig = "figures\srv_a8$sfx"
     $dn = if ($DenoiseTargets -ne "") { @("--denoise-targets", $DenoiseTargets) } else { @() }
     if (-not $SkipPrepare -and -not $SkipTrain) {
         & $py -m sperm_fluorescence prepare --instrument $A8Config --reader a8_run --source $A8Run --cache $a8cache --limit $Limit @dn
     }
     if (-not $SkipTrain) {
-        & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out $a8run @common
-        & $py -m sperm_fluorescence ablate $a8run --cache $a8cache --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc; ssc"
+        & $py -m sperm_fluorescence train --cache $a8cache --epochs $A8Epochs --roles lightloss,fsc,ssc --out $a8out @common
+        & $py -m sperm_fluorescence ablate $a8out --cache $a8cache --test 3 --subsets "lightloss; lightloss,fsc; lightloss,fsc,ssc; ssc"
     }
-    & $py -m sperm_fluorescence views  $a8run --cache $a8cache --test 3 --subsets "lightloss,fsc,ssc; lightloss; ssc" --per-well 2 --crop 56 --out ${a8fig}_views.png
-    & $py -m sperm_fluorescence sheet  $a8run --cache $a8cache --test 3 --per-well 3
-    & $py -m sperm_fluorescence masks  $a8run --cache $a8cache --test 3 --limit 1000 --calib 400
-    & $py -m sperm_fluorescence accuracy $a8run --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out ${a8fig}_accuracy
-    & $py -m sperm_fluorescence slides $a8run --cache $a8cache --test 3 --well $A8Well --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out ${a8fig}_slides
-    & $py -m sperm_fluorescence panel  $a8run --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out ${a8fig}_panel.png
+    & $py -m sperm_fluorescence views  $a8out --cache $a8cache --test 3 --subsets "lightloss,fsc,ssc; lightloss; ssc" --per-well 2 --crop 56 --out ${a8fig}_views.png
+    & $py -m sperm_fluorescence sheet  $a8out --cache $a8cache --test 3 --per-well 3
+    & $py -m sperm_fluorescence masks  $a8out --cache $a8cache --test 3 --limit 1000 --calib 400
+    & $py -m sperm_fluorescence accuracy $a8out --cache $a8cache --test 3 --title "BD FACSDiscover A8, held-out replicate (full run)" --sample 5000 --out ${a8fig}_accuracy
+    & $py -m sperm_fluorescence slides $a8out --cache $a8cache --test 3 --well $A8Well --crop 56 --title "BD FACSDiscover A8: three markers predicted from light loss + FSC + SSC" --input-name "Light loss" --um-per-px 0.333 --approx-scale --n 4 --out ${a8fig}_slides
+    & $py -m sperm_fluorescence panel  $a8out --cache $a8cache --test 3 --rows "best:5" --stained "LDHC/AKAP4,ACRV1" --size 56 --um-per-px 0.333 --approx-scale --range sample --out ${a8fig}_panel.png
 }
 
 if ($IsxCif -ne "") {
@@ -74,7 +74,9 @@ $stamp = Get-Date -Format "yyyyMMdd_HHmm"
 $zip = "server_results_$stamp.zip"
 $staging = Join-Path $env:TEMP "sf_results_$stamp"
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
-foreach ($run in @((if ($A8Run -ne "") { $a8run } else { "runs\srv_a8_stems" }), "runs\srv_isx_stems")) {
+$zipRuns = @("runs\srv_isx_stems")
+if ($A8Run -ne "") { $zipRuns = @($a8out) + $zipRuns } else { $zipRuns = @("runs\srv_a8_stems") + $zipRuns }
+foreach ($run in $zipRuns) {
     if (Test-Path $run) {
         $dest = Join-Path $staging $run
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
