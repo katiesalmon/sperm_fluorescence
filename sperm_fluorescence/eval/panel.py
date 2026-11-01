@@ -105,7 +105,8 @@ def pad_to(a, size, fill):
     return out
 
 
-def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overlay=True, approx=False):
+def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overlay="both", approx=False, inputs_label="Microscopy Imaging"):
+    """overlay: "both" (measured + predicted overlay pair), "predicted" (one column), or "none"."""
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     from matplotlib import patches
     groups = []
@@ -114,8 +115,9 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
         groups[-1][1] += 1
     gap = 0.22
     widths = [1.0] * len(roles) + [gap * 1.4]
-    for j in range(len(ks)): widths += [1.0, 1.0] + ([gap] if j < len(ks) - 1 or overlay else [])
-    if overlay: widths += [1.0, 1.0]
+    for j in range(len(ks)): widths += [1.0, 1.0] + ([gap] if j < len(ks) - 1 or overlay != "none" else [])
+    if overlay == "both": widths += [1.0, 1.0]
+    elif overlay == "predicted": widths += [1.0]
     heights = []
     for gi, (_, n) in enumerate(groups): heights += [1.0] * n + ([gap] if gi < len(groups) - 1 else [])
     pw = 0.95; left, right, top, bottom = (0.95 if len(groups) > 1 else 0.12), 0.12, (0.78 if title else 0.6), 0.12
@@ -128,7 +130,8 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
     c += 1
     for j, k in enumerate(ks):
         col_of[("t", k)] = c; col_of[("p", k)] = c + 1; c += 3
-    if overlay: col_of[("t", "all")] = c; col_of[("p", "all")] = c + 1
+    if overlay == "both": col_of[("t", "all")] = c; col_of[("p", "all")] = c + 1
+    elif overlay == "predicted": col_of[("p", "all")] = c
     row_of = []; rr = 0
     for gi, (_, n) in enumerate(groups):
         for _ in range(n): row_of.append(rr); rr += 1
@@ -146,8 +149,9 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
             ax = fig.add_subplot(gs[R, col_of[("p", k)]]); ax.imshow(pl[-1], interpolation="nearest"); axes[(R, col_of[("p", k)])] = ax
             if np.isfinite(r[k]):
                 ax.text(0.04, 0.04, "r %.2f" % r[k], transform=ax.transAxes, color="white", fontsize=5.2, va="bottom", ha="left")
-        if overlay:
+        if overlay == "both":
             ax = fig.add_subplot(gs[R, col_of[("t", "all")]]); ax.imshow(render.composite(tl), interpolation="nearest"); axes[(R, col_of[("t", "all")])] = ax
+        if overlay != "none":
             ax = fig.add_subplot(gs[R, col_of[("p", "all")]]); ax.imshow(render.composite(pl), interpolation="nearest"); axes[(R, col_of[("p", "all")])] = ax
         if i == 0 and um_per_px:
             ax = axes[(R, 0)]; px = 5.0 / um_per_px
@@ -160,15 +164,19 @@ def draw(path, rows, objs, roles, names, ks, rng_, um_per_px, title, size, overl
     # column headers: the inputs, then one header per marker over its measured/predicted pair
     for r_i, role in enumerate(roles):
         ax = axes[(0, col_of[("in", r_i)])]; ax.set_title(ROLE_LABEL.get(role, role), fontsize=7, fontweight="bold", pad=3)
-    for k in ks + (["all"] if overlay else []):
-        at, ap_ = axes[(0, col_of[("t", k)])], axes[(0, col_of[("p", k)])]
-        at.set_title("Measured", fontsize=6.2, color="#444444", pad=2); ap_.set_title("Predicted", fontsize=6.2, color="#444444", pad=2)
-        bt, bp = at.get_position(), ap_.get_position(); xm = (bt.x0 + bp.x1) / 2
+    for k in ks + (["all"] if overlay != "none" else []):
+        if k == "all" and overlay == "predicted":
+            ap_ = axes[(0, col_of[("p", "all")])]; ap_.set_title("Predicted", fontsize=6.2, color="#444444", pad=2); bt = bp = ap_.get_position()
+        else:
+            at, ap_ = axes[(0, col_of[("t", k)])], axes[(0, col_of[("p", k)])]
+            at.set_title("Measured", fontsize=6.2, color="#444444", pad=2); ap_.set_title("Predicted", fontsize=6.2, color="#444444", pad=2)
+            bt, bp = at.get_position(), ap_.get_position()
+        xm = (bt.x0 + bp.x1) / 2
         col = tuple(0.7 * v for v in render.color_for(names[k], k)) if k != "all" else "black"
         fig.text(xm, bt.y1 + 0.17 / figh, DISPLAY.get(names[k], names[k]) if k != "all" else "All markers", fontsize=8, fontweight="bold", color=col, ha="center", va="bottom")
         fig.text(xm, bt.y1 + 0.17 / figh + 0.14 / figh, WHERE.get(names[k], "") if k != "all" else "Overlay", fontsize=6.2, color="#444444", ha="center", va="bottom")
     b0 = axes[(0, 0)].get_position(); b1 = axes[(0, col_of[("in", len(roles) - 1)])].get_position()
-    fig.text((b0.x0 + b1.x1) / 2, b0.y1 + 0.17 / figh + 0.14 / figh, "Microscopy Imaging", fontsize=8, fontweight="bold", ha="center", va="bottom")
+    fig.text((b0.x0 + b1.x1) / 2, b0.y1 + 0.17 / figh + 0.14 / figh, inputs_label, fontsize=8, fontweight="bold", ha="center", va="bottom")
     # row-group labels (none when every row is the same group: the legend says what they are)
     i = 0
     for name, n in (groups if len(groups) > 1 else []):
@@ -191,6 +199,8 @@ def main(argv=None):
     ap.add_argument("--size", type=int, default=72, help="window side in px around each object")
     ap.add_argument("--um-per-px", type=float, default=0.0); ap.add_argument("--title", default="")
     ap.add_argument("--no-overlay", action="store_true", help="omit the all-marker overlay pair at the right")
+    ap.add_argument("--overlay", default=None, choices=["both", "predicted", "none"], help="the all-marker overlay at the right: measured + predicted pair (default), the predicted one alone, or none")
+    ap.add_argument("--inputs-label", default="Microscopy Imaging", help="the header over the label-free input columns")
     ap.add_argument("--stained", default=None, help="comma list of markers that count for 'stained above the median' and the ranking (default: all; on the A8 leave CD45 out)")
     ap.add_argument("--approx-scale", action="store_true", help="prefix the scale bar with ~ (A8: the pixel size is approximate)")
     ap.add_argument("--range", default="rows", choices=["rows", "sample"], help="display range per marker from the rows shown (default) or from the whole scored sample (A8: so CD45, absent on sperm, is scaled by the leukocytes that carry it)")
@@ -245,7 +255,9 @@ def main(argv=None):
     else:
         rng_ = render.ranges([o[1] for o in objs], [o[2] for o in objs])
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    draw(a.out, rows, objs, roles, names, ks, rng_, a.um_per_px, a.title, a.size, overlay=not a.no_overlay and len(ks) > 1, approx=a.approx_scale)
+    mode = a.overlay or ("none" if a.no_overlay else "both")
+    if len(ks) < 2: mode = "none"
+    draw(a.out, rows, objs, roles, names, ks, rng_, a.um_per_px, a.title, a.size, overlay=mode, approx=a.approx_scale, inputs_label=a.inputs_label)
     stem = os.path.splitext(a.out)[0]
     json.dump({"run": a.run, "checkpoint": a.checkpoint, "sample": int(len(idx)), "seed": a.seed, "size_px": a.size, "main_population": main_,
                "rows": [{"group": name, "object": int(idx[q]), "pixel_r": {names[k]: (float(r[q][k]) if np.isfinite(r[q][k]) else None) for k in range(te.cout)}} for name, q in rows],
@@ -263,7 +275,7 @@ def main(argv=None):
               "image predicted from the inputs alone%s. Rows were chosen %sfrom %d randomly sampled held-out objects: %s"
               "; objects whose stain touches the frame edge were excluded%s. Each marker is shown on one intensity range across all "
               "rows (black = 0, full colour = the 99.5th percentile of the measured stain over %s). r = per-object pixel correlation "
-              "between predicted and measured images within the cell. Scale bar %s5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if (a.no_overlay or len(ks) < 2) else ", with all markers overlaid at the right", "" if pinned else "by rule ", len(idx), "; ".join(parts),
+              "between predicted and measured images within the cell. Scale bar %s5 µm." % (" + ".join(ROLE_LABEL.get(x, x).lower() for x in roles), "" if mode == "none" else (", with all markers overlaid at the right" if mode == "both" else ", with the predicted markers overlaid at the right"), "" if pinned else "by rule ", len(idx), "; ".join(parts),
                  ", and sperm rows were required to show one nucleus under 30 \u00b5m\u00b2 with the flagellum stain centred at least 2 \u00b5m from it" if (a.um_per_px and "DAPI" in names and "LDHC/AKAP4" in names) else "", "the objects shown" if a.range == "rows" else "the brightest quarter of the sampled held-out objects, of every population, for that marker", "approximately " if a.approx_scale else ""))
     if a.denoise_measured != "none": legend += " Measured stains are shown and scored after noise-floor removal (%s)." % ("1-px Gaussian, then the frame's noise floor subtracted" if a.denoise_measured == "smooth" else "the frame's noise floor subtracted")
     open(stem + ".txt", "w", encoding="utf-8").write(legend + "\n")
