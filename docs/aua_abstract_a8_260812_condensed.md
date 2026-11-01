@@ -18,4 +18,4 @@ Predicted LDHC matched the measured flagellar stain at r=0.81 and IoU 0.71, with
 
 ## Conclusions (400)
 
-A U-Net trained on under 20,000 events reproduced the flagellar stain with high fidelity and located the midpiece and acrosome in nearly every cell, recovering head, midpiece and tail structure from low-resolution label-free images without fixation or stain. Virtual fluorescence lets the A8 recognize sperm and their morphology in real time, a step toward sorting unstained sperm from whole ejaculate.
+A U-Net trained on under 20,000 events reproduced the flagellar stain with high fidelity and located the midpiece and acrosome in nearly every cell, recovering head, midpiece and tail structure from low-resolution label-free images without any stain. Virtual fluorescence lets the A8 recognize sperm and their morphology in real time, a step toward sorting unstained sperm from whole ejaculate.
