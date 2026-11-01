@@ -18,7 +18,7 @@ Predicted LDHC reproduced the measured flagellar stain closely: pixel-by-pixel c
 
 ## Conclusions (400)
 
-The U-Net reproduced the flagellar LDHC stain accurately in location and intensity; midpiece and acrosomal stains were located well, their intensity less so. The model also filters the random noise of the true stain, which it cannot reproduce, so correlation understates its accuracy. Bypassing fixation and staining, virtual fluorescence can augment raw cytometry images for morphologic evaluation and sorting.
+The U-Net reproduced the flagellar LDHC stain well in location and intensity; midpiece and acrosomal stains were located well, their intensity less so. The model filters the random noise of the true stain, which it cannot reproduce, so correlation understates its accuracy. Bypassing fixation and staining, virtual fluorescence can augment cytometry images for morphologic evaluation and sorting.
 
 ## Impact statement
 
